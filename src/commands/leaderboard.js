@@ -369,16 +369,12 @@ module.exports = {
                     });
                     attachments.push(attachment);
                     
-                    // Create individual embed for each poster (consistent width)
+                    // Create individual embed for each poster (same width as Pirate King)
                     const posterEmbed = new EmbedBuilder()
                         .setColor(pirate.isPirateKing ? 0xFFD700 : 0x1a1a1a)
-                        .setDescription('\u200B') // Invisible character to ensure consistent width
+                        .setTitle(pirate.isPirateKing ? '👑 **PIRATE KING**' : `${pirateRankEmoji(rank)} **#${rank}** WANTED PIRATE`)
+                        .setDescription(`<@${user.userId}> - Level ${user.level}\n\nThe following individual is considered extremely dangerous and should be approached with extreme caution.\n\u200B`)
                         .addFields(
-                            {
-                                name: pirate.isPirateKing ? '👑 **PIRATE KING**' : `${pirateRankEmoji(rank)} **#${rank}**`,
-                                value: `<@${user.userId}> - Level ${user.level}`,
-                                inline: false
-                            },
                             {
                                 name: '💰 Bounty',
                                 value: `฿${bounty.toLocaleString()}`,
@@ -408,7 +404,9 @@ module.exports = {
                                 inline: false
                             }
                         )
-                        .setImage(`attachment://wanted_poster_${i + 1}.png`);
+                        .setImage(`attachment://wanted_poster_${i + 1}.png`)
+                        .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
+                        .setTimestamp();
                     
                     allEmbeds.push(posterEmbed);
                 }
