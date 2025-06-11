@@ -33,22 +33,21 @@ module.exports = {
         // Fetch all users from database
         let leaderboard = await xpTracker.getLeaderboard(guild.id);
 
-        // Fetch guild members (for role checks)
+        // Pirate King detection (fully error proof)
         let pirateKingUser = null;
-        let king = null;
         let members = null;
         if (LEADERBOARD_EXCLUDE_ROLE) {
             try {
                 members = await guild.members.fetch();
+                if (members && members.size) {
+                    const king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
+                    if (king && king.user && king.user.id) {
+                        pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
+                        leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
+                    }
+                }
             } catch (err) {
-                members = null;
-            }
-            if (members && members.size) {
-                king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
-            }
-            if (king && king.user && king.user.id) {
-                pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
-                leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
+                pirateKingUser = null; // Explicitly no pirate king if error
             }
         }
 
@@ -96,7 +95,7 @@ module.exports = {
             rank++;
         }
 
-        // PROTECT: never set an empty description
+        // Never send empty description
         embed.setDescription(desc && desc.length > 0
             ? desc
             : "No pirates have earned any bounty yet! Be the first to make your mark on the seas."
