@@ -1,3 +1,4 @@
+
 // src/commands/leaderboard.js - One Piece Themed Leaderboard
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
@@ -6,7 +7,6 @@ const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Role ID for Pirate King
 
 function pirateRankEmoji(rank) {
-    // For extra flair
     if (rank === 1) return '🥇';
     if (rank === 2) return '🥈';
     if (rank === 3) return '🥉';
@@ -41,15 +41,12 @@ module.exports = {
             const king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
             if (king) {
                 pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
-                // Remove Pirate King from the regular board
                 leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
             }
         }
 
-        // Sort leaderboard by XP descending (already sorted from getLeaderboard, but just in case)
         leaderboard.sort((a, b) => b.xp - a.xp);
 
-        // Prepare leaderboard slices
         let entriesToShow = [];
         let title = '🏴‍☠️ One Piece Pirate Leaderboard';
         if (view === 'short') {
@@ -64,45 +61,40 @@ module.exports = {
             let rank = 1;
 
             if (pirateKingUser) {
-                const kingMember = await guild.members.fetch(pirateKingUser.userId).catch(() => null);
                 text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
 
             for (const user of leaderboard) {
-                const member = await guild.members.fetch(user.userId).catch(() => null);
-                const name = member ? member.displayName : `(Unknown User)`;
-                text += `${pirateRankEmoji(rank)} ${rank}. **${name}** — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
+                text += `${pirateRankEmoji(rank)} ${rank}. <@${user.userId}> — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
                 rank++;
             }
 
+            if (text.length === 0) text = "No pirates have earned any bounty yet! Be the first to make your mark on the seas.";
             return interaction.reply({ content: text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text });
         }
 
-        // Build embed for Top 3/Top 10
         const embed = new EmbedBuilder()
             .setColor(0xf7d560)
-            .setTitle(title)
-            .setDescription('The most feared and notorious pirates on the seas!\n\n');
+            .setTitle(title);
 
         let desc = '';
         let rank = 1;
 
         if (pirateKingUser) {
-            const kingMember = await guild.members.fetch(pirateKingUser.userId).catch(() => null);
-            const kingName = kingMember ? kingMember.displayName : `(Unknown User)`;
             desc += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> — Level ${pirateKingUser.level} — ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
         }
 
         for (const user of entriesToShow) {
-            const member = await guild.members.fetch(user.userId).catch(() => null);
-            const name = member ? member.displayName : `(Unknown User)`;
-            desc += `${pirateRankEmoji(rank)} ${rank}. **${name}** — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
+            desc += `${pirateRankEmoji(rank)} ${rank}. <@${user.userId}> — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
             rank++;
         }
 
-        embed.setDescription(desc);
+        // PROTECT: never set an empty description
+        embed.setDescription(desc && desc.length > 0
+            ? desc
+            : "No pirates have earned any bounty yet! Be the first to make your mark on the seas."
+        );
 
-        // Add buttons to switch view
         const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
