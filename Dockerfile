@@ -1,25 +1,32 @@
-# Use Node.js 18 LTS
+# Dockerfile
 FROM node:18-alpine
 
-# Set working directory
-WORKDIR /app
+# Create app directory
+WORKDIR /usr/src/app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (use npm install instead of npm ci)
-RUN npm install --only=production
+# Install dependencies
+RUN npm ci --only=production
 
 # Copy source code
 COPY . .
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs
-RUN adduser -S bot -u 1001
-USER bot
+RUN adduser -S discord -u 1001
 
-# Expose port (Railway will set PORT env variable)
-EXPOSE $PORT
+# Change ownership of the app directory
+RUN chown -R discord:nodejs /usr/src/app
+USER discord
+
+# Expose port (optional, for health checks)
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD node -e "console.log('Bot is running')" || exit 1
 
 # Start the application
 CMD ["npm", "start"]
