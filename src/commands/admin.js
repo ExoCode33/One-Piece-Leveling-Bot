@@ -7,17 +7,17 @@ module.exports = {
         .setName('settings')
         .setDescription('Show bot settings (Admin only)'),
 
-    async execute(interaction, client) {
+    async execute(interaction, client, xpTracker) {
         try {
             // Check permissions
             if (!interaction.member.permissions.has('Administrator')) {
                 return await interaction.reply({ 
                     content: '❌ You need Administrator permissions to use this command.', 
-                    flags: 64 // Ephemeral flag
+                    ephemeral: true
                 });
             }
 
-            await interaction.deferReply({ flags: 64 }); // Ephemeral flag
+            await interaction.deferReply({ ephemeral: true });
 
             const embed = new EmbedBuilder()
                 .setTitle('🔧 Bot Configuration Settings')
@@ -47,6 +47,16 @@ module.exports = {
             ].join('\n');
 
             embed.addFields({ name: '🎉 Level Up Messages', value: levelUpInfo, inline: false });
+
+            // Add XP logging settings
+            const xpLogInfo = [
+                `**XP Log Enabled:** ${process.env.XP_LOG_ENABLED === 'true' ? '✅' : '❌'}`,
+                `**Log Messages:** ${process.env.XP_LOG_MESSAGES === 'true' ? '✅' : '❌'}`,
+                `**Log Reactions:** ${process.env.XP_LOG_REACTIONS === 'true' ? '✅' : '❌'}`,
+                `**Log Voice:** ${process.env.XP_LOG_VOICE === 'true' ? '✅' : '❌'}`
+            ].join('\n');
+
+            embed.addFields({ name: '📊 XP Logging', value: xpLogInfo, inline: false });
 
             // Add channel info
             const channelInfo = [];
@@ -80,8 +90,33 @@ module.exports = {
             }
 
             if (roleRewards.length > 0) {
-                embed.addFields({ name: '🏆 Role Rewards', value: roleRewards.slice(0, 10).join('\n'), inline: false });
+                // Split into chunks if too many roles
+                const chunks = [];
+                for (let i = 0; i < roleRewards.length; i += 10) {
+                    chunks.push(roleRewards.slice(i, i + 10));
+                }
+                
+                chunks.forEach((chunk, index) => {
+                    embed.addFields({ 
+                        name: index === 0 ? '🏆 Role Rewards' : `🏆 Role Rewards (continued ${index + 1})`, 
+                        value: chunk.join('\n'), 
+                        inline: false 
+                    });
+                });
             }
+
+            // Add debug settings
+            const debugInfo = [
+                `**Debug Mode:** ${process.env.DEBUG_MODE === 'true' ? '✅' : '❌'}`,
+                `**Debug XP:** ${process.env.DEBUG_XP === 'true' ? '✅' : '❌'}`,
+                `**Debug Voice:** ${process.env.DEBUG_VOICE === 'true' ? '✅' : '❌'}`,
+                `**Debug Database:** ${process.env.DEBUG_DATABASE === 'true' ? '✅' : '❌'}`,
+                `**Debug Commands:** ${process.env.DEBUG_COMMANDS === 'true' ? '✅' : '❌'}`
+            ].join('\n');
+
+            embed.addFields({ name: '🐛 Debug Settings', value: debugInfo, inline: false });
+
+            embed.setFooter({ text: '⚓ Configure via Railway Environment Variables' });
 
             await interaction.editReply({ embeds: [embed] });
         } catch (error) {
