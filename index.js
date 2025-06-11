@@ -105,19 +105,23 @@ async function initializeDatabase() {
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand() && !interaction.isButton()) return;
+    
     try {
         if (interaction.isCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (!command) return;
             await command.execute(interaction, client, xpTracker);
         }
+        
         // Handle button interactions for leaderboard pagination
         if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
             const parts = interaction.customId.split('_');
-            const view = parts[1]; // 'short' or 'long'
+            const view = parts[1]; // 'short', 'long', or 'full'
             const page = parseInt(parts[2]) || 1;
             const type = parts[3] || 'xp';
+            
             await interaction.deferUpdate();
+            
             // Mock interaction for leaderboard command
             const mockInteraction = {
                 ...interaction,
@@ -126,13 +130,14 @@ client.on('interactionCreate', async interaction => {
                 reply: async (options) => await interaction.editReply(options),
                 options: {
                     getString: (name) => {
-                        if (name === 'view') return view;
+                        if (name === 'view') return view; // This handles 'short', 'long', and 'full'
                         if (name === 'type') return type;
                         return null;
                     },
                     getInteger: (name) => name === 'page' ? page : null
                 }
             };
+            
             const leaderboardCommand = client.commands.get('leaderboard');
             if (leaderboardCommand) {
                 await leaderboardCommand.execute(mockInteraction, client, xpTracker);
@@ -188,6 +193,7 @@ setInterval(async () => {
 client.once('ready', async () => {
     console.log(`[INFO] Bot logged in as ${client.user.tag}`);
     await initializeDatabase();
+    
     try {
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
         const commands = [
@@ -195,17 +201,21 @@ client.once('ready', async () => {
             leaderboardCommand.data,
             adminCommand.data
         ];
+        
         if (process.env.DEBUG_COMMANDS === 'true') {
             console.log('[DEBUG] Registering slash commands...');
         }
+        
         await rest.put(
             Routes.applicationCommands(client.user.id),
             { body: commands }
         );
+        
         console.log('[INFO] Slash commands registered successfully');
     } catch (error) {
         console.error('Error registering slash commands:', error);
     }
+    
     client.user.setActivity('for XP gains!', { type: 'WATCHING' });
     console.log('[INFO] Discord Leveling Bot is fully operational!');
 });
@@ -213,12 +223,39 @@ client.once('ready', async () => {
 client.on('error', error => {
     console.error('Discord client error:', error);
 });
+
 process.on('unhandledRejection', error => {
     console.error('Unhandled promise rejection:', error);
 });
+
 process.on('uncaughtException', error => {
     console.error('Uncaught exception:', error);
     process.exit(1);
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+/* 
+IMPORTANT NOTE: The button interaction handler above is working correctly.
+The actual issue is in your leaderboard.js command file.
+
+In your leaderboard.js execute function, you need logic like this:
+
+if (view === 'full') {
+    // Show ONLY the list format with buttons, NO EMBED
+    return await interaction.editReply({
+        content: fullLeaderboardListContent, // Your formatted list
+        components: [buttonRow], // The buttons
+        embeds: [] // NO EMBEDS for full view
+    });
+} else {
+    // Show ONLY the embed with buttons, NO CONTENT
+    return await interaction.editReply({
+        content: '', // No content for short/long views
+        embeds: [embed], // The newspaper-style embed
+        components: [buttonRow] // The buttons
+    });
+}
+
+This will fix the issue where both list and embed show simultaneously.
+*/
