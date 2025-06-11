@@ -120,7 +120,7 @@ module.exports = {
         // Add Pirate King section
         if (pirateKing) {
             const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
-            const pirateKingTitle = pirateKing.data.level >= 50 ? '👑 Yonko' : this.getPirateTitle(pirateKing.data.level);
+            const pirateKingTitle = pirateKing.data.level >= 50 ? 'Yonko' : this.getPirateTitle(pirateKing.data.level);
             embed.addFields({
                 name: '👑 THE PIRATE KING 👑',
                 value: `**${pirateKing.member.displayName}** - *${pirateKingTitle}*\n${pirateKingValue}\n*🌟 Ruler of the Grand Line 🌟*`,
@@ -176,7 +176,7 @@ module.exports = {
                     .setStyle(ButtonStyle.Primary)
                     .setEmoji('📜'),
                 new ButtonBuilder()
-                    .setCustomId(`bounty_refresh_${type}`)
+                    .setCustomId(`bounty_refresh_short_${type}`)
                     .setLabel('🔄 Refresh')
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji('⚓')
@@ -268,7 +268,7 @@ module.exports = {
         // Add Pirate King section (always at top of long view)
         if (pirateKing) {
             const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
-            const pirateKingTitle = pirateKing.data.level >= 50 ? '👑 Yonko' : this.getPirateTitle(pirateKing.data.level);
+            const pirateKingTitle = pirateKing.data.level >= 50 ? 'Yonko' : this.getPirateTitle(pirateKing.data.level);
             embed.addFields({
                 name: '👑 THE PIRATE KING 👑',
                 value: `**${pirateKing.member.displayName}** - *${pirateKingTitle}*\n${pirateKingValue}`,
@@ -367,7 +367,7 @@ module.exports = {
                     .setStyle(ButtonStyle.Success)
                     .setEmoji('📜'),
                 new ButtonBuilder()
-                    .setCustomId(`bounty_refresh_${type}`)
+                    .setCustomId(`bounty_refresh_long_${type}`)
                     .setLabel('🔄 Refresh')
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji('⚓')
@@ -458,16 +458,16 @@ module.exports = {
     },
 
     getPirateTitle(level) {
-        if (level >= 50) return '👑 Yonko';
-        if (level >= 45) return '⚡ Yonko Commander';
-        if (level >= 40) return '🗡️ Warlord';
-        if (level >= 35) return '🧭 First Mate';
-        if (level >= 30) return '🗺️ Navigator';
-        if (level >= 25) return '⚓ Boatswain';
-        if (level >= 20) return '⚓ Helmsman';
-        if (level >= 15) return '💣 Gunner';
-        if (level >= 10) return '🧨 Powder Monkey';
-        if (level >= 5) return '🔨 Deckhand';
-        return '👶 Cabin Boy';
+        if (level >= 50) return 'Yonko';
+        if (level >= 45) return 'Yonko Commander';
+        if (level >= 40) return 'Warlord';
+        if (level >= 35) return 'First Mate';
+        if (level >= 30) return 'Navigator';
+        if (level >= 25) return 'Boatswain';
+        if (level >= 20) return 'Helmsman';
+        if (level >= 15) return 'Gunner';
+        if (level >= 10) return 'Powder Monkey';
+        if (level >= 5) return 'Deckhand';
+        return 'Cabin Boy';
     }
 };
