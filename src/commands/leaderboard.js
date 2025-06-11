@@ -12,6 +12,13 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
+function getThreatLevel(rank) {
+    if (rank === 1) return 'EXTREMELY DANGEROUS';
+    if (rank === 2) return 'HIGHLY DANGEROUS';
+    if (rank === 3) return 'VERY DANGEROUS';
+    return 'DANGEROUS';
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('leaderboard')
@@ -60,13 +67,10 @@ module.exports = {
         leaderboard.sort((a, b) => b.xp - a.xp);
 
         let entriesToShow = [];
-        let title = '🏴‍☠️ One Piece Pirate Leaderboard';
         if (view === 'short') {
             entriesToShow = leaderboard.slice(0, 3);
-            title = '🥇 Top 3 Pirates';
         } else if (view === 'long') {
             entriesToShow = leaderboard.slice(0, 10);
-            title = '🏅 Top 10 Pirates';
         } else {
             // Full view, display all in plaintext (not embed)
             let text = '';
@@ -85,33 +89,74 @@ module.exports = {
             return interaction.reply({ content: text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text });
         }
 
+        // Create the newspaper-style embed
         const embed = new EmbedBuilder()
-            .setColor(0xf7d560)
-            .setTitle(title);
+            .setColor(0x2f3136); // Dark color to match screenshot
 
-        let desc = '';
+        let description = '';
+
+        // Header
+        description += '📰 **WORLD ECONOMIC NEWS PAPER** 📰\n\n';
+        description += '```\n';
+        description += '┌─────────────────────────────────────┐\n';
+        description += '│     URGENT BOUNTY BULLETIN         │\n';
+        description += '│    TOP CRIMINALS IDENTIFIED        │\n';
+        description += '└─────────────────────────────────────┘\n';
+        description += '```\n\n';
+
+        // Top Threats section
+        description += '━━━━━━━━ 🔥 **TOP THREATS** 🔥 ━━━━━━━━\n\n';
+
         let rank = 1;
-
-        if (pirateKingUser) {
-            desc += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> — Level ${pirateKingUser.level} — ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
-        }
-
         for (const user of entriesToShow) {
             let memberName = null;
             try {
                 const member = await guild.members.fetch(user.userId).catch(() => null);
-                memberName = member ? member.displayName : `Unknown Pirate (ID: ${user.userId})`;
+                memberName = member ? member.displayName.toUpperCase() : `UNKNOWN_PIRATE_${user.userId}`;
             } catch (err) {
-                memberName = `Unknown Pirate (ID: ${user.userId})`;
+                memberName = `UNKNOWN_PIRATE_${user.userId}`;
             }
-            desc += `${pirateRankEmoji(rank)} ${rank}. **${memberName}** — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
+
+            const bounty = getBountyForLevel(user.level);
+            const threatLevel = getThreatLevel(rank);
+
+            description += '```\n';
+            description += `[RANK ${rank}] ${memberName}\n`;
+            description += `BOUNTY: ฿${bounty.toLocaleString()}\n`;
+            description += `THREAT: ${threatLevel}\n`;
+            description += '```\n';
+
+            // Add level and rep info below each wanted poster
+            description += `🏴‍☠️ ⚔️ Level ${user.level} | ⭐ ${user.xp} Rep\n\n`;
+
             rank++;
         }
 
-        embed.setDescription(desc && desc.length > 0
-            ? desc
-            : "No pirates have earned any bounty yet! Be the first to make your mark on the seas."
-        );
+        // Show remaining count for short view
+        if (view === 'short' && leaderboard.length > 3) {
+            const remaining = leaderboard.length - 3;
+            description += `*... and ${remaining} more dangerous pirates*\n\n`;
+        } else if (view === 'long' && leaderboard.length > 10) {
+            const remaining = leaderboard.length - 10;
+            description += `*... and ${remaining} more dangerous pirates*\n\n`;
+        }
+
+        // Footer
+        description += '```\n';
+        description += '┌─────────────────────────────────────┐\n';
+        description += '│  USE /leaderboard FOR FULL LIST    │\n';
+        description += '│     STAY VIGILANT, STAY SAFE       │\n';
+        description += '└─────────────────────────────────────┘\n';
+        description += '```\n';
+
+        const currentTime = new Date().toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+        });
+        description += `⚠️ **WORLD GOVERNMENT URGENT BULLETIN** ⚠️ • **TOP THREATS ONLY** • Today at ${currentTime}`;
+
+        embed.setDescription(description);
 
         const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
         const row = new ActionRowBuilder().addComponents(
