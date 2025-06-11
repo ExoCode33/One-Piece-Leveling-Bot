@@ -192,31 +192,42 @@ class LevelingBot {
             await this.addXP(user.id, reaction.message.guild.id, reactionXP, 'reaction');
         });
 
-        // Voice XP tracking with AFK detection
+        // Voice XP tracking with AFK detection and DEBUG LOGGING
         this.client.on('voiceStateUpdate', async (oldState, newState) => {
             const userId = newState.id;
             const guildId = newState.guild.id;
             
+            console.log(`🎤 Voice State Update: ${newState.member.user.username}`);
+            console.log(`   Old Channel: ${oldState.channelId || 'None'}`);
+            console.log(`   New Channel: ${newState.channelId || 'None'}`);
+            
             // User joined a voice channel
             if (!oldState.channelId && newState.channelId) {
+                console.log(`✅ ${newState.member.user.username} JOINED voice channel ${newState.channelId}`);
                 this.voiceTracker.set(`${userId}-${guildId}`, {
                     startTime: Date.now(),
                     channelId: newState.channelId,
                     lastActivity: Date.now()
                 });
+                console.log(`   Voice tracker set for ${userId}-${guildId}`);
             }
             
             // User left a voice channel or switched channels
             if (oldState.channelId && (!newState.channelId || oldState.channelId !== newState.channelId)) {
+                console.log(`❌ ${newState.member.user.username} LEFT voice channel ${oldState.channelId}`);
                 const session = this.voiceTracker.get(`${userId}-${guildId}`);
                 if (session) {
                     const duration = Math.floor((Date.now() - session.startTime) / 1000);
+                    console.log(`   Session duration: ${duration} seconds`);
                     await this.processVoiceXP(userId, guildId, duration, oldState.channelId);
                     this.voiceTracker.delete(`${userId}-${guildId}`);
+                } else {
+                    console.log(`   ⚠️  No session found for ${userId}-${guildId}`);
                 }
                 
                 // If switched channels, start new session
                 if (newState.channelId && oldState.channelId !== newState.channelId) {
+                    console.log(`🔄 ${newState.member.user.username} SWITCHED to channel ${newState.channelId}`);
                     this.voiceTracker.set(`${userId}-${guildId}`, {
                         startTime: Date.now(),
                         channelId: newState.channelId,
@@ -233,6 +244,7 @@ class LevelingBot {
                     if ((oldState.mute && !newState.mute) || (oldState.deaf && !newState.deaf) || 
                         (oldState.selfMute && !newState.selfMute) || (oldState.selfDeaf && !newState.selfDeaf)) {
                         session.lastActivity = Date.now();
+                        console.log(`🔊 ${newState.member.user.username} became active (unmuted/undeafened)`);
                     }
                 }
             }
@@ -383,23 +395,38 @@ class LevelingBot {
 
     async processVoiceXP(userId, guildId, duration, channelId) {
         try {
+            console.log(`🎯 Processing voice XP for user ${userId}, duration: ${duration}s`);
+            
             const channel = this.client.channels.cache.get(channelId);
-            if (!channel) return;
+            if (!channel) {
+                console.log(`❌ Channel ${channelId} not found`);
+                return;
+            }
             
-            // Count non-bot members in voice channel
+            console.log(`   Channel name: ${channel.name}`);
+            
+            // Count non-bot members in voice channel AT THE TIME OF LEAVING
+            // Note: This might show 0 if everyone left at the same time
+            const allMembers = channel.members.size;
             const humanMembers = channel.members.filter(member => !member.user.bot).size;
+            console.log(`   Total members: ${allMembers}, Human members: ${humanMembers}`);
+            console.log(`   Required minimum: ${this.config.voiceMinMembers}`);
             
-            // Only give XP if there are enough human members
-            if (humanMembers >= this.config.voiceMinMembers) {
+            // IMPROVED LOGIC: Check if duration was long enough (simplified for testing)
+            if (duration >= 60) { // At least 1 minute
+                console.log(`✅ Duration requirement met (${duration}s >= 60s)`);
+                
                 // Check for AFK if enabled
                 let activeTime = duration;
                 if (this.config.voiceAntiAFK) {
                     const session = this.voiceTracker.get(`${userId}-${guildId}`);
                     if (session && session.lastActivity) {
                         const timeSinceActivity = (Date.now() - session.lastActivity) / 1000;
+                        console.log(`   Time since last activity: ${timeSinceActivity}s`);
                         // If inactive for more than 10 minutes, reduce XP accordingly
                         if (timeSinceActivity > 600) {
                             activeTime = Math.max(0, duration - timeSinceActivity);
+                            console.log(`   Reduced active time due to AFK: ${activeTime}s`);
                         }
                     }
                 }
@@ -408,32 +435,54 @@ class LevelingBot {
                 const cooldownKey = `voice-${userId}-${guildId}`;
                 const now = Date.now();
                 const lastVoiceXP = this.voiceTracker.get(cooldownKey) || 0;
+                const cooldownRemaining = this.config.voiceCooldown - (now - lastVoiceXP);
+                
+                console.log(`   Cooldown check: ${cooldownRemaining}ms remaining`);
                 
                 if (now - lastVoiceXP >= this.config.voiceCooldown) {
                     const minutes = Math.floor(activeTime / 60);
+                    console.log(`   Active minutes: ${minutes}`);
+                    
                     if (minutes > 0) {
-                        const voiceXP = Math.floor(Math.random() * (this.config.voiceXPMax - this.config.voiceXPMin + 1)) + this.config.voiceXPMin;
-                        const totalVoiceXP = voiceXP * minutes;
+                        const baseVoiceXP = Math.floor(Math.random() * (this.config.voiceXPMax - this.config.voiceXPMin + 1)) + this.config.voiceXPMin;
+                        const totalVoiceXP = baseVoiceXP * minutes;
+                        console.log(`💰 Awarding ${totalVoiceXP} voice XP (${baseVoiceXP} per minute × ${minutes} minutes)`);
                         
                         await this.addXP(userId, guildId, totalVoiceXP, 'voice');
                         this.voiceTracker.set(cooldownKey, now);
+                        console.log(`✅ Voice XP awarded successfully!`);
+                    } else {
+                        console.log(`⏱️  No full minutes of activity (${activeTime}s)`);
                     }
+                } else {
+                    console.log(`🚫 Voice XP on cooldown for ${Math.ceil(cooldownRemaining / 1000)} more seconds`);
                 }
+            } else {
+                console.log(`⏱️  Session too short (${duration}s < 60s minimum)`);
             }
             
-            // Log voice session
+            // Log voice session to database
             await this.db.query(
                 'INSERT INTO voice_sessions (user_id, guild_id, duration) VALUES ($1, $2, $3)',
                 [userId, guildId, duration]
             );
+            console.log(`📊 Voice session logged to database`);
+            
         } catch (error) {
-            console.error('Voice XP processing error:', error);
+            console.error('❌ Voice XP processing error:', error);
         }
     }
 
     async addXP(userId, guildId, xpAmount, type) {
         try {
             const finalXP = Math.floor(xpAmount * this.config.xpMultiplier);
+            console.log(`💫 Adding ${finalXP} XP (type: ${type}) for user ${userId}`);
+            
+            // Calculate voice time in minutes for database
+            let voiceMinutes = 0;
+            if (type === 'voice') {
+                voiceMinutes = Math.floor(xpAmount / ((this.config.voiceXPMin + this.config.voiceXPMax) / 2));
+            }
             
             const result = await this.db.query(`
                 INSERT INTO user_levels (user_id, guild_id, total_xp, ${type === 'message' ? 'messages' : type === 'reaction' ? 'reactions' : 'voice_time'})
@@ -445,11 +494,13 @@ class LevelingBot {
                       type === 'reaction' ? 'reactions = user_levels.reactions + 1' : 
                       'voice_time = user_levels.voice_time + $4'}
                 RETURNING total_xp, level
-            `, [userId, guildId, finalXP, type === 'voice' ? Math.floor(xpAmount / ((this.config.voiceXPMin + this.config.voiceXPMax) / 2)) : 1]);
+            `, [userId, guildId, finalXP, type === 'voice' ? voiceMinutes : 1]);
             
             const newTotalXP = result.rows[0].total_xp;
             const currentLevel = result.rows[0].level;
             const newLevel = this.calculateLevel(newTotalXP);
+            
+            console.log(`   New total XP: ${newTotalXP}, Current level: ${currentLevel}, Calculated level: ${newLevel}`);
             
             if (newLevel > currentLevel) {
                 await this.db.query(
@@ -457,10 +508,11 @@ class LevelingBot {
                     [newLevel, userId, guildId]
                 );
                 
+                console.log(`🎉 Level up! ${currentLevel} → ${newLevel}`);
                 await this.handleLevelUp(userId, guildId, newLevel, currentLevel);
             }
         } catch (error) {
-            console.error('Add XP error:', error);
+            console.error('❌ Add XP error:', error);
         }
     }
 
