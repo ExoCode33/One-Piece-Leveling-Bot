@@ -201,6 +201,11 @@ module.exports = {
                     .setStyle(type === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary)
                     .setEmoji('💬'),
                 new ButtonBuilder()
+                    .setCustomId(`leaderboard_short_1_reactions`)
+                    .setLabel('Reactions')
+                    .setStyle(type === 'reactions' ? ButtonStyle.Success : ButtonStyle.Secondary)
+                    .setEmoji('👍'),
+                new ButtonBuilder()
                     .setCustomId(`leaderboard_short_1_voice`)
                     .setLabel('Voice')
                     .setStyle(type === 'voice' ? ButtonStyle.Success : ButtonStyle.Secondary)
@@ -391,6 +396,11 @@ module.exports = {
                     .setLabel('Messages')
                     .setStyle(type === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary)
                     .setEmoji('💬'),
+                new ButtonBuilder()
+                    .setCustomId(`leaderboard_long_${page}_reactions`)
+                    .setLabel('Reactions')
+                    .setStyle(type === 'reactions' ? ButtonStyle.Success : ButtonStyle.Secondary)
+                    .setEmoji('👍'),
                 new ButtonBuilder()
                     .setCustomId(`leaderboard_long_${page}_voice`)
                     .setLabel('Voice')
