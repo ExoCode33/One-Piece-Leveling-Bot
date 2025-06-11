@@ -469,16 +469,19 @@ client.on('interactionCreate', async interaction => {
             const page = parseInt(pageStr);
             
             if (!isNaN(page)) {
-                // Create a mock interaction for the leaderboard command
+                await interaction.deferUpdate();
+                
+                // Create a proper mock interaction for the leaderboard command
                 const mockInteraction = {
                     ...interaction,
+                    deferReply: async () => {}, // Mock function - already deferred with deferUpdate
+                    editReply: async (options) => await interaction.editReply(options),
+                    reply: async (options) => await interaction.editReply(options),
                     options: {
                         getInteger: (name) => name === 'page' ? page : null,
                         getString: (name) => name === 'type' ? type : null
                     }
                 };
-                
-                await interaction.deferUpdate();
                 
                 // Get the leaderboard command and execute it
                 const leaderboardCommand = client.commands.get('leaderboard');
