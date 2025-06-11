@@ -1,6 +1,6 @@
 // src/commands/leaderboard.js - One Piece Themed Leaderboard
 
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Role ID for Pirate King
@@ -13,11 +13,10 @@ function pirateRankEmoji(rank) {
 }
 
 function getThreatLevel(rank) {
-    if (rank === 1) return "Emperor-Class Threat";
-    if (rank === 2) return "Fleet Admiral Target";
-    if (rank === 3) return "Warlord-Level Pirate";
-    if (rank <= 10) return "Grand Line Menace";
-    return "Wanted Pirate";
+    if (rank === 1) return 'EXTREMELY DANGEROUS';
+    if (rank === 2) return 'HIGHLY DANGEROUS';
+    if (rank === 3) return 'VERY DANGEROUS';
+    return 'DANGEROUS';
 }
 
 module.exports = {
@@ -38,66 +37,65 @@ module.exports = {
         const guild = interaction.guild;
         const view = interaction.options.getString('view') || 'short';
 
+        // Check if guild exists
+        if (!guild || !guild.id) {
+            console.error('Guild is undefined or missing ID:', guild);
+            return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
+        }
+
         // Fetch all users from database
         let leaderboard;
         try {
             leaderboard = await xpTracker.getLeaderboard(guild.id);
         } catch (err) {
-            console.error(err);
+            console.error('Database error in leaderboard:', err);
             return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true });
         }
 
-        // === Safe Pirate King role detection ===
+        // Check if leaderboard data exists
+        if (!leaderboard || !Array.isArray(leaderboard)) {
+            console.error('Invalid leaderboard data:', leaderboard);
+            return interaction.reply({ content: "No leaderboard data available.", ephemeral: true });
+        }
+
+        // Pirate King detection (fully error proof)
         let pirateKingUser = null;
-        let kingMember = null;
-        let kingId = null;
-
-        if (LEADERBOARD_EXCLUDE_ROLE && guild && guild.members) {
+        let members = null;
+        if (LEADERBOARD_EXCLUDE_ROLE) {
             try {
-                const members = await guild.members.fetch();
-                const king = members.find(m =>
-                    m.roles &&
-                    m.roles.cache &&
-                    m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE)
-                );
-                if (king) {
-                    kingId = (king.user && king.user.id) ? king.user.id : king.id;
-                }
-
-                if (kingId) {
-                    kingMember = king;
-                    pirateKingUser = leaderboard.find(u => u.userId === kingId) || { userId: kingId, level: 0, xp: 0 };
-                    leaderboard = leaderboard.filter(u => u.userId !== kingId);
+                members = await guild.members.fetch();
+                if (members && members.size) {
+                    const king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
+                    if (king && king.user && king.user.id) {
+                        pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
+                        leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
+                    }
                 }
             } catch (err) {
-                // Just leave pirateKingUser and kingMember null if any error happens
+                pirateKingUser = null; // Explicitly no pirate king if error
             }
         }
 
+        // Sort leaderboard safely
+        leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number');
         leaderboard.sort((a, b) => b.xp - a.xp);
 
         let entriesToShow = [];
-        let title = '🏴‍☠️ One Piece Pirate Leaderboard';
         if (view === 'short') {
             entriesToShow = leaderboard.slice(0, 3);
-            title = '🥇 Top 3 Pirates';
         } else if (view === 'long') {
             entriesToShow = leaderboard.slice(0, 10);
-            title = '🏅 Top 10 Pirates';
         } else {
             // Full view, display all in plaintext (not embed)
             let text = '';
             let rank = 1;
 
             if (pirateKingUser) {
-                const kingDisplay = kingMember && kingMember.displayName ? kingMember.displayName : `Pirate King (ID: ${pirateKingUser.userId})`;
-                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> — Level ${pirateKingUser.level} — ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
+                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
 
             for (const user of leaderboard) {
-                const member = await guild.members.fetch(user.userId).catch(() => null);
-                const name = member ? member.displayName : `Unknown Pirate (ID: ${user.userId})`;
-                text += `${pirateRankEmoji(rank)} ${rank}. **${name}** — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()} — [${getThreatLevel(rank)}]\n`;
+                text += `${pirateRankEmoji(rank)} ${rank}. <@${user.userId}> — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
                 rank++;
             }
 
@@ -105,37 +103,76 @@ module.exports = {
             return interaction.reply({ content: text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text });
         }
 
-        // Build embed for Top 3/Top 10
+        // Create the newspaper-style embed
         const embed = new EmbedBuilder()
-            .setColor(0xf7d560)
-            .setTitle(title);
+            .setColor(0x2f3136); // Dark color to match screenshot
 
-        let desc = '';
+        let description = '';
+
+        // Header
+        description += '📰 **WORLD ECONOMIC NEWS PAPER** 📰\n\n';
+        description += '```\n';
+        description += '┌─────────────────────────────────────┐\n';
+        description += '│     URGENT BOUNTY BULLETIN         │\n';
+        description += '│    TOP CRIMINALS IDENTIFIED        │\n';
+        description += '└─────────────────────────────────────┘\n';
+        description += '```\n\n';
+
+        // Top Threats section
+        description += '━━━━━━━━ 🔥 **TOP THREATS** 🔥 ━━━━━━━━\n\n';
+
         let rank = 1;
-
-        if (pirateKingUser) {
-            const kingDisplay = kingMember && kingMember.displayName ? kingMember.displayName : `Pirate King (ID: ${pirateKingUser.userId})`;
-            desc += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> — Level ${pirateKingUser.level} — ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
-        }
-
         for (const user of entriesToShow) {
             let memberName = null;
             try {
                 const member = await guild.members.fetch(user.userId).catch(() => null);
-                memberName = member ? member.displayName : `Unknown Pirate (ID: ${user.userId})`;
+                memberName = member ? member.displayName.toUpperCase() : `UNKNOWN_PIRATE_${user.userId}`;
             } catch (err) {
-                memberName = `Unknown Pirate (ID: ${user.userId})`;
+                memberName = `UNKNOWN_PIRATE_${user.userId}`;
             }
-            desc += `${pirateRankEmoji(rank)} ${rank}. **${memberName}** — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()} — [${getThreatLevel(rank)}]\n`;
+
+            const bounty = getBountyForLevel(user.level);
+            const threatLevel = getThreatLevel(rank);
+
+            description += '```\n';
+            description += `[RANK ${rank}] ${memberName}\n`;
+            description += `BOUNTY: ฿${bounty.toLocaleString()}\n`;
+            description += `THREAT: ${threatLevel}\n`;
+            description += '```\n';
+
+            // Add level and rep info below each wanted poster
+            description += `🏴‍☠️ ⚔️ Level ${user.level} | ⭐ ${user.xp} Rep\n\n`;
+
             rank++;
         }
 
-        embed.setDescription(desc && desc.length > 0
-            ? desc
-            : "No pirates have earned any bounty yet! Be the first to make your mark on the seas."
-        );
+        // Show remaining count for short view
+        if (view === 'short' && leaderboard.length > 3) {
+            const remaining = leaderboard.length - 3;
+            description += `*... and ${remaining} more dangerous pirates*\n\n`;
+        } else if (view === 'long' && leaderboard.length > 10) {
+            const remaining = leaderboard.length - 10;
+            description += `*... and ${remaining} more dangerous pirates*\n\n`;
+        }
 
-        // Buttons to switch view
+        // Footer
+        description += '```\n';
+        description += '┌─────────────────────────────────────┐\n';
+        description += '│  USE /leaderboard FOR FULL LIST    │\n';
+        description += '│     STAY VIGILANT, STAY SAFE       │\n';
+        description += '└─────────────────────────────────────┘\n';
+        description += '```\n';
+
+        const currentTime = new Date().toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+        });
+        description += `⚠️ **WORLD GOVERNMENT URGENT BULLETIN** ⚠️ • **TOP THREATS ONLY** • Today at ${currentTime}`;
+
+        embed.setDescription(description);
+
+        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('leaderboard_short_1_xp')
