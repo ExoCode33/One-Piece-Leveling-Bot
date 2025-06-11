@@ -116,8 +116,8 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             member = null;
         }
 
-        // Photo frame (consistent size)
-        const frameX = 100;
+        // Photo frame (consistent size and centered)
+        const frameX = 100;  // Centered: (300 - 100) / 2 = 100
         const frameY = 110;
         const frameWidth = 100;
         const frameHeight = 130;
@@ -369,9 +369,10 @@ module.exports = {
                     });
                     attachments.push(attachment);
                     
-                    // Create individual embed for each poster
+                    // Create individual embed for each poster (consistent width)
                     const posterEmbed = new EmbedBuilder()
                         .setColor(pirate.isPirateKing ? 0xFFD700 : 0x1a1a1a)
+                        .setDescription('\u200B') // Invisible character to ensure consistent width
                         .addFields(
                             {
                                 name: pirate.isPirateKing ? '👑 **PIRATE KING**' : `${pirateRankEmoji(rank)} **#${rank}**`,
@@ -400,6 +401,11 @@ module.exports = {
                                        rank === 2 ? 'Rising through the ranks' : 
                                        'New to the Grand Line',
                                 inline: false
+                            },
+                            {
+                                name: '\u200B',
+                                value: '\u200B',
+                                inline: false
                             }
                         )
                         .setImage(`attachment://wanted_poster_${i + 1}.png`);
@@ -408,11 +414,18 @@ module.exports = {
                 }
             }
 
-            // Create header embed
+            // Create header embed (consistent width)
             const headerEmbed = new EmbedBuilder()
                 .setColor(0x8B0000)
                 .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
-                .setDescription('**🎯 TOP MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.')
+                .setDescription('**🎯 TOP MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\u200B')
+                .addFields(
+                    {
+                        name: '\u200B',
+                        value: '\u200B',
+                        inline: false
+                    }
+                )
                 .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
                 .setTimestamp();
 
