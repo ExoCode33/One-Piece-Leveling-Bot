@@ -9,33 +9,16 @@ function getMessageXP(message) {
     // Don't award XP for bot messages or empty messages
     if (message.author.bot || !message.content) return 0;
     
-    // Base XP per message
-    const baseXP = parseInt(process.env.MESSAGE_BASE_XP) || 15;
+    // Get XP range from your environment variables
+    const min = parseInt(process.env.MESSAGE_XP_MIN) || 25;
+    const max = parseInt(process.env.MESSAGE_XP_MAX) || 35;
+    const multiplier = parseFloat(process.env.XP_MULTIPLIER) || 1.0;
     
-    // Length bonus (more XP for longer messages)
-    const length = message.content.length;
-    let lengthBonus = 0;
+    // Calculate random XP within range
+    const baseXP = Math.floor(Math.random() * (max - min + 1)) + min;
+    const finalXP = Math.floor(baseXP * multiplier);
     
-    if (length > 50) lengthBonus += 2;
-    if (length > 100) lengthBonus += 3;
-    if (length > 200) lengthBonus += 5;
-    if (length > 500) lengthBonus += 5; // Cap at reasonable length
-    
-    // Media bonus (images, videos, etc.)
-    const mediaBonus = message.attachments.size > 0 ? 5 : 0;
-    
-    // Link bonus
-    const linkBonus = message.content.match(/https?:\/\/[^\s]+/g) ? 2 : 0;
-    
-    // Calculate total XP
-    const totalXP = baseXP + lengthBonus + mediaBonus + linkBonus;
-    
-    // Add some randomness (±20%)
-    const randomMultiplier = 0.8 + (Math.random() * 0.4);
-    const finalXP = Math.floor(totalXP * randomMultiplier);
-    
-    // Cap XP to reasonable limits
-    return Math.min(Math.max(finalXP, 1), 50);
+    return finalXP;
 }
 
 module.exports = {
