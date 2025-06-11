@@ -1,4 +1,4 @@
-// src/commands/leaderboard.js - Enhanced Leaderboard Command
+// src/commands/leaderboard.js - Fixed Leaderboard Command
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -172,36 +172,41 @@ module.exports = {
                 }
             }
 
-            // Create navigation buttons
-            const buttons = new ActionRowBuilder();
+            // Create navigation buttons (only if multiple pages)
+            const components = [];
+            if (totalPages > 1) {
+                const buttons = new ActionRowBuilder();
 
-            // Previous page button
-            if (page > 1) {
+                // Previous page button
+                if (page > 1) {
+                    buttons.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`leaderboard_${type}_${page - 1}`)
+                            .setLabel('◀ Previous')
+                            .setStyle(ButtonStyle.Primary)
+                    );
+                }
+
+                // Page info button (disabled)
                 buttons.addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_${type}_${page - 1}`)
-                        .setLabel('◀ Previous')
-                        .setStyle(ButtonStyle.Primary)
+                        .setCustomId('page_info')
+                        .setLabel(`${page}/${totalPages}`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true)
                 );
-            }
 
-            // Page info button (disabled)
-            buttons.addComponents(
-                new ButtonBuilder()
-                    .setCustomId('page_info')
-                    .setLabel(`${page}/${totalPages}`)
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(true)
-            );
+                // Next page button
+                if (page < totalPages) {
+                    buttons.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`leaderboard_${type}_${page + 1}`)
+                            .setLabel('Next ▶')
+                            .setStyle(ButtonStyle.Primary)
+                    );
+                }
 
-            // Next page button
-            if (page < totalPages) {
-                buttons.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`leaderboard_${type}_${page + 1}`)
-                        .setLabel('Next ▶')
-                        .setStyle(ButtonStyle.Primary)
-                );
+                components.push(buttons);
             }
 
             // Type selection buttons
@@ -234,8 +239,6 @@ module.exports = {
                         .setEmoji('🔊')
                 );
 
-            const components = [];
-            if (totalPages > 1) components.push(buttons);
             components.push(typeButtons);
 
             await interaction.editReply({ 
@@ -252,41 +255,3 @@ module.exports = {
         }
     }
 };
-
-// Handle button interactions for leaderboard pagination
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
-    
-    const customId = interaction.customId;
-    if (!customId.startsWith('leaderboard_')) return;
-    
-    try {
-        const [, type, pageStr] = customId.split('_');
-        const page = parseInt(pageStr);
-        
-        if (isNaN(page)) return;
-        
-        // Re-run the leaderboard command with new parameters
-        const newInteraction = {
-            ...interaction,
-            options: {
-                getInteger: (name) => name === 'page' ? page : null,
-                getString: (name) => name === 'type' ? type : null
-            }
-        };
-        
-        await interaction.deferUpdate();
-        
-        // Use the same logic as the main command
-        await module.exports.execute(newInteraction, interaction.client);
-        
-    } catch (error) {
-        console.error('Error handling leaderboard button:', error);
-        try {
-            await interaction.followUp({ 
-                content: '❌ An error occurred while updating the leaderboard.', 
-                ephemeral: true 
-            });
-        } catch {}
-    }
-});
