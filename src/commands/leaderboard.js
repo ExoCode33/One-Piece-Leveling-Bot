@@ -34,19 +34,38 @@ module.exports = {
                 )
         ),
     async execute(interaction, client, xpTracker) {
-        const guild = interaction.guild;
-        const view = interaction.options.getString('view') || 'short';
-
-        // Check if guild exists
-        if (!guild || !guild.id) {
-            console.error('Guild is undefined or missing ID:', guild);
-            return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
+        // Multiple ways to get guild information
+        let guild = interaction.guild;
+        let guildId = interaction.guildId;
+        
+        // If interaction.guild is undefined, try to fetch it
+        if (!guild && guildId) {
+            try {
+                guild = await client.guilds.fetch(guildId);
+            } catch (err) {
+                console.error('Failed to fetch guild:', err);
+            }
         }
+        
+        // If still no guild, check if this is a DM
+        if (!guild || !guildId) {
+            console.log('Command used outside of guild context:', {
+                hasGuild: !!guild,
+                guildId: guildId,
+                channelType: interaction.channel?.type
+            });
+            return interaction.reply({ 
+                content: "This command can only be used in a server, not in DMs.", 
+                ephemeral: true 
+            });
+        }
+
+        const view = interaction.options.getString('view') || 'short';
 
         // Fetch all users from database
         let leaderboard;
         try {
-            leaderboard = await xpTracker.getLeaderboard(guild.id);
+            leaderboard = await xpTracker.getLeaderboard(guildId);
         } catch (err) {
             console.error('Database error in leaderboard:', err);
             return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true });
