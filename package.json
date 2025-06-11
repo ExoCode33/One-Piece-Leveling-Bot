@@ -1,11 +1,12 @@
 {
   "name": "discord-leveling-bot",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "A comprehensive Discord leveling bot with voice, message, and reaction tracking",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "keywords": [
     "discord",
@@ -13,7 +14,8 @@
     "leveling",
     "xp",
     "voice",
-    "postgresql"
+    "postgresql",
+    "railway"
   ],
   "author": "Your Name",
   "license": "MIT",
@@ -26,6 +28,15 @@
     "nodemon": "^3.0.2"
   },
   "engines": {
-    "node": ">=16.0.0"
-  }
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "your-repository-url"
+  },
+  "bugs": {
+    "url": "your-repository-url/issues"
+  },
+  "homepage": "your-repository-url#readme"
 }
