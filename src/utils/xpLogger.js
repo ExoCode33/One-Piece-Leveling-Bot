@@ -1,5 +1,9 @@
+// src/utils/xpLogger.js - One Piece Themed Professional XP Logging
+
+const { EmbedBuilder } = require('discord.js');
+
 // === One Piece Themed Professional XP Logging Function ===
-async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
+async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
     const logChannelId = process.env.XP_LOG_CHANNEL;
     if (!logChannelId || process.env.XP_LOG_ENABLED !== 'true') return;
 
@@ -51,13 +55,9 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
                         inline: true 
                     });
                 }
-                if (additionalInfo.messageLength) {
-                    embed.addFields({ 
-                        name: '📏 Message Length', 
-                        value: `${additionalInfo.messageLength} chars`, 
-                        inline: true 
-                    });
-                }
+                embed.setAuthor({ 
+                    name: 'Marine Intelligence Report'
+                });
                 break;
 
             case 'reaction':
@@ -92,6 +92,9 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
                         inline: true 
                     });
                 }
+                embed.setAuthor({ 
+                    name: 'Crew Bond Strengthened'
+                });
                 break;
 
             case 'voice':
@@ -126,6 +129,9 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
                         inline: true 
                     });
                 }
+                embed.setAuthor({ 
+                    name: 'Ship Assembly Log'
+                });
                 break;
 
             case 'levelup':
@@ -151,12 +157,30 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
 
                 // Add special level milestone messages
                 if (additionalInfo.newLevel === 50) {
-                    embed.setDescription(`**${user.username}** has reached the legendary Level 50!\n*🏴‍☠️ They're ready to challenge the Yonko! 🏴‍☠️*`);
+                    embed.setDescription(`**${user.username}** has reached the legendary Level 50!\n*🏴‍☠️ They've ascended to YONKO status! One of the Four Emperors! 🏴‍☠️*`);
+                } else if (additionalInfo.newLevel === 45) {
+                    embed.setDescription(`**${user.username}** has reached Level 45!\n*⚡ They've become a feared Yonko Commander! ⚡*`);
+                } else if (additionalInfo.newLevel === 40) {
+                    embed.setDescription(`**${user.username}** has reached Level 40!\n*🗡️ They've achieved Warlord status! 🗡️*`);
+                } else if (additionalInfo.newLevel === 35) {
+                    embed.setDescription(`**${user.username}** has reached Level 35!\n*🧭 They've become a trusted First Mate! 🧭*`);
+                } else if (additionalInfo.newLevel === 30) {
+                    embed.setDescription(`**${user.username}** has reached Level 30!\n*🗺️ They've mastered navigation of the Grand Line! 🗺️*`);
                 } else if (additionalInfo.newLevel === 25) {
-                    embed.setDescription(`**${user.username}** has reached Level 25!\n*⚡ Their name echoes across the Grand Line! ⚡*`);
+                    embed.setDescription(`**${user.username}** has reached Level 25!\n*⚓ They've earned the rank of Boatswain! ⚓*`);
+                } else if (additionalInfo.newLevel === 20) {
+                    embed.setDescription(`**${user.username}** has reached Level 20!\n*⚓ They've become the ship's Helmsman! ⚓*`);
+                } else if (additionalInfo.newLevel === 15) {
+                    embed.setDescription(`**${user.username}** has reached Level 15!\n*💣 They've proven themselves as a skilled Gunner! 💣*`);
                 } else if (additionalInfo.newLevel === 10) {
-                    embed.setDescription(`**${user.username}** has reached Level 10!\n*🌊 They've proven themselves on the seas! 🌊*`);
+                    embed.setDescription(`**${user.username}** has reached Level 10!\n*🧨 They've advanced to Powder Monkey! 🧨*`);
+                } else if (additionalInfo.newLevel === 5) {
+                    embed.setDescription(`**${user.username}** has reached Level 5!\n*🔨 They've become a reliable Deckhand! 🔨*`);
                 }
+                
+                embed.setAuthor({ 
+                    name: 'WORLD GOVERNMENT BOUNTY UPDATE'
+                });
                 break;
         }
 
@@ -165,36 +189,10 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
             embed.setThumbnail(user.displayAvatarURL({ size: 128 }));
         }
 
-        // Add special author field for different types
-        switch (type) {
-            case 'message':
-                embed.setAuthor({ 
-                    name: 'Marine Intelligence Report', 
-                    iconURL: 'https://i.imgur.com/rZkZrjp.png' // Marine symbol (you can replace)
-                });
-                break;
-            case 'reaction':
-                embed.setAuthor({ 
-                    name: 'Crew Bond Strengthened', 
-                    iconURL: 'https://i.imgur.com/8kfzAuQ.png' // Strawhat symbol (you can replace)
-                });
-                break;
-            case 'voice':
-                embed.setAuthor({ 
-                    name: 'Ship Assembly Log', 
-                    iconURL: 'https://i.imgur.com/mL8fzgR.png' // Ship symbol (you can replace)
-                });
-                break;
-            case 'levelup':
-                embed.setAuthor({ 
-                    name: 'WORLD GOVERNMENT BOUNTY UPDATE', 
-                    iconURL: 'https://i.imgur.com/bEpVzNY.png' // World Gov symbol (you can replace)
-                });
-                break;
-        }
-
         await channel.send({ embeds: [embed] });
     } catch (err) {
         console.error('[BOUNTY LOG] Failed to send professional log:', err);
     }
 }
+
+module.exports = { sendXPLog };
