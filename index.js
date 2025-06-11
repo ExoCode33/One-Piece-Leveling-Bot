@@ -566,6 +566,9 @@ class LevelingBot {
         try {
             const guild = interaction.guild;
             const excludeRoleId = this.leaderboardConfig.excludeRole;
+            const shortVersion = interaction.options.getBoolean('short_version') || false;
+            
+            debug.command(`Leaderboard command - Short version: ${shortVersion}`);
             
             const result = await this.db.query(
                 'SELECT user_id, level, total_xp FROM user_levels WHERE guild_id = $1 ORDER BY total_xp DESC LIMIT 25',
@@ -604,7 +607,9 @@ class LevelingBot {
                 }
             }
 
-            regularPirates = regularPirates.slice(0, 10);
+            // Limit regular pirates based on short_version option
+            const maxRegularPirates = shortVersion ? 3 : 10;
+            regularPirates = regularPirates.slice(0, maxRegularPirates);
 
             if (pirateEmperors.length === 0 && regularPirates.length === 0) {
                 return await interaction.reply({ 
@@ -616,13 +621,15 @@ class LevelingBot {
             const embed = new EmbedBuilder()
                 .setColor('#D4AF37')
                 .setTitle('📰 WORLD ECONOMIC NEWS PAPER 📰')
-                .setDescription('**═══════════════════════════════════**\n🚨 **EMERGENCY BOUNTY UPDATE** 🚨\n**═══════════════════════════════════**')
+                .setDescription(`**═══════════════════════════════════**\n🚨 **${shortVersion ? 'URGENT' : 'EMERGENCY'} BOUNTY UPDATE** 🚨\n**═══════════════════════════════════**`)
                 .setFooter({ 
-                    text: '⚖️ WORLD GOVERNMENT OFFICIAL PUBLICATION ⚖️ • MARINE HEADQUARTERS'
+                    text: `⚖️ WORLD GOVERNMENT OFFICIAL PUBLICATION ⚖️ • ${shortVersion ? 'URGENT BULLETIN' : 'MARINE HEADQUARTERS'}`
                 })
                 .setTimestamp();
             
-            let description = '```\n╔═══════════════════════════════════╗\n║        MOST WANTED CRIMINALS      ║\n║     DEAD OR ALIVE - REWARD SET    ║\n╚═══════════════════════════════════╝\n```\n\n';
+            let description = shortVersion ? 
+                '```\n╔═══════════════════════════════════╗\n║       URGENT BOUNTY BULLETIN      ║\n║      TOP CRIMINALS IDENTIFIED     ║\n╚═══════════════════════════════════╝\n```\n\n' :
+                '```\n╔═══════════════════════════════════╗\n║        MOST WANTED CRIMINALS      ║\n║     DEAD OR ALIVE - REWARD SET    ║\n╚═══════════════════════════════════╝\n```\n\n';
 
             // Add Pirate Kings section
             if (pirateEmperors.length > 0) {
@@ -646,7 +653,11 @@ class LevelingBot {
 
             // Add regular competition section
             if (regularPirates.length > 0) {
-                description += '```diff\n- ═══════ 🏆 ACTIVE BOUNTIES 🏆 ═══════\n```\n\n';
+                const sectionTitle = shortVersion ? 
+                    '```diff\n- ═══════ 🔥 TOP THREATS 🔥 ═══════\n```\n\n' :
+                    '```diff\n- ═══════ 🏆 ACTIVE BOUNTIES 🏆 ═══════\n```\n\n';
+                
+                description += sectionTitle;
                 
                 for (let i = 0; i < regularPirates.length; i++) {
                     const userData = regularPirates[i];
@@ -675,13 +686,26 @@ class LevelingBot {
                     description += '```\n';
                     description += `${rankEmoji} ⚔️ **Level ${userData.level}** | ⭐ **${userData.totalXp.toLocaleString()} Rep**\n\n`;
                 }
+                
+                // Add "and X more..." if short version and there are more pirates
+                if (shortVersion && result.rows.length > 3 + pirateEmperors.length) {
+                    const remainingCount = Math.min(result.rows.length - 3 - pirateEmperors.length, 7);
+                    description += `*... and ${remainingCount} more dangerous pirates*\n\n`;
+                }
             }
             
-            description += '```\n╔═══════════════════════════════════╗\n║  REPORT SIGHTINGS TO YOUR LOCAL   ║\n║        MARINE BASE IMMEDIATELY    ║\n╚═══════════════════════════════════╝\n```\n';
+            const footerMessage = shortVersion ?
+                '```\n╔═══════════════════════════════════╗\n║   USE /leaderboard FOR FULL LIST  ║\n║     STAY VIGILANT, STAY SAFE      ║\n╚═══════════════════════════════════╝\n```\n' :
+                '```\n╔═══════════════════════════════════╗\n║  REPORT SIGHTINGS TO YOUR LOCAL   ║\n║        MARINE BASE IMMEDIATELY    ║\n╚═══════════════════════════════════╝\n```\n';
+            
+            description += footerMessage;
             
             embed.setDescription(description);
             
-            let footerText = '⚖️ WORLD GOVERNMENT OFFICIAL PUBLICATION ⚖️ • MARINE HEADQUARTERS';
+            let footerText = shortVersion ? 
+                '⚖️ WORLD GOVERNMENT URGENT BULLETIN ⚖️ • TOP THREATS ONLY' :
+                '⚖️ WORLD GOVERNMENT OFFICIAL PUBLICATION ⚖️ • MARINE HEADQUARTERS';
+                
             if (pirateEmperors.length > 0) {
                 const kingText = pirateEmperors.length === 1 ? 'Pirate King reigns' : 'Pirate Kings reign';
                 footerText = `🚨 ALERT: ${kingText} supreme! 🚨 • ${footerText}`;
@@ -906,7 +930,12 @@ class LevelingBot {
             
             new SlashCommandBuilder()
                 .setName('leaderboard')
-                .setDescription('View the server leaderboard'),
+                .setDescription('View the server leaderboard')
+                .addBooleanOption(option =>
+                    option.setName('short_version')
+                        .setDescription('Show only top 3 pirates (true) or top 10 pirates (false)')
+                        .setRequired(false)
+                ),
             
             new SlashCommandBuilder()
                 .setName('setlevelrole')
