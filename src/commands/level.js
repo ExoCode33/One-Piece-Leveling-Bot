@@ -1,37 +1,42 @@
-// --- Add at the bottom of your level.js ---
+const { SlashCommandBuilder } = require('discord.js');
 
-/**
- * Awards message XP to a user.
- * Customize the XP calculation and database update as needed.
- */
-async function giveXP(message, client) {
-    // EXAMPLE: Award a flat 10 XP per message (replace with your logic!)
-    const xpAmount = 10;
-    // TODO: Add your database update logic here if needed
-    return xpAmount;
-}
-module.exports.giveXP = giveXP;
+// Existing level role export for /levelroles, from earlier fix
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('level')
+        .setDescription('Shows your current level and XP.'),
 
-/**
- * Awards reaction XP to a user.
- * Customize the XP calculation and database update as needed.
- */
-async function giveReactionXP(reaction, user, client) {
-    // EXAMPLE: Award a flat 5 XP per reaction (replace with your logic!)
-    const xpAmount = 5;
-    // TODO: Add your database update logic here if needed
-    return xpAmount;
-}
-module.exports.giveReactionXP = giveReactionXP;
+    async execute(interaction, client) {
+        try {
+            await interaction.deferReply({ ephemeral: true });
 
-/**
- * Awards voice XP to a user.
- * Add your tracking/anti-AFK logic as needed.
- */
-async function giveVoiceXP(voiceState, client) {
-    // EXAMPLE: Award a flat 2 XP per voice event (replace with your logic!)
-    const xpAmount = 2;
-    // TODO: Add your database update logic here if needed
-    return xpAmount;
-}
-module.exports.giveVoiceXP = giveVoiceXP;
+            const userId = interaction.user.id;
+            const guildId = interaction.guildId;
+            // Fetch user from DB
+            const query = `
+                SELECT total_xp, level
+                FROM user_levels
+                WHERE user_id = $1 AND guild_id = $2
+                LIMIT 1
+            `;
+            const result = await client.db.query(query, [userId, guildId]);
+
+            if (!result.rows.length) {
+                return await interaction.editReply("You have no XP yet! Send messages to start leveling up.");
+            }
+
+            const row = result.rows[0];
+            await interaction.editReply(
+                `You are Level **${row.level}** with **${row.total_xp} XP**!`
+            );
+        } catch (err) {
+            console.error('Error in /level:', err);
+            try {
+                await interaction.editReply('An error occurred while showing your level.');
+            } catch {}
+        }
+    },
+
+    // Also include your levelroles code here if you want both in the same file,
+    // or keep them in separate exports/files if your bot uses one command per file.
+};
