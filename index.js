@@ -58,6 +58,7 @@ class LevelingBot {
 
         // Level roles from environment variables
         this.levelRoles = {
+            0: process.env.LEVEL_0_ROLE || null,  // Starter role
             5: process.env.LEVEL_5_ROLE || null,
             10: process.env.LEVEL_10_ROLE || null,
             15: process.env.LEVEL_15_ROLE || null,
@@ -255,6 +256,9 @@ class LevelingBot {
                     case 'reload':
                         await this.handleReloadCommand(interaction);
                         break;
+                    case 'initrookies':
+                        await this.handleInitRookiesCommand(interaction);
+                        break;
                 }
             } catch (error) {
                 console.error('Command error:', error);
@@ -376,17 +380,17 @@ class LevelingBot {
 
     getBountyForLevel(level) {
         // One Piece accurate bounty progression
-        if (level <= 0) return '0';
-        if (level <= 5) return '30,000,000';        // Early East Blue level (like Arlong)
-        if (level <= 10) return '81,000,000';       // Around Don Krieg/Kuro level
-        if (level <= 15) return '120,000,000';      // Crocodile pre-timeskip level
-        if (level <= 20) return '200,000,000';      // Bellamy/Foxy level
-        if (level <= 25) return '320,000,000';      // Pre-timeskip Luffy level
-        if (level <= 30) return '500,000,000';      // Post-timeskip Luffy Dressrosa
-        if (level <= 35) return '860,000,000';      // Charlotte Cracker level
-        if (level <= 40) return '1,057,000,000';    // Charlotte Katakuri level
-        if (level <= 45) return '1,500,000,000';    // Luffy post-Wano (Gear 5)
-        if (level <= 50) return '3,000,000,000';    // Current Luffy bounty
+        if (level <= 0) return '0';              // No bounty yet
+        if (level <= 5) return '30,000,000';     // Early East Blue level (like Arlong)
+        if (level <= 10) return '81,000,000';    // Around Don Krieg/Kuro level
+        if (level <= 15) return '120,000,000';   // Crocodile pre-timeskip level
+        if (level <= 20) return '200,000,000';   // Bellamy/Foxy level
+        if (level <= 25) return '320,000,000';   // Pre-timeskip Luffy level
+        if (level <= 30) return '500,000,000';   // Post-timeskip Luffy Dressrosa
+        if (level <= 35) return '860,000,000';   // Charlotte Cracker level
+        if (level <= 40) return '1,057,000,000'; // Charlotte Katakuri level
+        if (level <= 45) return '1,500,000,000'; // Luffy post-Wano (Gear 5)
+        if (level <= 50) return '3,000,000,000'; // Current Luffy bounty
         
         // For levels above 50 - beyond current manga
         if (level <= 55) return '4,000,000,000';    // Approaching Yonko level
@@ -401,6 +405,7 @@ class LevelingBot {
 
     getFlavorTextForLevel(level) {
         const flavorTexts = {
+            0: "*A new face has appeared. No bounty issued yet. Keep watching...*",
             5: "*A rookie pirate causing trouble in the East Blue. Standard bounty issued.*",
             10: "*This pirate has defeated several Marine lieutenants. Increase surveillance.*",
             15: "*ALERT: Pirate has entered the Grand Line. Logia Devil Fruit user reported.*",
@@ -579,20 +584,24 @@ class LevelingBot {
         const neededXP = nextLevelXP - currentLevelXP;
         const bountyAmount = this.getBountyForLevel(userData.level);
         
+        // Handle level 0 display
+        const bountyDisplay = userData.level === 0 ? 'No Bounty Yet' : `₿${bountyAmount}`;
+        const statusText = userData.level === 0 ? 'Rookie' : `Level ${userData.level} Pirate`;
+        
         const embed = new EmbedBuilder()
-            .setColor('#FF6B00')
-            .setTitle(`🏴‍☠️ ${targetUser.username}'s Bounty Poster`)
+            .setColor(userData.level === 0 ? '#95a5a6' : '#FF6B00')
+            .setTitle(`🏴‍☠️ ${targetUser.username}'s ${userData.level === 0 ? 'Rookie Profile' : 'Bounty Poster'}`)
             .setThumbnail(targetUser.displayAvatarURL())
             .addFields(
-                { name: '💰 Current Bounty', value: `₿${bountyAmount}`, inline: true },
-                { name: '⚔️ Pirate Level', value: userData.level.toString(), inline: true },
+                { name: '💰 Current Bounty', value: bountyDisplay, inline: true },
+                { name: '⚔️ Status', value: statusText, inline: true },
                 { name: '⭐ Total Reputation', value: userData.total_xp.toLocaleString(), inline: true },
-                { name: '📈 Progress to Next Bounty', value: `${progressXP.toLocaleString()}/${neededXP.toLocaleString()} Rep`, inline: true },
+                { name: '📈 Progress to Next Level', value: `${progressXP.toLocaleString()}/${neededXP.toLocaleString()} Rep`, inline: true },
                 { name: '💬 Messages Sent', value: userData.messages.toLocaleString(), inline: true },
                 { name: '👍 Reactions Given', value: userData.reactions.toLocaleString(), inline: true },
                 { name: '🎤 Voice Activity', value: `${Math.floor(userData.voice_time / 60)}h ${userData.voice_time % 60}m`, inline: true }
             )
-            .setFooter({ text: 'WANTED • DEAD OR ALIVE • World Government' })
+            .setFooter({ text: userData.level === 0 ? 'ROOKIE • WORLD GOVERNMENT MONITORING' : 'WANTED • DEAD OR ALIVE • World Government' })
             .setTimestamp();
         
         await interaction.reply({ embeds: [embed] });
@@ -839,7 +848,12 @@ class LevelingBot {
             new SlashCommandBuilder()
                 .setName('reload')
                 .setDescription('Reload configuration from environment variables')
-                .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+            new SlashCommandBuilder()
+                .setName('initrookies')
+                .setDescription('Assign Level 0 role to all members without bounty roles')
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         ];
 
         this.client.once('ready', async () => {
