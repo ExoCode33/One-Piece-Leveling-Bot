@@ -445,15 +445,52 @@ for (const command of commandFiles) {
 
 // === Slash Command Handler ===
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isCommand()) return;
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
-
+    if (!interaction.isCommand() && !interaction.isButton()) return;
+    
     try {
-        await command.execute(interaction, client);
+        if (interaction.isCommand()) {
+            const command = client.commands.get(interaction.commandName);
+            if (!command) return;
+            
+            await command.execute(interaction, client);
+        }
+        
+        // Handle button interactions for leaderboard pagination
+        if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
+            const [, type, pageStr] = interaction.customId.split('_');
+            const page = parseInt(pageStr);
+            
+            if (!isNaN(page)) {
+                // Create a mock interaction for the leaderboard command
+                const mockInteraction = {
+                    ...interaction,
+                    options: {
+                        getInteger: (name) => name === 'page' ? page : null,
+                        getString: (name) => name === 'type' ? type : null
+                    }
+                };
+                
+                await interaction.deferUpdate();
+                
+                // Get the leaderboard command and execute it
+                const leaderboardCommand = client.commands.get('leaderboard');
+                if (leaderboardCommand) {
+                    await leaderboardCommand.execute(mockInteraction, client);
+                }
+            }
+        }
     } catch (error) {
-        console.error(error);
-        await interaction.reply({ content: 'There was an error executing this command.', ephemeral: true });
+        console.error('Error handling interaction:', error);
+        try {
+            const errorMessage = 'An error occurred while executing this command.';
+            if (interaction.deferred) {
+                await interaction.editReply(errorMessage);
+            } else {
+                await interaction.reply({ content: errorMessage, ephemeral: true });
+            }
+        } catch (e) {
+            console.error('Error sending error message:', e);
+        }
     }
 });
 
