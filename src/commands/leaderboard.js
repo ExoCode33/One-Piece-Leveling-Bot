@@ -57,67 +57,55 @@ function getThreatLevelShort(level) {
 // Enhanced wanted poster creation with authentic One Piece styling
 async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
     try {
-        const canvas = Canvas.createCanvas(250, 320); // Larger poster size
+        // FIXED SIZE FOR ALL POSTERS
+        const canvas = Canvas.createCanvas(300, 400);
         const ctx = canvas.getContext('2d');
 
         // Create dark textured background
-        const gradient = ctx.createLinearGradient(0, 0, 0, 320);
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
         gradient.addColorStop(0, '#0a0a0a');
         gradient.addColorStop(0.5, '#111111');
         gradient.addColorStop(1, '#080808');
         ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 250, 320);
+        ctx.fillRect(0, 0, 300, 400);
 
         // Add dark texture/grunge effects
         ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
         for (let i = 0; i < 100; i++) {
             ctx.beginPath();
-            ctx.arc(Math.random() * 250, Math.random() * 320, Math.random() * 2, 0, Math.PI * 2);
+            ctx.arc(Math.random() * 300, Math.random() * 400, Math.random() * 2, 0, Math.PI * 2);
             ctx.fill();
-        }
-
-        // Add noise texture
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        for (let i = 0; i < 200; i++) {
-            ctx.fillRect(Math.random() * 250, Math.random() * 320, 1, 1);
         }
 
         // Main red border (thick)
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 6;
-        ctx.strokeRect(3, 3, 244, 314);
+        ctx.lineWidth = 8;
+        ctx.strokeRect(4, 4, 292, 392);
 
         // Inner decorative border
         ctx.strokeStyle = '#DC143C';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(9, 9, 232, 302);
+        ctx.lineWidth = 3;
+        ctx.strokeRect(12, 12, 276, 376);
 
-        // Test if text rendering works at all
-        ctx.save();
+        // === TEXT RENDERING WITH SIMPLE APPROACH ===
+        
+        // Red rectangle for "WANTED" text
         ctx.fillStyle = '#FF0000';
-        ctx.font = '20px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillRect(50, 30, 150, 30); // Red background for text
+        ctx.fillRect(75, 25, 150, 35);
+        
+        // White rectangle for "DEAD OR ALIVE"
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillText('WANTED', 125, 50);
-        ctx.restore();
-
-        // Smaller subtitle
-        ctx.save();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillRect(75, 55, 100, 15); // White background
-        ctx.fillStyle = '#000000';
-        ctx.fillText('DEAD OR ALIVE', 125, 67);
-        ctx.restore();
+        ctx.fillRect(90, 65, 120, 20);
+        
+        // For now, let's skip text and focus on layout
+        // We'll add simple shapes to represent text areas
 
         // Decorative line under header
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.moveTo(30, 80);
-        ctx.lineTo(220, 80);
+        ctx.moveTo(40, 95);
+        ctx.lineTo(260, 95);
         ctx.stroke();
 
         // Get user avatar and create photo frame
@@ -128,155 +116,106 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             member = null;
         }
 
-        // Photo frame (larger, polaroid style)
-        const frameX = 75;
-        const frameY = 90;
+        // Photo frame (consistent size)
+        const frameX = 100;
+        const frameY = 110;
         const frameWidth = 100;
-        const frameHeight = 120;
+        const frameHeight = 130;
         
         // White photo frame background
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(frameX - 5, frameY - 5, frameWidth + 10, frameHeight + 10);
+        ctx.fillRect(frameX - 8, frameY - 8, frameWidth + 16, frameHeight + 16);
         
         // Photo frame shadow
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(frameX - 3, frameY - 3, frameWidth + 6, frameHeight + 6);
+        ctx.fillRect(frameX - 6, frameY - 6, frameWidth + 12, frameHeight + 12);
         
         // Photo frame border
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(frameX - 5, frameY - 5, frameWidth + 10, frameHeight + 10);
+        ctx.lineWidth = 3;
+        ctx.strokeRect(frameX - 8, frameY - 8, frameWidth + 16, frameHeight + 16);
 
         if (member) {
-            const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256 });
-            const avatar = await Canvas.loadImage(avatarURL);
-            
-            // Clip to photo area
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(frameX, frameY, frameWidth, frameHeight - 25); // Leave space for name
-            ctx.clip();
-            
-            // Draw avatar to fill the frame
-            const aspectRatio = avatar.width / avatar.height;
-            let drawWidth = frameWidth;
-            let drawHeight = frameWidth / aspectRatio;
-            
-            if (drawHeight < frameHeight - 25) {
-                drawHeight = frameHeight - 25;
-                drawWidth = drawHeight * aspectRatio;
+            try {
+                const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256 });
+                const avatar = await Canvas.loadImage(avatarURL);
+                
+                // Clip to photo area
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(frameX, frameY, frameWidth, frameHeight - 30); // Leave space for name
+                ctx.clip();
+                
+                // Draw avatar to fill the frame
+                const aspectRatio = avatar.width / avatar.height;
+                let drawWidth = frameWidth;
+                let drawHeight = frameWidth / aspectRatio;
+                
+                if (drawHeight < frameHeight - 30) {
+                    drawHeight = frameHeight - 30;
+                    drawWidth = drawHeight * aspectRatio;
+                }
+                
+                const drawX = frameX + (frameWidth - drawWidth) / 2;
+                const drawY = frameY + (frameHeight - 30 - drawHeight) / 2;
+                
+                ctx.drawImage(avatar, drawX, drawY, drawWidth, drawHeight);
+                ctx.restore();
+            } catch (imgError) {
+                console.log('Avatar loading failed, using placeholder');
+                ctx.fillStyle = '#DDD';
+                ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 30);
             }
-            
-            const drawX = frameX + (frameWidth - drawWidth) / 2;
-            const drawY = frameY + (frameHeight - 25 - drawHeight) / 2;
-            
-            ctx.drawImage(avatar, drawX, drawY, drawWidth, drawHeight);
-            ctx.restore();
         } else {
             // Placeholder if no avatar
             ctx.fillStyle = '#DDD';
-            ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 25);
-            ctx.fillStyle = '#666';
-            ctx.font = '12px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('NO PHOTO', frameX + frameWidth/2, frameY + (frameHeight - 25)/2);
+            ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 30);
         }
 
         // Black name zone below photo
         ctx.fillStyle = '#000000';
-        ctx.fillRect(frameX, frameY + frameHeight - 25, frameWidth, 25);
+        ctx.fillRect(frameX, frameY + frameHeight - 30, frameWidth, 30);
 
-        // Pirate name on black zone with white text
-        const displayName = member ? member.displayName : `User ${user.userId}`;
-        ctx.save();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '10px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 8);
-        ctx.restore();
-
-        // Bounty amount with background
-        ctx.save();
+        // Red rectangle for bounty
         ctx.fillStyle = '#8B0000';
-        ctx.fillRect(50, 215, 150, 25);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '16px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`B${bounty.toLocaleString()}`, 125, 232);
-        ctx.restore();
+        ctx.fillRect(75, 260, 150, 30);
 
-        // Berry symbol decoration
-        ctx.save();
+        // Yellow rectangle for "BERRY"
         ctx.fillStyle = '#FFD700';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('BERRY', 125, 250);
-        ctx.restore();
+        ctx.fillRect(110, 295, 80, 20);
 
-        // Threat level box with white background for text
-        const threatBoxY = 260;
-        ctx.fillStyle = 'rgba(139, 0, 0, 0.2)';
-        ctx.fillRect(25, threatBoxY, 200, 35);
+        // Threat level box
+        const threatBoxY = 325;
+        ctx.fillStyle = 'rgba(139, 0, 0, 0.3)';
+        ctx.fillRect(30, threatBoxY, 240, 40);
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(25, threatBoxY, 200, 35);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, threatBoxY, 240, 40);
 
         // White background for threat text
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(30, threatBoxY + 2, 190, 31);
+        ctx.fillRect(35, threatBoxY + 5, 230, 30);
 
-        ctx.fillStyle = '#000000';
-        ctx.font = '8px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('THREAT ASSESSMENT', 125, threatBoxY + 12);
-        
-        // Split threat text into lines
-        ctx.font = '7px Arial';
-        const words = threatLevel.split(' ');
-        const maxWordsPerLine = 4;
-        const line1 = words.slice(0, maxWordsPerLine).join(' ');
-        const line2 = words.slice(maxWordsPerLine).join(' ');
-        ctx.fillText(line1, 125, threatBoxY + 22);
-        if (line2) ctx.fillText(line2, 125, threatBoxY + 30);
-
-        // Level and XP info with background
-        ctx.save();
+        // Level/XP info background
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(50, 300, 150, 15);
-        ctx.fillStyle = '#000000';
-        ctx.font = '9px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Level ${user.level} - ${user.xp.toLocaleString()} XP`, 125, 310);
-        ctx.restore();
+        ctx.fillRect(75, 375, 150, 20);
 
         // Rank badge in corner
-        const badgeX = 220;
-        const badgeY = 35;
+        const badgeX = 260;
+        const badgeY = 45;
         
         // Badge background
         ctx.fillStyle = '#FFD700';
         ctx.beginPath();
-        ctx.arc(badgeX, badgeY, 15, 0, Math.PI * 2);
+        ctx.arc(badgeX, badgeY, 20, 0, Math.PI * 2);
         ctx.fill();
         
         // Badge border
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(badgeX, badgeY, 15, 0, Math.PI * 2);
+        ctx.arc(badgeX, badgeY, 20, 0, Math.PI * 2);
         ctx.stroke();
-        
-        // Rank text with background
-        ctx.save();
-        ctx.fillStyle = '#8B0000';
-        ctx.font = '8px Arial';
-        ctx.textAlign = 'center';
-        if (rank === 'KING') {
-            ctx.fillText('KING', badgeX, badgeY + 3);
-        } else {
-            ctx.fillText(`#${rank}`, badgeX, badgeY + 3);
-        }
-        ctx.restore();
 
         return canvas.toBuffer();
     } catch (error) {
