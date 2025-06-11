@@ -374,7 +374,49 @@ class LevelingBot {
         }
     }
 
-    async handleLevelUp(userId, guildId, newLevel, oldLevel) {
+    getBountyForLevel(level) {
+        // One Piece accurate bounty progression
+        if (level <= 0) return '0';
+        if (level <= 5) return '30,000,000';        // Early East Blue level (like Arlong)
+        if (level <= 10) return '81,000,000';       // Around Don Krieg/Kuro level
+        if (level <= 15) return '120,000,000';      // Crocodile pre-timeskip level
+        if (level <= 20) return '200,000,000';      // Bellamy/Foxy level
+        if (level <= 25) return '320,000,000';      // Pre-timeskip Luffy level
+        if (level <= 30) return '500,000,000';      // Post-timeskip Luffy Dressrosa
+        if (level <= 35) return '860,000,000';      // Charlotte Cracker level
+        if (level <= 40) return '1,057,000,000';    // Charlotte Katakuri level
+        if (level <= 45) return '1,500,000,000';    // Luffy post-Wano (Gear 5)
+        if (level <= 50) return '3,000,000,000';    // Current Luffy bounty
+        
+        // For levels above 50 - beyond current manga
+        if (level <= 55) return '4,000,000,000';    // Approaching Yonko level
+        if (level <= 60) return '4,600,000,000';    // Shanks/Big Mom territory
+        
+        // Legendary territory (Roger/Whitebeard level)
+        const baseBounty = 5000000000; // 5 billion base
+        const multiplier = Math.pow(1.2, level - 60);
+        const bounty = Math.floor(baseBounty * multiplier);
+        return bounty.toLocaleString();
+    }
+
+    getFlavorTextForLevel(level) {
+        const flavorTexts = {
+            5: "*A rookie pirate causing trouble in the East Blue. Standard bounty issued.*",
+            10: "*This pirate has defeated several Marine lieutenants. Increase surveillance.*",
+            15: "*ALERT: Pirate has entered the Grand Line. Logia Devil Fruit user reported.*",
+            20: "*Baroque Works level threat. Has defeated a Shichibukai subordinate.*",
+            25: "*SUPERNOVA: One of the Worst Generation. Threat to Marine operations.*",
+            30: "*Post-timeskip level threat. Haki user confirmed. Deploy Vice Admiral.*",
+            35: "*Sweet Commander level threat. Can command territories and fleets.*",
+            40: "*RIGHT HAND OF YONKO level. Extreme caution advised. Fleet Admiral consultation required.*",
+            45: "*GEAR 5 AWAKENING: Reality-bending powers confirmed. Joyboy candidate.*",
+            50: "*YONKO LEVEL: Controls territories. One of the Four Emperors of the Sea.*",
+            55: "*BEYOND YONKO: Power rivals the late Pirate King Gol D. Roger.*",
+            60: "*PIRATE KING CANDIDATE: The World Government's highest priority target.*"
+        };
+        
+        return flavorTexts[level] || null;
+    }
         try {
             const guild = this.client.guilds.cache.get(guildId);
             if (!guild) return;
@@ -392,7 +434,7 @@ class LevelingBot {
                 }
             }
             
-            // Send level up message
+            // Send level up message with One Piece theme
             if (this.levelUpConfig.enabled) {
                 let channel = null;
                 
@@ -415,27 +457,35 @@ class LevelingBot {
                     channel = guild.channels.cache.find(ch => 
                         ch.type === 0 && // Text channel
                         ch.permissionsFor(guild.members.me).has(['SendMessages', 'EmbedLinks']) &&
-                        (ch.name.includes('general') || ch.name.includes('chat') || ch.name.includes('level'))
+                        (ch.name.includes('general') || ch.name.includes('chat') || ch.name.includes('level') || ch.name.includes('bounty'))
                     );
                 }
                 
                 if (channel) {
+                    // Get bounty amount for current level
+                    const bountyAmount = this.getBountyForLevel(newLevel);
+                    const oldBountyAmount = this.getBountyForLevel(oldLevel);
+                    
                     let message = this.levelUpConfig.message
                         .replace('{user}', this.levelUpConfig.pingUser ? `<@${userId}>` : user.user.username)
                         .replace('{level}', newLevel.toString())
-                        .replace('{oldlevel}', oldLevel.toString());
+                        .replace('{oldlevel}', oldLevel.toString())
+                        .replace('{bounty}', `₿${bountyAmount}`)
+                        .replace('{oldbounty}', `₿${oldBountyAmount}`);
                     
                     const embed = new EmbedBuilder()
-                        .setColor('#00ff00')
-                        .setTitle('🎉 Level Up!')
+                        .setColor('#FF6B00') // Orange like One Piece
+                        .setTitle('🏴‍☠️ BOUNTY UPDATE!')
                         .setDescription(message)
                         .setThumbnail(user.user.displayAvatarURL())
-                        .setTimestamp();
+                        .setTimestamp()
+                        .setFooter({ text: 'World Government • Marine Headquarters' });
                     
                     if (this.levelUpConfig.showProgress) {
                         embed.addFields(
-                            { name: 'Previous Level', value: oldLevel.toString(), inline: true },
-                            { name: 'New Level', value: newLevel.toString(), inline: true }
+                            { name: '⚔️ Previous Bounty', value: `₿${oldBountyAmount}`, inline: true },
+                            { name: '💰 New Bounty', value: `₿${bountyAmount}`, inline: true },
+                            { name: '🏴‍☠️ Pirate Level', value: `${newLevel}`, inline: true }
                         );
                     }
                     
@@ -445,15 +495,21 @@ class LevelingBot {
                             [userId, guildId]
                         );
                         if (userData.rows.length > 0) {
-                            embed.addFields({ name: 'Total XP', value: userData.rows[0].total_xp.toLocaleString(), inline: true });
+                            embed.addFields({ name: '⭐ Total Reputation', value: userData.rows[0].total_xp.toLocaleString(), inline: true });
                         }
                     }
                     
                     if (this.levelUpConfig.showRole && this.levelRoles[newLevel]) {
                         const role = guild.roles.cache.get(this.levelRoles[newLevel]);
                         if (role) {
-                            embed.addFields({ name: 'Role Reward', value: role.name, inline: true });
+                            embed.addFields({ name: '🎖️ New Title', value: role.name, inline: true });
                         }
+                    }
+                    
+                    // Add One Piece flavor text based on level
+                    const flavorText = this.getFlavorTextForLevel(newLevel);
+                    if (flavorText) {
+                        embed.addFields({ name: '📰 Marine Report', value: flavorText, inline: false });
                     }
                     
                     await channel.send({ embeds: [embed] });
@@ -513,7 +569,7 @@ class LevelingBot {
         );
         
         if (result.rows.length === 0) {
-            return await interaction.reply({ content: `${targetUser.username} hasn't gained any XP yet!`, ephemeral: true });
+            return await interaction.reply({ content: `${targetUser.username} hasn't started their pirate journey yet! 🏴‍☠️`, ephemeral: true });
         }
         
         const userData = result.rows[0];
@@ -521,19 +577,22 @@ class LevelingBot {
         const nextLevelXP = this.calculateXPForLevel(userData.level + 1);
         const progressXP = userData.total_xp - currentLevelXP;
         const neededXP = nextLevelXP - currentLevelXP;
+        const bountyAmount = this.getBountyForLevel(userData.level);
         
         const embed = new EmbedBuilder()
-            .setColor('#0099ff')
-            .setTitle(`${targetUser.username}'s Level`)
+            .setColor('#FF6B00')
+            .setTitle(`🏴‍☠️ ${targetUser.username}'s Bounty Poster`)
             .setThumbnail(targetUser.displayAvatarURL())
             .addFields(
-                { name: 'Level', value: userData.level.toString(), inline: true },
-                { name: 'Total XP', value: userData.total_xp.toLocaleString(), inline: true },
-                { name: 'Progress', value: `${progressXP}/${neededXP} XP`, inline: true },
-                { name: 'Messages', value: userData.messages.toLocaleString(), inline: true },
-                { name: 'Reactions', value: userData.reactions.toLocaleString(), inline: true },
-                { name: 'Voice Time', value: `${Math.floor(userData.voice_time / 60)}h ${userData.voice_time % 60}m`, inline: true }
+                { name: '💰 Current Bounty', value: `₿${bountyAmount}`, inline: true },
+                { name: '⚔️ Pirate Level', value: userData.level.toString(), inline: true },
+                { name: '⭐ Total Reputation', value: userData.total_xp.toLocaleString(), inline: true },
+                { name: '📈 Progress to Next Bounty', value: `${progressXP.toLocaleString()}/${neededXP.toLocaleString()} Rep`, inline: true },
+                { name: '💬 Messages Sent', value: userData.messages.toLocaleString(), inline: true },
+                { name: '👍 Reactions Given', value: userData.reactions.toLocaleString(), inline: true },
+                { name: '🎤 Voice Activity', value: `${Math.floor(userData.voice_time / 60)}h ${userData.voice_time % 60}m`, inline: true }
             )
+            .setFooter({ text: 'WANTED • DEAD OR ALIVE • World Government' })
             .setTimestamp();
         
         await interaction.reply({ embeds: [embed] });
@@ -546,22 +605,25 @@ class LevelingBot {
         );
         
         if (result.rows.length === 0) {
-            return await interaction.reply({ content: 'No users have gained XP yet!', ephemeral: true });
+            return await interaction.reply({ content: 'No pirates have started their journey yet! 🏴‍☠️', ephemeral: true });
         }
         
         const embed = new EmbedBuilder()
-            .setColor('#gold')
-            .setTitle('🏆 Leaderboard')
+            .setColor('#FF6B00')
+            .setTitle('🏴‍☠️ Most Wanted Pirates')
+            .setDescription('*The World Government\'s Most Wanted List*')
+            .setFooter({ text: 'World Government • Marine Headquarters' })
             .setTimestamp();
         
         let description = '';
         for (let i = 0; i < result.rows.length; i++) {
             const userData = result.rows[i];
             const user = await interaction.guild.members.fetch(userData.user_id).catch(() => null);
-            const username = user ? user.user.username : 'Unknown User';
+            const username = user ? user.user.username : 'Unknown Pirate';
+            const bountyAmount = this.getBountyForLevel(userData.level);
             
-            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-            description += `${medal} **${username}** - Level ${userData.level} (${userData.total_xp.toLocaleString()} XP)\n`;
+            const medal = i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+            description += `${medal} **${username}**\n💰 Bounty: ₿${bountyAmount} • ⚔️ Level ${userData.level}\n⭐ ${userData.total_xp.toLocaleString()} Reputation\n\n`;
         }
         
         embed.setDescription(description);
