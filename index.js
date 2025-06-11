@@ -465,10 +465,10 @@ class LevelingBot {
                 await this.db.query(`
                     INSERT INTO guild_settings (guild_id, level_roles, xp_multiplier, voice_xp_rate, message_xp_min, message_xp_max, reaction_xp)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
-                `, [guildId, JSON.stringify(this.defaultLevelRoles), 1.0, 1, 15, 25, 5]);
+                `, [guildId, JSON.stringify({}), 1.0, 1, 15, 25, 5]);
                 
                 return {
-                    level_roles: this.defaultLevelRoles,
+                    level_roles: {},
                     xp_multiplier: 1.0,
                     voice_xp_rate: 1,
                     message_xp_min: 15,
@@ -482,7 +482,7 @@ class LevelingBot {
         } catch (error) {
             console.error('Get guild settings error:', error);
             return {
-                level_roles: this.defaultLevelRoles,
+                level_roles: {},
                 xp_multiplier: 1.0,
                 voice_xp_rate: 1,
                 message_xp_min: 15,
@@ -603,6 +603,52 @@ class LevelingBot {
         await interaction.reply({ embeds: [embed] });
     }
 
+    async handleSettingsCommand(interaction) {
+        const embed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('🔧 Server Leveling Settings')
+            .setTimestamp();
+        
+        // XP Settings
+        embed.addFields(
+            { name: '💬 Message XP', value: `${this.config.messageXPMin}-${this.config.messageXPMax} (${this.config.messageCooldown/1000}s cooldown)`, inline: true },
+            { name: '👍 Reaction XP', value: `${this.config.reactionXPMin}-${this.config.reactionXPMax} (${this.config.reactionCooldown/1000}s cooldown)`, inline: true },
+            { name: '🎤 Voice XP', value: `${this.config.voiceXPMin}-${this.config.voiceXPMax}/min (${this.config.voiceCooldown/1000}s cooldown)`, inline: true },
+            { name: '📊 Formula', value: `${this.config.formulaCurve} (×${this.config.formulaMultiplier})`, inline: true },
+            { name: '🎯 Max Level', value: this.config.maxLevel.toString(), inline: true },
+            { name: '✨ XP Multiplier', value: `×${this.config.xpMultiplier}`, inline: true }
+        );
+        
+        // Voice Settings
+        embed.addFields(
+            { name: '🔊 Voice Requirements', value: `Min ${this.config.voiceMinMembers} members\nAFK Detection: ${this.config.voiceAntiAFK ? '✅' : '❌'}`, inline: true }
+        );
+        
+        // Level Up Settings
+        embed.addFields(
+            { name: '🎉 Level Up Messages', value: `${this.levelUpConfig.enabled ? '✅ Enabled' : '❌ Disabled'}\nPing User: ${this.levelUpConfig.pingUser ? '✅' : '❌'}`, inline: true }
+        );
+        
+        // Level Roles
+        let rolesText = '';
+        let roleCount = 0;
+        for (const [level, roleId] of Object.entries(this.levelRoles)) {
+            if (roleId) {
+                const role = interaction.guild.roles.cache.get(roleId);
+                if (role && roleCount < 5) { // Show max 5 roles
+                    rolesText += `Level ${level}: ${role.name}\n`;
+                    roleCount++;
+                }
+            }
+        }
+        
+        if (rolesText) {
+            embed.addFields({ name: '🏆 Level Roles', value: rolesText + (roleCount === 5 ? '...' : ''), inline: false });
+        }
+        
+        await interaction.reply({ embeds: [embed] });
+    }
+
     async handleReloadCommand(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
             return await interaction.reply({ content: 'You need the "Manage Server" permission to use this command.', ephemeral: true });
@@ -657,20 +703,6 @@ class LevelingBot {
             showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false',
             showRole: process.env.LEVELUP_SHOW_ROLE !== 'false',
             pingUser: process.env.LEVELUP_PING_USER === 'true' || false
-        };MULTIPLIER) || 1.0
-        };
-
-        this.levelRoles = {
-            5: process.env.LEVEL_5_ROLE || null,
-            10: process.env.LEVEL_10_ROLE || null,
-            15: process.env.LEVEL_15_ROLE || null,
-            20: process.env.LEVEL_20_ROLE || null,
-            25: process.env.LEVEL_25_ROLE || null,
-            30: process.env.LEVEL_30_ROLE || null,
-            35: process.env.LEVEL_35_ROLE || null,
-            40: process.env.LEVEL_40_ROLE || null,
-            45: process.env.LEVEL_45_ROLE || null,
-            50: process.env.LEVEL_50_ROLE || null
         };
         
         console.log('Configuration reloaded:', this.config);
