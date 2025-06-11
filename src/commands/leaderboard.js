@@ -34,6 +34,9 @@ module.exports = {
                 )
         ),
     async execute(interaction, client, xpTracker) {
+        // Check if this is a button interaction (deferred) or initial command
+        const isButtonInteraction = interaction.deferred;
+        
         // Multiple ways to get guild information
         let guild = interaction.guild;
         let guildId = interaction.guildId;
@@ -54,10 +57,10 @@ module.exports = {
                 guildId: guildId,
                 channelType: interaction.channel?.type
             });
-            return interaction.reply({ 
-                content: "This command can only be used in a server, not in DMs.", 
-                ephemeral: true 
-            });
+            const errorMessage = "This command can only be used in a server, not in DMs.";
+            return isButtonInteraction 
+                ? interaction.editReply({ content: errorMessage })
+                : interaction.reply({ content: errorMessage, ephemeral: true });
         }
 
         const view = interaction.options.getString('view') || 'short';
@@ -68,13 +71,19 @@ module.exports = {
             leaderboard = await xpTracker.getLeaderboard(guildId);
         } catch (err) {
             console.error('Database error in leaderboard:', err);
-            return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true });
+            const errorMessage = "Database error occurred. Please try again later.";
+            return isButtonInteraction 
+                ? interaction.editReply({ content: errorMessage })
+                : interaction.reply({ content: errorMessage, ephemeral: true });
         }
 
         // Check if leaderboard data exists
         if (!leaderboard || !Array.isArray(leaderboard)) {
             console.error('Invalid leaderboard data:', leaderboard);
-            return interaction.reply({ content: "No leaderboard data available.", ephemeral: true });
+            const errorMessage = "No leaderboard data available.";
+            return isButtonInteraction 
+                ? interaction.editReply({ content: errorMessage })
+                : interaction.reply({ content: errorMessage, ephemeral: true });
         }
 
         // Pirate King detection (fully error proof)
@@ -138,12 +147,19 @@ module.exports = {
             // Truncate if too long
             const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
             
-            return interaction.reply({ 
+            // Return ONLY content and components for full view - NO EMBEDS
+            const responseData = { 
                 content: finalText, 
-                components: [row] 
-            });
+                components: [row],
+                embeds: [] // Explicitly clear embeds
+            };
+            
+            return isButtonInteraction 
+                ? interaction.editReply(responseData)
+                : interaction.reply(responseData);
+                
         } else {
-            // Short/Long view: Display embed
+            // Short/Long view: Display embed ONLY
             let entriesToShow = [];
             if (view === 'short') {
                 entriesToShow = leaderboard.slice(0, 3);
@@ -220,7 +236,16 @@ module.exports = {
 
             embed.setDescription(description);
 
-            await interaction.reply({ embeds: [embed], components: [row] });
+            // Return ONLY embeds and components for short/long view - NO CONTENT
+            const responseData = { 
+                content: '', // Explicitly clear content
+                embeds: [embed], 
+                components: [row] 
+            };
+            
+            return isButtonInteraction 
+                ? interaction.editReply(responseData)
+                : interaction.reply(responseData);
         }
     }
 };
