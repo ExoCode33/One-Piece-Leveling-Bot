@@ -107,7 +107,20 @@ class LevelingBot {
             excludeRole: process.env.LEADERBOARD_EXCLUDE_ROLE || null
         };
 
+        // XP Logging configuration
+        this.xpLogConfig = {
+            enabled: process.env.XP_LOG_ENABLED === 'true' || false,
+            channel: process.env.XP_LOG_CHANNEL || null,
+            channelName: process.env.XP_LOG_CHANNEL_NAME || null,
+            logMessages: process.env.XP_LOG_MESSAGES !== 'false',
+            logReactions: process.env.XP_LOG_REACTIONS !== 'false', 
+            logVoice: process.env.XP_LOG_VOICE !== 'false',
+            logLevelUps: process.env.XP_LOG_LEVELUPS !== 'false',
+            showCooldowns: process.env.XP_LOG_SHOW_COOLDOWNS === 'true' || false
+        };
+
         debug.debug('Bot Configuration loaded');
+        debug.debug('XP Log Config:', this.xpLogConfig);
 
         this.initializeDatabase();
         this.setupEventHandlers();
@@ -183,7 +196,11 @@ class LevelingBot {
             // Check cooldown
             if (this.messageCooldowns.has(cooldownKey)) {
                 const cooldownEnd = this.messageCooldowns.get(cooldownKey);
-                if (now < cooldownEnd) return;
+                if (now < cooldownEnd) {
+                    // Log cooldown if enabled
+                    await this.logCooldown(message.author.id, message.guild.id, 'message', cooldownEnd - now);
+                    return;
+                }
             }
             
             this.messageCooldowns.set(cooldownKey, now + this.config.messageCooldown);
@@ -191,7 +208,9 @@ class LevelingBot {
             const xpGain = Math.floor(Math.random() * (this.config.messageXPMax - this.config.messageXPMin + 1)) + this.config.messageXPMin;
             debug.xp(`Awarding ${xpGain} XP to ${message.author.username} for message`);
             
-            await this.addXP(message.author.id, message.guild.id, xpGain, 'message');
+            await this.addXP(message.author.id, message.guild.id, xpGain, 'message', {
+                channelName: message.channel.name
+            });
         });
 
         // Reaction XP
@@ -204,7 +223,11 @@ class LevelingBot {
             // Check cooldown
             if (this.reactionCooldowns.has(cooldownKey)) {
                 const cooldownEnd = this.reactionCooldowns.get(cooldownKey);
-                if (now < cooldownEnd) return;
+                if (now < cooldownEnd) {
+                    // Log cooldown if enabled
+                    await this.logCooldown(user.id, reaction.message.guild.id, 'reaction', cooldownEnd - now);
+                    return;
+                }
             }
             
             this.reactionCooldowns.set(cooldownKey, now + this.config.reactionCooldown);
@@ -310,7 +333,187 @@ class LevelingBot {
         });
     }
 
-    getBountyForLevel(level) {
+    async logXPGain(userId, guildId, xpAmount, type, details = {}) {
+        if (!this.xpLogConfig.enabled) return;
+        
+        // Check if this type of XP gain should be logged
+        if ((type === 'message' && !this.xpLogConfig.logMessages) ||
+            (type === 'reaction' && !this.xpLogConfig.logReactions) ||
+            (type === 'voice' && !this.xpLogConfig.logVoice)) {
+            return;
+        }
+
+        try {
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+
+            const user = await guild.members.fetch(userId).catch(() => null);
+            if (!user) return;
+
+            let logChannel = null;
+
+            // Try to find channel by ID first
+            if (this.xpLogConfig.channel) {
+                logChannel = guild.channels.cache.get(this.xpLogConfig.channel);
+            }
+
+            // If no ID channel found, try to find by name
+            if (!logChannel && this.xpLogConfig.channelName) {
+                logChannel = guild.channels.cache.find(ch => 
+                    ch.type === 0 && // Text channel
+                    ch.name.toLowerCase() === this.xpLogConfig.channelName.toLowerCase() &&
+                    ch.permissionsFor(guild.members.me).has(['SendMessages'])
+                );
+            }
+
+            if (!logChannel) {
+                debug.warn('XP Log', 'No XP log channel configured or found');
+                return;
+            }
+
+            // Create log message based on type
+            let logMessage = '';
+            let emoji = '';
+            
+            switch (type) {
+                case 'message':
+                    emoji = '💬';
+                    logMessage = `${emoji} **${user.user.username}** gained **${xpAmount} XP** from sending a message`;
+                    if (details.channelName) {
+                        logMessage += ` in ${details.channelName}`;
+                    }
+                    break;
+                    
+                case 'reaction':
+                    emoji = '👍';
+                    logMessage = `${emoji} **${user.user.username}** gained **${xpAmount} XP** from adding a reaction`;
+                    break;
+                    
+                case 'voice':
+                    emoji = '🎤';
+                    const minutes = details.minutes || Math.floor(xpAmount / ((this.config.voiceXPMin + this.config.voiceXPMax) / 2));
+                    logMessage = `${emoji} **${user.user.username}** gained **${xpAmount} XP** from **${minutes} minute(s)** in voice chat`;
+                    if (details.channelName) {
+                        logMessage += ` in ${details.channelName}`;
+                    }
+                    break;
+            }
+
+            // Add timestamp
+            const timestamp = new Date().toLocaleTimeString('en-US', { 
+                hour12: false, 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            logMessage += ` \`${timestamp}\``;
+
+            // Add total XP if available
+            if (details.totalXP) {
+                logMessage += ` • Total: **${details.totalXP.toLocaleString()} XP**`;
+            }
+
+            await logChannel.send(logMessage);
+            
+        } catch (error) {
+            debug.error('XP Logging', error);
+        }
+    }
+
+    async logLevelUp(userId, guildId, oldLevel, newLevel, details = {}) {
+        if (!this.xpLogConfig.enabled || !this.xpLogConfig.logLevelUps) return;
+
+        try {
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+
+            const user = await guild.members.fetch(userId).catch(() => null);
+            if (!user) return;
+
+            let logChannel = null;
+
+            // Try to find channel by ID first
+            if (this.xpLogConfig.channel) {
+                logChannel = guild.channels.cache.get(this.xpLogConfig.channel);
+            }
+
+            // If no ID channel found, try to find by name
+            if (!logChannel && this.xpLogConfig.channelName) {
+                logChannel = guild.channels.cache.find(ch => 
+                    ch.type === 0 && // Text channel
+                    ch.name.toLowerCase() === this.xpLogConfig.channelName.toLowerCase() &&
+                    ch.permissionsFor(guild.members.me).has(['SendMessages'])
+                );
+            }
+
+            if (!logChannel) return;
+
+            const bountyAmount = this.getBountyForLevel(newLevel);
+            const timestamp = new Date().toLocaleTimeString('en-US', { 
+                hour12: false, 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            let logMessage = `🎉 **${user.user.username}** leveled up from **Level ${oldLevel}** to **Level ${newLevel}**! New bounty: **₿${bountyAmount}** \`${timestamp}\``;
+
+            if (details.roleAssigned) {
+                logMessage += ` 🏆 *Role reward assigned!*`;
+            }
+
+            await logChannel.send(logMessage);
+            
+        } catch (error) {
+            debug.error('Level Up Logging', error);
+        }
+    }
+
+    async logCooldown(userId, guildId, type, remainingTime) {
+        if (!this.xpLogConfig.enabled || !this.xpLogConfig.showCooldowns) return;
+
+        try {
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+
+            const user = await guild.members.fetch(userId).catch(() => null);
+            if (!user) return;
+
+            let logChannel = null;
+
+            if (this.xpLogConfig.channel) {
+                logChannel = guild.channels.cache.get(this.xpLogConfig.channel);
+            }
+
+            if (!logChannel && this.xpLogConfig.channelName) {
+                logChannel = guild.channels.cache.find(ch => 
+                    ch.type === 0 &&
+                    ch.name.toLowerCase() === this.xpLogConfig.channelName.toLowerCase() &&
+                    ch.permissionsFor(guild.members.me).has(['SendMessages'])
+                );
+            }
+
+            if (!logChannel) return;
+
+            const timestamp = new Date().toLocaleTimeString('en-US', { 
+                hour12: false, 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            const remainingSeconds = Math.ceil(remainingTime / 1000);
+            const emoji = type === 'message' ? '💬' : type === 'reaction' ? '👍' : '🎤';
+            
+            const logMessage = `❄️ ${emoji} **${user.user.username}** is on cooldown for **${type}** XP (${remainingSeconds}s remaining) \`${timestamp}\``;
+
+            await logChannel.send(logMessage);
+            
+        } catch (error) {
+            debug.error('Cooldown Logging', error);
+        }
+    }
         if (level <= 0) return '0';
         if (level === 1) return '5,000,000';
         if (level === 2) return '10,000,000';
@@ -372,6 +575,9 @@ class LevelingBot {
         try {
             debug.voice(`Processing voice XP: ${duration}s`);
             
+            const channel = this.client.channels.cache.get(channelId);
+            const channelName = channel ? channel.name : 'Unknown Channel';
+            
             if (duration >= 60) { // At least 1 minute
                 const cooldownKey = `voice-${userId}-${guildId}`;
                 const now = Date.now();
@@ -386,9 +592,16 @@ class LevelingBot {
                         
                         debug.voice(`Awarding ${totalVoiceXP} voice XP (${baseVoiceXP} per minute × ${minutes} minutes)`);
                         
-                        await this.addXP(userId, guildId, totalVoiceXP, 'voice');
+                        await this.addXP(userId, guildId, totalVoiceXP, 'voice', {
+                            minutes: minutes,
+                            channelName: channelName
+                        });
                         this.voiceTracker.set(cooldownKey, now);
                     }
+                } else {
+                    // Log voice cooldown if enabled
+                    const cooldownRemaining = this.config.voiceCooldown - (now - lastVoiceXP);
+                    await this.logCooldown(userId, guildId, 'voice', cooldownRemaining);
                 }
             }
             
@@ -403,7 +616,7 @@ class LevelingBot {
         }
     }
 
-    async addXP(userId, guildId, xpAmount, type) {
+    async addXP(userId, guildId, xpAmount, type, details = {}) {
         try {
             const finalXP = Math.floor(xpAmount * this.config.xpMultiplier);
             debug.xp(`Adding ${finalXP} XP (${type}) for user ${userId}`);
@@ -428,6 +641,12 @@ class LevelingBot {
             const newTotalXP = result.rows[0].total_xp;
             const currentLevel = result.rows[0].level;
             const newLevel = this.calculateLevel(newTotalXP);
+            
+            // Log XP gain
+            await this.logXPGain(userId, guildId, finalXP, type, {
+                ...details,
+                totalXP: newTotalXP
+            });
             
             if (newLevel > currentLevel) {
                 await this.db.query(
@@ -459,15 +678,21 @@ class LevelingBot {
             const user = await guild.members.fetch(userId);
             if (!user) return;
             
+            let roleAssigned = false;
+            
             // Check for role rewards
             if (this.levelRoles[newLevel]) {
                 const roleId = this.levelRoles[newLevel];
                 const role = guild.roles.cache.get(roleId);
                 if (role && !user.roles.cache.has(roleId)) {
                     await user.roles.add(role);
+                    roleAssigned = true;
                     debug.levelup(`Added Level ${newLevel} role to ${user.user.username}`);
                 }
             }
+
+            // Log level up
+            await this.logLevelUp(userId, guildId, oldLevel, newLevel, { roleAssigned });
             
             // Send level up message
             if (this.levelUpConfig.enabled) {
