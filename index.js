@@ -211,7 +211,7 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
 // === Main XP Update Function ===
 async function updateUserLevel(userId, guildId, xpGain, activityType, additionalInfo = {}) {
     try {
-        // Get current user data
+        // Get current user data (without last_updated to avoid errors)
         const userQuery = `
             SELECT total_xp, level, messages, reactions, voice_time 
             FROM user_levels 
@@ -245,18 +245,17 @@ async function updateUserLevel(userId, guildId, xpGain, activityType, additional
         if (activityType === 'reaction') reactions++;
         if (activityType === 'voice') voiceTime += 1; // 1 minute increment
         
-        // Upsert user data
+        // Upsert user data (without last_updated for compatibility)
         const upsertQuery = `
-            INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, last_updated)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (user_id, guild_id)
             DO UPDATE SET 
                 total_xp = $3,
                 level = $4,
                 messages = $5,
                 reactions = $6,
-                voice_time = $7,
-                last_updated = NOW()
+                voice_time = $7
         `;
         
         await db.query(upsertQuery, [userId, guildId, newTotalXP, newLevel, messages, reactions, voiceTime]);
@@ -396,10 +395,19 @@ async function initializeDatabase() {
                 messages INTEGER DEFAULT 0,
                 reactions INTEGER DEFAULT 0,
                 voice_time INTEGER DEFAULT 0,
-                last_updated TIMESTAMP DEFAULT NOW(),
                 PRIMARY KEY (user_id, guild_id)
             )
         `);
+        
+        // Add last_updated column if it doesn't exist (for existing databases)
+        try {
+            await db.query(`
+                ALTER TABLE user_levels 
+                ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW()
+            `);
+        } catch (error) {
+            console.log('[INFO] last_updated column already exists or cannot be added');
+        }
         
         // Create voice_sessions table
         await db.query(`
@@ -486,7 +494,7 @@ client.on('interactionCreate', async interaction => {
             if (interaction.deferred) {
                 await interaction.editReply(errorMessage);
             } else {
-                await interaction.reply({ content: errorMessage, ephemeral: true });
+                await interaction.reply({ content: errorMessage, flags: 64 }); // Ephemeral flag
             }
         } catch (e) {
             console.error('Error sending error message:', e);
