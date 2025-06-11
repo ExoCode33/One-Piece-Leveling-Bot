@@ -3,7 +3,6 @@
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 const Canvas = require('canvas');
-const path = require('path');
 
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Role ID for Pirate King
 
@@ -474,7 +473,6 @@ ${topThree.map((user, index) => {
             const embed = new EmbedBuilder()
                 .setColor(0xDC143C)
                 .setTitle('⚓ GRAND LINE BOUNTY RANKINGS ⚓')
-                .setThumbnail('https://i.imgur.com/OnePieceLogo.png')
                 .setDescription(`
 **📊 TOP 10 MOST WANTED PIRATES**
 
