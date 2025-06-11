@@ -12,7 +12,6 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-// Example threat level flavor text (adjust as desired)
 function getThreatLevel(rank) {
     if (rank === 1) return "Emperor-Class Threat";
     if (rank === 2) return "Fleet Admiral Target";
@@ -48,20 +47,20 @@ module.exports = {
             return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true });
         }
 
-        // Pirate King handling (safe, always works)
+        // Safe Pirate King handling
         let pirateKingUser = null;
         let kingMember = null;
-        if (LEADERBOARD_EXCLUDE_ROLE) {
+        if (LEADERBOARD_EXCLUDE_ROLE && guild && guild.members) {
             try {
                 const members = await guild.members.fetch();
-                const king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
+                const king = members.find(m => m.roles && m.roles.cache && m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
                 if (king && king.user && king.user.id) {
-                    pirateKingUser = leaderboard.find(u => u.userId === king.user.id) || { userId: king.user.id, level: 0, xp: 0 };
                     kingMember = king;
+                    pirateKingUser = leaderboard.find(u => u.userId === king.user.id) || { userId: king.user.id, level: 0, xp: 0 };
                     leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
                 }
             } catch (err) {
-                // Just leave pirateKingUser null if anything fails
+                // Just leave pirateKingUser and kingMember null if any error happens
             }
         }
 
