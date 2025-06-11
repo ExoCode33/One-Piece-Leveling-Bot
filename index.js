@@ -240,11 +240,25 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
 
                 // Add special level milestone messages
                 if (additionalInfo.newLevel === 50) {
-                    embed.setDescription(`**${user.username}** has reached the legendary Level 50!\n*🏴‍☠️ They're ready to challenge the Yonko! 🏴‍☠️*`);
+                    embed.setDescription(`**${user.username}** has reached the legendary Level 50!\n*🏴‍☠️ They've ascended to YONKO status! One of the Four Emperors! 🏴‍☠️*`);
+                } else if (additionalInfo.newLevel === 45) {
+                    embed.setDescription(`**${user.username}** has reached Level 45!\n*⚡ They've become a feared Yonko Commander! ⚡*`);
+                } else if (additionalInfo.newLevel === 40) {
+                    embed.setDescription(`**${user.username}** has reached Level 40!\n*🗡️ They've achieved Warlord status! 🗡️*`);
+                } else if (additionalInfo.newLevel === 35) {
+                    embed.setDescription(`**${user.username}** has reached Level 35!\n*🧭 They've become a trusted First Mate! 🧭*`);
+                } else if (additionalInfo.newLevel === 30) {
+                    embed.setDescription(`**${user.username}** has reached Level 30!\n*🗺️ They've mastered navigation of the Grand Line! 🗺️*`);
                 } else if (additionalInfo.newLevel === 25) {
-                    embed.setDescription(`**${user.username}** has reached Level 25!\n*⚡ Their name echoes across the Grand Line! ⚡*`);
+                    embed.setDescription(`**${user.username}** has reached Level 25!\n*⚓ They've earned the rank of Boatswain! ⚓*`);
+                } else if (additionalInfo.newLevel === 20) {
+                    embed.setDescription(`**${user.username}** has reached Level 20!\n*⚓ They've become the ship's Helmsman! ⚓*`);
+                } else if (additionalInfo.newLevel === 15) {
+                    embed.setDescription(`**${user.username}** has reached Level 15!\n*💣 They've proven themselves as a skilled Gunner! 💣*`);
                 } else if (additionalInfo.newLevel === 10) {
-                    embed.setDescription(`**${user.username}** has reached Level 10!\n*🌊 They've proven themselves on the seas! 🌊*`);
+                    embed.setDescription(`**${user.username}** has reached Level 10!\n*🧨 They've advanced to Powder Monkey! 🧨*`);
+                } else if (additionalInfo.newLevel === 5) {
+                    embed.setDescription(`**${user.username}** has reached Level 5!\n*🔨 They've become a reliable Deckhand! 🔨*`);
                 }
                 
                 embed.setAuthor({ 
