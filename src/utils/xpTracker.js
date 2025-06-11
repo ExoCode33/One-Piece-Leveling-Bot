@@ -138,7 +138,7 @@ class XPTracker {
     try {
       // Get current user data
       const userQuery = `
-        SELECT total_xp, level, messages, reactions, voice_time
+        SELECT total_xp, level, messages, reactions, voice_time, rep
         FROM user_levels
         WHERE user_id = $1 AND guild_id = $2
       `;
@@ -149,6 +149,7 @@ class XPTracker {
       let messages = 0;
       let reactions = 0;
       let voiceTime = 0;
+      let rep = 0;
 
       if (userResult.rows.length > 0) {
         currentXP = userResult.rows[0].total_xp;
@@ -156,6 +157,7 @@ class XPTracker {
         messages = userResult.rows[0].messages || 0;
         reactions = userResult.rows[0].reactions || 0;
         voiceTime = userResult.rows[0].voice_time || 0;
+        rep = userResult.rows[0].rep || 0;
       }
 
       // Calculate new XP/level
@@ -164,20 +166,22 @@ class XPTracker {
 
       // Update database
       const updateQuery = `
-        INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, rep)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (user_id, guild_id) DO UPDATE
         SET total_xp = EXCLUDED.total_xp,
             level = EXCLUDED.level,
             messages = EXCLUDED.messages,
             reactions = EXCLUDED.reactions,
-            voice_time = EXCLUDED.voice_time
+            voice_time = EXCLUDED.voice_time,
+            rep = EXCLUDED.rep
       `;
       await this.db.query(updateQuery, [
         userId, guildId, newXP, newLevel,
         activityType === 'message' ? messages + 1 : messages,
         activityType === 'reaction' ? reactions + 1 : reactions,
-        activityType === 'voice' ? voiceTime + (additionalInfo.voiceTime || 0) : voiceTime
+        activityType === 'voice' ? voiceTime + (additionalInfo.voiceTime || 0) : voiceTime,
+        rep // rep unchanged here; update elsewhere if you want to
       ]);
 
       // Log the XP update (optional)
@@ -190,7 +194,8 @@ class XPTracker {
         messages: activityType === 'message' ? messages + 1 : messages,
         reactions: activityType === 'reaction' ? reactions + 1 : reactions,
         voiceTime: activityType === 'voice' ? voiceTime + (additionalInfo.voiceTime || 0) : voiceTime,
-        activityType
+        activityType,
+        rep
       });
 
       // If level up occurred, announce with embed!
@@ -215,6 +220,33 @@ class XPTracker {
     } catch (error) {
       console.error(`[XPTracker] Error updating user level: ${error}`);
     }
+  }
+
+  // Handles XP gain from messages
+  async handleMessageXP(message) {
+    if (message.author.bot || !message.guild) return;
+    const xpGain = this.getRandomXP(15, 25); // Customize XP gain range if desired
+    await this.updateUserLevel(message.author.id, message.guild.id, xpGain, 'message');
+  }
+
+  // Get user's stats for /level or profile display
+  async getUserStats(userId, guildId) {
+    const userQuery = `
+      SELECT total_xp, level, messages, reactions, voice_time, rep
+      FROM user_levels
+      WHERE user_id = $1 AND guild_id = $2
+    `;
+    let userResult = await this.db.query(userQuery, [userId, guildId]);
+    if (userResult.rows.length === 0) return null;
+    const row = userResult.rows[0];
+    return {
+      xp: row.total_xp,
+      level: row.level,
+      messages: row.messages || 0,
+      reactions: row.reactions || 0,
+      voiceTime: row.voice_time || 0,
+      rep: row.rep || 0
+    };
   }
 
   // You can also provide a bounty getter for external use (e.g., leaderboard)
