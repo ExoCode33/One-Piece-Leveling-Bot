@@ -99,7 +99,7 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.shadowOffsetY = 2;
         
         ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 28px serif';
+        ctx.font = 'bold 28px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('WANTED', 125, 45);
         
@@ -111,7 +111,7 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
 
         // "DEAD OR ALIVE" subtitle
         ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 10px serif';
+        ctx.font = 'bold 10px Arial, sans-serif';
         ctx.fillText('DEAD OR ALIVE', 125, 60);
 
         // Decorative line under header
@@ -179,7 +179,7 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             ctx.fillStyle = '#DDD';
             ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 25);
             ctx.fillStyle = '#666';
-            ctx.font = '12px serif';
+            ctx.font = '12px Arial, sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('NO PHOTO', frameX + frameWidth/2, frameY + (frameHeight - 25)/2);
         }
@@ -191,19 +191,19 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         // Pirate name on black zone with white text
         const displayName = member ? member.displayName : `User ${user.userId}`;
         ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 9px serif';
+        ctx.font = 'bold 9px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 10);
 
         // Bounty amount (larger)
         ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 18px serif';
+        ctx.font = 'bold 18px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`₿${bounty.toLocaleString()}`, 125, 230);
 
         // Berry symbol decoration
         ctx.fillStyle = '#FFD700';
-        ctx.font = 'bold 12px serif';
+        ctx.font = 'bold 12px Arial, sans-serif';
         ctx.fillText('BERRY', 125, 245);
 
         // Threat level box (larger)
@@ -215,15 +215,20 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.strokeRect(25, threatBoxY, 200, 35);
 
         ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 7px serif';
+        ctx.font = 'bold 7px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('THREAT ASSESSMENT', 125, threatBoxY + 10);
-        ctx.font = '6px serif';
-        ctx.fillText(threatLevel.substring(0, 35), 125, threatBoxY + 22);
+        ctx.font = '6px Arial, sans-serif';
+        // Split long threat text into multiple lines
+        const words = threatLevel.split(' ');
+        const line1 = words.slice(0, Math.ceil(words.length/2)).join(' ');
+        const line2 = words.slice(Math.ceil(words.length/2)).join(' ');
+        ctx.fillText(line1, 125, threatBoxY + 20);
+        if (line2) ctx.fillText(line2, 125, threatBoxY + 28);
 
         // Level and XP info (larger)
         ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 8px serif';
+        ctx.font = 'bold 8px Arial, sans-serif';
         ctx.fillText(`Level ${user.level} • ${user.xp.toLocaleString()} XP`, 125, 305);
 
         // Rank badge in corner (larger)
@@ -245,13 +250,18 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         
         // Rank number or crown
         ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 10px serif';
+        ctx.font = 'bold 10px Arial, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(rank === '👑' ? '👑' : `#${rank}`, badgeX, badgeY + 3);
+        if (rank === '👑') {
+            ctx.font = '12px Arial, sans-serif';
+            ctx.fillText('👑', badgeX, badgeY + 4);
+        } else {
+            ctx.fillText(`#${rank}`, badgeX, badgeY + 3);
+        }
 
         // Date stamp (smaller)
         ctx.fillStyle = '#999';
-        ctx.font = '6px serif';
+        ctx.font = '6px Arial, sans-serif';
         ctx.textAlign = 'center';
         const currentDate = new Date().toLocaleDateString();
         ctx.fillText(`Issued: ${currentDate}`, 125, 315);
@@ -360,8 +370,6 @@ module.exports = {
             // Create embed description parts
             let embedDescription = '**🎯 TOP 3 MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\n';
             
-            let initialReplyDone = false;
-            
             // Add Pirate King if exists
             if (pirateKingUser) {
                 // Create Pirate King poster
@@ -412,34 +420,16 @@ module.exports = {
 
                     // Send Pirate King first
                     if (isButtonInteraction) {
-                        await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                        await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment] });
                     } else {
-                        await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                        await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment] });
                     }
-                    initialReplyDone = true;
                 }
             }
             
-            // If no Pirate King, send initial embed first
-            if (!initialReplyDone) {
-                const initialEmbed = new EmbedBuilder()
-                    .setColor(0x1a1a1a)
-                    .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
-                    .setDescription(embedDescription)
-                    .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
-                    .setTimestamp();
-
-                if (isButtonInteraction) {
-                    await interaction.editReply({ embeds: [initialEmbed], components: [row] });
-                } else {
-                    await interaction.reply({ embeds: [initialEmbed], components: [row] });
-                }
-                initialReplyDone = true;
-            }
-            
-            // Create regular top 3 posters
+            // Create all top 3 posters and combine them in one message
             const attachments = [];
-            const embeds = [];
+            const allEmbeds = [];
             
             for (let i = 0; i < topThree.length; i++) {
                 const user = topThree[i];
@@ -488,16 +478,35 @@ module.exports = {
                         )
                         .setImage(`attachment://wanted_poster_${i + 1}.png`);
                     
-                    embeds.push(posterEmbed);
+                    allEmbeds.push(posterEmbed);
                 }
             }
 
-            // Send all top 3 posters as follow-ups
-            for (let i = 0; i < embeds.length; i++) {
-                await interaction.followUp({ 
-                    embeds: [embeds[i]], 
-                    files: [attachments[i]] 
-                });
+            // Send all top 3 posters together with buttons
+            if (allEmbeds.length > 0) {
+                if (pirateKingUser) {
+                    // If Pirate King exists, send as follow-up
+                    await interaction.followUp({ 
+                        embeds: allEmbeds, 
+                        files: attachments,
+                        components: [row]
+                    });
+                } else {
+                    // If no Pirate King, send as initial reply
+                    if (isButtonInteraction) {
+                        await interaction.editReply({ 
+                            embeds: allEmbeds, 
+                            files: attachments,
+                            components: [row]
+                        });
+                    } else {
+                        await interaction.reply({ 
+                            embeds: allEmbeds, 
+                            files: attachments,
+                            components: [row]
+                        });
+                    }
+                }
             }
 
             return;
