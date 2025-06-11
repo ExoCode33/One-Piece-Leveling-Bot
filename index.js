@@ -268,7 +268,10 @@ class LevelingBot {
                 }
             } catch (error) {
                 console.error('Command error:', error);
-                await interaction.reply({ content: 'An error occurred while executing the command.', ephemeral: true });
+                await interaction.reply({ 
+                    content: 'An error occurred while executing the command.', 
+                    flags: 64 // MessageFlags.Ephemeral
+                });
             }
         });
     }
@@ -642,7 +645,10 @@ class LevelingBot {
         );
         
         if (result.rows.length === 0) {
-            return await interaction.reply({ content: `${targetUser.username} hasn't started their pirate journey yet! 🏴‍☠️`, ephemeral: true });
+            return await interaction.reply({ 
+                content: `${targetUser.username} hasn't started their pirate journey yet! 🏴‍☠️`, 
+                flags: 64 // MessageFlags.Ephemeral
+            });
         }
         
         const userData = result.rows[0];
@@ -687,7 +693,10 @@ class LevelingBot {
             );
             
             if (result.rows.length === 0) {
-                return await interaction.reply({ content: 'No pirates have started their journey yet! 🏴‍☠️', ephemeral: true });
+                return await interaction.reply({ 
+                    content: 'No pirates have started their journey yet! 🏴‍☠️', 
+                    flags: 64 // MessageFlags.Ephemeral
+                });
             }
 
             // Filter out excluded role members and get top 10
@@ -718,7 +727,10 @@ class LevelingBot {
             }
 
             if (filteredUsers.length === 0) {
-                return await interaction.reply({ content: 'No eligible pirates found for the leaderboard! 🏴‍☠️', ephemeral: true });
+                return await interaction.reply({ 
+                    content: 'No eligible pirates found for the leaderboard! 🏴‍☠️', 
+                    flags: 64 // MessageFlags.Ephemeral
+                });
             }
 
             // Update top player role
@@ -761,7 +773,10 @@ class LevelingBot {
             
         } catch (error) {
             console.error('Leaderboard command error:', error);
-            await interaction.reply({ content: 'An error occurred while fetching the leaderboard.', ephemeral: true });
+            await interaction.reply({ 
+                content: 'An error occurred while fetching the leaderboard.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
         }
     }
 
@@ -795,14 +810,20 @@ class LevelingBot {
 
     async handleSetLevelRoleCommand(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
-            return await interaction.reply({ content: 'You need the "Manage Roles" permission to use this command.', ephemeral: true });
+            return await interaction.reply({ 
+                content: 'You need the "Manage Roles" permission to use this command.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
         }
         
         const level = interaction.options.getInteger('level');
         const role = interaction.options.getRole('role');
         
         if (![5, 10, 15, 20, 25, 30, 35, 40, 45, 50].includes(level)) {
-            return await interaction.reply({ content: 'Level must be one of: 5, 10, 15, 20, 25, 30, 35, 40, 45, 50', ephemeral: true });
+            return await interaction.reply({ 
+                content: 'Level must be one of: 5, 10, 15, 20, 25, 30, 35, 40, 45, 50', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
         }
         
         const settings = await this.getGuildSettings(interaction.guild.id);
@@ -817,7 +838,10 @@ class LevelingBot {
             ? `Level ${level} role set to ${role.name}`
             : `Level ${level} role removed`;
             
-        await interaction.reply({ content: message, ephemeral: true });
+        await interaction.reply({ 
+            content: message, 
+            flags: 64 // MessageFlags.Ephemeral
+        });
     }
 
     async handleLevelRolesCommand(interaction) {
@@ -887,7 +911,10 @@ class LevelingBot {
 
     async handleReloadCommand(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-            return await interaction.reply({ content: 'You need the "Manage Server" permission to use this command.', ephemeral: true });
+            return await interaction.reply({ 
+                content: 'You need the "Manage Server" permission to use this command.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
         }
         
         // Reload configuration from environment variables
@@ -952,12 +979,18 @@ class LevelingBot {
         console.log('Level roles reloaded:', this.levelRoles);
         console.log('Level up config reloaded:', this.levelUpConfig);
         
-        await interaction.reply({ content: '✅ Configuration reloaded from environment variables!', ephemeral: true });
+        await interaction.reply({ 
+            content: '✅ Configuration reloaded from environment variables!', 
+            flags: 64 // MessageFlags.Ephemeral
+        });
     }
 
     async handleInitRookiesCommand(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-            return await interaction.reply({ content: 'You need the "Administrator" permission to use this command.', ephemeral: true });
+            return await interaction.reply({ 
+                content: 'You need the "Administrator" permission to use this command.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
         }
 
         await interaction.deferReply();
