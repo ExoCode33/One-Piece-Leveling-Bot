@@ -1,8 +1,9 @@
 # Use official Node.js runtime as base image
 FROM node:18-alpine
 
-# Install system dependencies for Canvas
+# Install system dependencies for Canvas and build tools
 RUN apk add --no-cache \
+    build-base \
     cairo-dev \
     jpeg-dev \
     pango-dev \
@@ -11,7 +12,10 @@ RUN apk add --no-cache \
     pixman-dev \
     pangomm-dev \
     libjpeg-turbo-dev \
-    freetype-dev
+    freetype-dev \
+    make \
+    g++ \
+    python3
 
 # Set working directory in container
 WORKDIR /app
