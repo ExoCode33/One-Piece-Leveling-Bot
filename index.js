@@ -71,16 +71,22 @@ class LevelingBot {
             50: process.env.LEVEL_50_ROLE || null
         };
 
-        // Level up message configuration
+        // Level up message configuration with One Piece theme
         this.levelUpConfig = {
-            enabled: process.env.LEVELUP_ENABLED !== 'false', // Default true
+            enabled: process.env.LEVELUP_ENABLED !== 'false',
             channel: process.env.LEVELUP_CHANNEL || null,
-            channelName: process.env.LEVELUP_CHANNEL_NAME || null, // New: Channel name option
-            message: process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!',
-            showXP: process.env.LEVELUP_SHOW_XP !== 'false', // Default true
-            showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false', // Default true
-            showRole: process.env.LEVELUP_SHOW_ROLE !== 'false', // Default true
+            channelName: process.env.LEVELUP_CHANNEL_NAME || null,
+            message: process.env.LEVELUP_MESSAGE || '⚡ **BREAKING NEWS!** ⚡\n📰 *World Economic News* reports that **{user}** has become a more notorious pirate!\n\n💰 **NEW BOUNTY:** {bounty}\n⚔️ **THREAT LEVEL:** Level {level} Pirate\n\n*The World Government has issued an updated wanted poster!*',
+            showXP: process.env.LEVELUP_SHOW_XP !== 'false',
+            showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false',
+            showRole: process.env.LEVELUP_SHOW_ROLE !== 'false',
             pingUser: process.env.LEVELUP_PING_USER === 'true' || false
+        };
+
+        // Leaderboard configuration
+        this.leaderboardConfig = {
+            topRole: process.env.LEADERBOARD_TOP_ROLE || null,
+            excludeRole: process.env.LEADERBOARD_EXCLUDE_ROLE || null
         };
 
         console.log('Bot Configuration:', this.config);
@@ -267,6 +273,111 @@ class LevelingBot {
         });
     }
 
+    getBountyForLevel(level) {
+        // Progressive bounty increase every level, respecting role milestones
+        if (level <= 0) return '0';
+        
+        // Level 1-4: Build up to first role
+        if (level === 1) return '5,000,000';
+        if (level === 2) return '10,000,000';
+        if (level === 3) return '18,000,000';
+        if (level === 4) return '25,000,000';
+        
+        // Level 5-9: Build up to second role  
+        if (level === 5) return '30,000,000';    // Role milestone
+        if (level === 6) return '38,000,000';
+        if (level === 7) return '48,000,000';
+        if (level === 8) return '60,000,000';
+        if (level === 9) return '75,000,000';
+        
+        // Level 10-14: Build up to third role
+        if (level === 10) return '81,000,000';   // Role milestone
+        if (level === 11) return '90,000,000';
+        if (level === 12) return '100,000,000';
+        if (level === 13) return '110,000,000';
+        if (level === 14) return '115,000,000';
+        
+        // Level 15-19: Build up to fourth role
+        if (level === 15) return '120,000,000';  // Role milestone
+        if (level === 16) return '135,000,000';
+        if (level === 17) return '155,000,000';
+        if (level === 18) return '177,000,000';
+        if (level === 19) return '190,000,000';
+        
+        // Level 20-24: Build up to fifth role
+        if (level === 20) return '200,000,000';  // Role milestone
+        if (level === 21) return '230,000,000';
+        if (level === 22) return '260,000,000';
+        if (level === 23) return '290,000,000';
+        if (level === 24) return '310,000,000';
+        
+        // Level 25-29: Build up to sixth role
+        if (level === 25) return '320,000,000';  // Role milestone
+        if (level === 26) return '360,000,000';
+        if (level === 27) return '410,000,000';
+        if (level === 28) return '450,000,000';
+        if (level === 29) return '480,000,000';
+        
+        // Level 30-34: Build up to seventh role
+        if (level === 30) return '500,000,000';  // Role milestone
+        if (level === 31) return '580,000,000';
+        if (level === 32) return '670,000,000';
+        if (level === 33) return '760,000,000';
+        if (level === 34) return '820,000,000';
+        
+        // Level 35-39: Build up to eighth role
+        if (level === 35) return '860,000,000';  // Role milestone
+        if (level === 36) return '920,000,000';
+        if (level === 37) return '980,000,000';
+        if (level === 38) return '1,020,000,000';
+        if (level === 39) return '1,040,000,000';
+        
+        // Level 40-44: Build up to ninth role
+        if (level === 40) return '1,057,000,000'; // Role milestone
+        if (level === 41) return '1,150,000,000';
+        if (level === 42) return '1,250,000,000';
+        if (level === 43) return '1,350,000,000';
+        if (level === 44) return '1,450,000,000';
+        
+        // Level 45-49: Build up to tenth role
+        if (level === 45) return '1,500,000,000'; // Role milestone
+        if (level === 46) return '1,800,000,000';
+        if (level === 47) return '2,200,000,000';
+        if (level === 48) return '2,600,000,000';
+        if (level === 49) return '2,900,000,000';
+        
+        // Level 50+: Yonko territory
+        if (level === 50) return '3,000,000,000'; // Role milestone
+        if (level <= 55) return `${3000 + (level - 50) * 200},000,000`; // +200M per level
+        if (level <= 60) return `${4000 + (level - 55) * 120},000,000`; // +120M per level
+        
+        // Beyond level 60 - legendary territory
+        const baseBounty = 4600000000; // 4.6 billion base
+        const multiplier = Math.pow(1.1, level - 60);
+        const bounty = Math.floor(baseBounty * multiplier);
+        return bounty.toLocaleString();
+    }
+
+    getFlavorTextForLevel(level) {
+        const flavorTexts = {
+            0: "*New individual detected. No criminal activity reported. Continue monitoring.*",
+            5: "*Criminal activity confirmed in East Blue region. Initial bounty authorized.*",
+            10: "*Multiple incidents involving Marine personnel. Elevated threat status.*",
+            15: "*Subject has crossed into Grand Line territory. Enhanced surveillance required.*",
+            20: "*Dangerous individual. Multiple Marine casualties reported. Caution advised.*",
+            25: "*HIGH PRIORITY TARGET: Classified as extremely dangerous. Deploy specialized units.*",
+            30: "*ADVANCED COMBATANT: Confirmed use of advanced fighting techniques. Vice Admiral response.*",
+            35: "*TERRITORIAL THREAT: Capable of commanding large operations. Fleet mobilization recommended.*",
+            40: "*ELITE LEVEL THREAT: Extreme danger to Marine operations. Admiral consultation required.*",
+            45: "*EXTRAORDINARY ABILITIES: Unprecedented power levels detected. Maximum security protocols.*",
+            50: "*EMPEROR CLASS THREAT: Controls vast territories. Considered one of the most dangerous pirates.*",
+            55: "*LEGENDARY THREAT LEVEL: Power exceeds known classifications. Ultimate priority target.*",
+            60: "*WORLD-LEVEL THREAT: Potential to challenge global balance. All resources authorized.*"
+        };
+        
+        return flavorTexts[level] || null;
+    }
+
     async processVoiceXP(userId, guildId, duration, channelId) {
         try {
             const channel = this.client.channels.cache.get(channelId);
@@ -378,110 +489,7 @@ class LevelingBot {
         }
     }
 
-    getBountyForLevel(level) {
-        // Progressive bounty increase every level, respecting role milestones
-        if (level <= 0) return '0';
-        
-        // Level 1-4: Build up to first role
-        if (level === 1) return '5,000,000';
-        if (level === 2) return '10,000,000';
-        if (level === 3) return '18,000,000';
-        if (level === 4) return '25,000,000';
-        
-        // Level 5-9: Build up to second role  
-        if (level === 5) return '30,000,000';    // Role milestone
-        if (level === 6) return '38,000,000';
-        if (level === 7) return '48,000,000';
-        if (level === 8) return '60,000,000';
-        if (level === 9) return '75,000,000';
-        
-        // Level 10-14: Build up to third role
-        if (level === 10) return '81,000,000';   // Role milestone
-        if (level === 11) return '90,000,000';
-        if (level === 12) return '100,000,000';
-        if (level === 13) return '110,000,000';
-        if (level === 14) return '115,000,000';
-        
-        // Level 15-19: Build up to fourth role
-        if (level === 15) return '120,000,000';  // Role milestone
-        if (level === 16) return '135,000,000';
-        if (level === 17) return '155,000,000';
-        if (level === 18) return '177,000,000';
-        if (level === 19) return '190,000,000';
-        
-        // Level 20-24: Build up to fifth role
-        if (level === 20) return '200,000,000';  // Role milestone
-        if (level === 21) return '230,000,000';
-        if (level === 22) return '260,000,000';
-        if (level === 23) return '290,000,000';
-        if (level === 24) return '310,000,000';
-        
-        // Level 25-29: Build up to sixth role
-        if (level === 25) return '320,000,000';  // Role milestone
-        if (level === 26) return '360,000,000';
-        if (level === 27) return '410,000,000';
-        if (level === 28) return '450,000,000';
-        if (level === 29) return '480,000,000';
-        
-        // Level 30-34: Build up to seventh role
-        if (level === 30) return '500,000,000';  // Role milestone
-        if (level === 31) return '580,000,000';
-        if (level === 32) return '670,000,000';
-        if (level === 33) return '760,000,000';
-        if (level === 34) return '820,000,000';
-        
-        // Level 35-39: Build up to eighth role
-        if (level === 35) return '860,000,000';  // Role milestone
-        if (level === 36) return '920,000,000';
-        if (level === 37) return '980,000,000';
-        if (level === 38) return '1,020,000,000';
-        if (level === 39) return '1,040,000,000';
-        
-        // Level 40-44: Build up to ninth role
-        if (level === 40) return '1,057,000,000'; // Role milestone
-        if (level === 41) return '1,150,000,000';
-        if (level === 42) return '1,250,000,000';
-        if (level === 43) return '1,350,000,000';
-        if (level === 44) return '1,450,000,000';
-        
-        // Level 45-49: Build up to tenth role
-        if (level === 45) return '1,500,000,000'; // Role milestone
-        if (level === 46) return '1,800,000,000';
-        if (level === 47) return '2,200,000,000';
-        if (level === 48) return '2,600,000,000';
-        if (level === 49) return '2,900,000,000';
-        
-        // Level 50+: Yonko territory
-        if (level === 50) return '3,000,000,000'; // Role milestone
-        if (level <= 55) return `${3000 + (level - 50) * 200},000,000`; // +200M per level
-        if (level <= 60) return `${4000 + (level - 55) * 120},000,000`; // +120M per level
-        
-        // Beyond level 60 - legendary territory
-        const baseBounty = 4600000000; // 4.6 billion base
-        const multiplier = Math.pow(1.1, level - 60);
-        const bounty = Math.floor(baseBounty * multiplier);
-        return bounty.toLocaleString();
-    }
-
-    getFlavorTextForLevel(level) {
-        const flavorTexts = {
-            0: "*New individual detected. No criminal activity reported. Continue monitoring.*",
-            5: "*Criminal activity confirmed in East Blue region. Initial bounty authorized.*",
-            10: "*Multiple incidents involving Marine personnel. Elevated threat status.*",
-            15: "*Subject has crossed into Grand Line territory. Enhanced surveillance required.*",
-            20: "*Dangerous individual. Multiple Marine casualties reported. Caution advised.*",
-            25: "*HIGH PRIORITY TARGET: Classified as extremely dangerous. Deploy specialized units.*",
-            30: "*ADVANCED COMBATANT: Confirmed use of advanced fighting techniques. Vice Admiral response.*",
-            35: "*TERRITORIAL THREAT: Capable of commanding large operations. Fleet mobilization recommended.*",
-            40: "*ELITE LEVEL THREAT: Extreme danger to Marine operations. Admiral consultation required.*",
-            45: "*EXTRAORDINARY ABILITIES: Unprecedented power levels detected. Maximum security protocols.*",
-            50: "*EMPEROR CLASS THREAT: Controls vast territories. Considered one of the most dangerous pirates.*",
-            55: "*LEGENDARY THREAT LEVEL: Power exceeds known classifications. Ultimate priority target.*",
-            60: "*WORLD-LEVEL THREAT: Potential to challenge global balance. All resources authorized.*"
-        };
-        
-        return flavorTexts[level] || null;
-    }
+    async handleLevelUp(userId, guildId, newLevel, oldLevel) {
         try {
             const guild = this.client.guilds.cache.get(guildId);
             if (!guild) return;
@@ -495,7 +503,7 @@ class LevelingBot {
                 const role = guild.roles.cache.get(roleId);
                 if (role && !user.roles.cache.has(roleId)) {
                     await user.roles.add(role);
-                    console.log(`Added role ${role.name} to ${user.user.username} for reaching level ${newLevel}`);
+                    console.log(`Added Level ${newLevel} role to ${user.user.username} for reaching level ${newLevel}`);
                 }
             }
             
@@ -911,6 +919,7 @@ class LevelingBot {
         };
 
         this.levelRoles = {
+            0: process.env.LEVEL_0_ROLE || null,
             5: process.env.LEVEL_5_ROLE || null,
             10: process.env.LEVEL_10_ROLE || null,
             15: process.env.LEVEL_15_ROLE || null,
@@ -923,6 +932,17 @@ class LevelingBot {
             50: process.env.LEVEL_50_ROLE || null
         };
         
+        this.levelUpConfig = {
+            enabled: process.env.LEVELUP_ENABLED !== 'false',
+            channel: process.env.LEVELUP_CHANNEL || null,
+            channelName: process.env.LEVELUP_CHANNEL_NAME || null,
+            message: process.env.LEVELUP_MESSAGE || '⚡ **BREAKING NEWS!** ⚡\n📰 *World Economic News* reports that **{user}** has become a more notorious pirate!\n\n💰 **NEW BOUNTY:** {bounty}\n⚔️ **THREAT LEVEL:** Level {level} Pirate\n\n*The World Government has issued an updated wanted poster!*',
+            showXP: process.env.LEVELUP_SHOW_XP !== 'false',
+            showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false',
+            showRole: process.env.LEVELUP_SHOW_ROLE !== 'false',
+            pingUser: process.env.LEVELUP_PING_USER === 'true' || false
+        };
+
         this.leaderboardConfig = {
             topRole: process.env.LEADERBOARD_TOP_ROLE || null,
             excludeRole: process.env.LEADERBOARD_EXCLUDE_ROLE || null
@@ -933,6 +953,98 @@ class LevelingBot {
         console.log('Level up config reloaded:', this.levelUpConfig);
         
         await interaction.reply({ content: '✅ Configuration reloaded from environment variables!', ephemeral: true });
+    }
+
+    async handleInitRookiesCommand(interaction) {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return await interaction.reply({ content: 'You need the "Administrator" permission to use this command.', ephemeral: true });
+        }
+
+        await interaction.deferReply();
+
+        try {
+            const guild = interaction.guild;
+            const level0RoleId = this.levelRoles[0];
+            
+            if (!level0RoleId) {
+                return await interaction.editReply({ content: '❌ Level 0 role not configured! Set LEVEL_0_ROLE in environment variables.' });
+            }
+
+            const level0Role = guild.roles.cache.get(level0RoleId);
+            if (!level0Role) {
+                return await interaction.editReply({ content: '❌ Level 0 role not found! Check the role ID in environment variables.' });
+            }
+
+            // Get all bounty role IDs
+            const bountyRoleIds = Object.values(this.levelRoles).filter(id => id !== null);
+            
+            // Fetch all guild members
+            await guild.members.fetch();
+            
+            let processedCount = 0;
+            let assignedCount = 0;
+            let errorCount = 0;
+
+            const embed = new EmbedBuilder()
+                .setColor('#FF6B00')
+                .setTitle('🏴‍☠️ Initializing Rookie Pirates...')
+                .setDescription('Processing server members...')
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [embed] });
+
+            for (const [userId, member] of guild.members.cache) {
+                processedCount++;
+                
+                // Skip bots
+                if (member.user.bot) continue;
+
+                // Check if user already has any bounty role
+                const hasBountyRole = member.roles.cache.some(role => bountyRoleIds.includes(role.id));
+                
+                // If they don't have any bounty role, give them Level 0
+                if (!hasBountyRole) {
+                    try {
+                        await member.roles.add(level0Role);
+                        assignedCount++;
+                        console.log(`Assigned Level 0 role to ${member.user.username}`);
+                    } catch (error) {
+                        errorCount++;
+                        console.error(`Failed to assign role to ${member.user.username}:`, error);
+                    }
+                }
+
+                // Update progress every 50 members
+                if (processedCount % 50 === 0) {
+                    const progressEmbed = new EmbedBuilder()
+                        .setColor('#FF6B00')
+                        .setTitle('🏴‍☠️ Initializing Rookie Pirates...')
+                        .setDescription(`Processed: ${processedCount} members\nAssigned: ${assignedCount} rookies`)
+                        .setTimestamp();
+                    
+                    await interaction.editReply({ embeds: [progressEmbed] });
+                }
+            }
+
+            // Final result
+            const resultEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('✅ Rookie Initialization Complete!')
+                .addFields(
+                    { name: '👥 Total Members Processed', value: processedCount.toString(), inline: true },
+                    { name: '🆕 New Rookies Assigned', value: assignedCount.toString(), inline: true },
+                    { name: '❌ Errors', value: errorCount.toString(), inline: true },
+                    { name: '🏴‍☠️ Role Assigned', value: level0Role.name, inline: false }
+                )
+                .setFooter({ text: 'All eligible members now have bounty roles!' })
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [resultEmbed] });
+
+        } catch (error) {
+            console.error('Init rookies command error:', error);
+            await interaction.editReply({ content: '❌ An error occurred while initializing rookies. Check console for details.' });
+        }
     }
 
     setupCommands() {
