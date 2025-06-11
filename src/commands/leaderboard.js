@@ -1,4 +1,4 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard
+// src/commands/leaderboard.js - One Piece Themed Leaderboard (Fixed Syntax)
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -120,123 +120,127 @@ module.exports = {
             `;
             const result = await client.db.query(query, queryParams);
 
-        // Create One Piece themed embed
-        const embed = new EmbedBuilder()
-            .setTitle('🏴‍☠️ GRAND LINE BOUNTY BOARD 🏴‍☠️')
-            .setColor(0xC41E3A) // Deep Red
-            .setDescription('*The most notorious pirates sailing the Grand Line...*')
-            .setAuthor({ 
-                name: 'World Government Bounty Office', 
-                iconURL: interaction.guild.iconURL() 
-            });
+            // Create One Piece themed embed
+            const embed = new EmbedBuilder()
+                .setTitle('🏴‍☠️ GRAND LINE BOUNTY BOARD 🏴‍☠️')
+                .setColor(0xC41E3A) // Deep Red
+                .setDescription('*The most notorious pirates sailing the Grand Line...*')
+                .setAuthor({ 
+                    name: 'World Government Bounty Office', 
+                    iconURL: interaction.guild.iconURL() 
+                });
 
-        // Add Pirate King section
-        if (pirateKing) {
-            const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
-            const pirateKingTitle = pirateKing.data.level >= 50 ? 'Yonko' : this.getPirateTitle(pirateKing.data.level);
-            embed.addFields({
-                name: '👑 THE PIRATE KING 👑',
-                value: `**${pirateKing.member.displayName}** - *${pirateKingTitle}*\n${pirateKingValue}\n*🌟 Ruler of the Grand Line 🌟*`,
-                inline: false
-            });
-        }
-
-        // Add top 3 section
-        if (result.rows.length > 0) {
-            let top3Text = '';
-            const emojis = ['🥇', '🥈', '🥉'];
-            const titles = ['First Mate', 'Navigator', 'Boatswain'];
-
-            for (let i = 0; i < result.rows.length; i++) {
-                const row = result.rows[i];
-                try {
-                    const member = await interaction.guild.members.fetch(row.user_id);
-                    const bountyValue = this.formatBountyValue(type, row, formatValue);
-                    const pirateTitle = this.getPirateTitle(row.level);
-                    top3Text += `${emojis[i]} **${member.displayName}** - *${pirateTitle}*\n${bountyValue}\n\n`;
-                } catch (error) {
-                    // User left server
-                    const bountyValue = this.formatBountyValue(type, row, formatValue);
-                    const pirateTitle = this.getPirateTitle(row.level);
-                    top3Text += `${emojis[i]} **User Left** - *${pirateTitle}*\n${bountyValue}\n\n`;
-                }
+            // Add Pirate King section
+            if (pirateKing) {
+                const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
+                const pirateKingTitle = pirateKing.data.level >= 50 ? 'Yonko' : this.getPirateTitle(pirateKing.data.level);
+                embed.addFields({
+                    name: '👑 THE PIRATE KING 👑',
+                    value: `**${pirateKing.member.displayName}** - *${pirateKingTitle}*\n${pirateKingValue}\n*🌟 Ruler of the Grand Line 🌟*`,
+                    inline: false
+                });
             }
 
-            embed.addFields({
-                name: '⚡ TOP WANTED PIRATES ⚡',
-                value: top3Text || 'No bounties found...',
-                inline: false
+            // Build top 3 display with error handling
+            if (result.rows.length > 0) {
+                let top3Text = '';
+                const emojis = ['🥇', '🥈', '🥉'];
+
+                for (let i = 0; i < result.rows.length; i++) {
+                    const row = result.rows[i];
+                    try {
+                        const member = await interaction.guild.members.fetch(row.user_id);
+                        const bountyValue = this.formatBountyValue(type, row, formatValue);
+                        const pirateTitle = this.getPirateTitle(row.level);
+                        top3Text += `${emojis[i]} **${member.displayName}** - *${pirateTitle}*\n${bountyValue}\n\n`;
+                    } catch (error) {
+                        // User left server - handle gracefully
+                        const bountyValue = this.formatBountyValue(type, row, formatValue);
+                        const pirateTitle = this.getPirateTitle(row.level);
+                        top3Text += `${emojis[i]} **User Left** - *${pirateTitle}*\n${bountyValue}\n\n`;
+                    }
+                }
+
+                embed.addFields({
+                    name: '⚡ TOP WANTED PIRATES ⚡',
+                    value: top3Text || 'No bounties found...',
+                    inline: false
+                });
+            } else {
+                embed.addFields({
+                    name: '⚡ TOP WANTED PIRATES ⚡',
+                    value: '*The seas are quiet... no bounties have been set.*',
+                    inline: false
+                });
+            }
+
+            // Add view switching buttons
+            const buttons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`leaderboard_short_1_${type}`)
+                        .setLabel('📋 Short View')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('🏴‍☠️'),
+                    new ButtonBuilder()
+                        .setCustomId(`leaderboard_long_1_${type}`)
+                        .setLabel('📜 Full Board')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('📜'),
+                    new ButtonBuilder()
+                        .setCustomId(`bounty_refresh_short_${type}`)
+                        .setLabel('🔄 Refresh')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('⚓')
+                );
+
+            // Add type selection buttons
+            const typeButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`leaderboard_short_1_xp`)
+                        .setLabel('Bounty')
+                        .setStyle(type === 'xp' ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setEmoji('💰'),
+                    new ButtonBuilder()
+                        .setCustomId(`leaderboard_short_1_level`)
+                        .setLabel('Level')
+                        .setStyle(type === 'level' ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setEmoji('⭐'),
+                    new ButtonBuilder()
+                        .setCustomId(`leaderboard_short_1_messages`)
+                        .setLabel('Messages')
+                        .setStyle(type === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setEmoji('💬'),
+                    new ButtonBuilder()
+                        .setCustomId(`leaderboard_short_1_reactions`)
+                        .setLabel('Reactions')
+                        .setStyle(type === 'reactions' ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setEmoji('👍'),
+                    new ButtonBuilder()
+                        .setCustomId(`leaderboard_short_1_voice`)
+                        .setLabel('Voice')
+                        .setStyle(type === 'voice' ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setEmoji('🎙️')
+                );
+
+            embed.setFooter({ 
+                text: '⚓ Marine Intelligence • Updated', 
+                iconURL: client.user.displayAvatarURL() 
             });
-        } else {
-            embed.addFields({
-                name: '⚡ TOP WANTED PIRATES ⚡',
-                value: '*The seas are quiet... no bounties have been set.*',
-                inline: false
+
+            const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+            await interaction[responseMethod]({ 
+                embeds: [embed], 
+                components: [buttons, typeButtons],
+                allowedMentions: { users: [] } 
             });
+
+        } catch (error) {
+            console.error('Error in handleShortView:', error);
+            const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+            await interaction[responseMethod]('❌ An error occurred while fetching the short bounty view.');
         }
-
-        // Add view switching buttons
-        const buttons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_short_1_${type}`)
-                    .setLabel('📋 Short View')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('🏴‍☠️'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_long_1_${type}`)
-                    .setLabel('📜 Full Board')
-                    .setStyle(ButtonStyle.Primary)
-                    .setEmoji('📜'),
-                new ButtonBuilder()
-                    .setCustomId(`bounty_refresh_short_${type}`)
-                    .setLabel('🔄 Refresh')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('⚓')
-            );
-
-        // Add type selection buttons
-        const typeButtons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_short_1_xp`)
-                    .setLabel('Bounty')
-                    .setStyle(type === 'xp' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('💰'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_short_1_level`)
-                    .setLabel('Level')
-                    .setStyle(type === 'level' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('⭐'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_short_1_messages`)
-                    .setLabel('Messages')
-                    .setStyle(type === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('💬'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_short_1_reactions`)
-                    .setLabel('Reactions')
-                    .setStyle(type === 'reactions' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('👍'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_short_1_voice`)
-                    .setLabel('Voice')
-                    .setStyle(type === 'voice' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('🎙️')
-            );
-
-        embed.setFooter({ 
-            text: '⚓ Marine Intelligence • Updated', 
-            iconURL: client.user.displayAvatarURL() 
-        });
-        embed.setThumbnail('https://i.imgur.com/wanted-poster.png'); // You can add a One Piece wanted poster image
-
-        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
-        await interaction[responseMethod]({ 
-            embeds: [embed], 
-            components: [buttons, typeButtons],
-            allowedMentions: { users: [] } 
-        });
     },
 
     async handleLongView(interaction, client, pirateKing, page, type) {
@@ -273,160 +277,10 @@ module.exports = {
                 FROM user_levels
                 WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
                 ORDER BY ${sortField} DESC, total_xp DESC
-                LIMIT ${baseParams.length + 1} OFFSET ${baseParams.length + 2}
+                LIMIT $${baseParams.length + 1} OFFSET $${baseParams.length + 2}
             `;
             const queryParams = [...baseParams, usersPerPage, offset];
             const result = await client.db.query(query, queryParams);
-
-        // Create One Piece themed embed
-        const embed = new EmbedBuilder()
-            .setTitle(`🏴‍☠️ WANTED PIRATES LEDGER - ${displayName.toUpperCase()} 🏴‍☠️`)
-            .setColor(0x8B5A00) // Brown/Gold
-            .setDescription('*A comprehensive list of all wanted pirates in these waters...*')
-            .setAuthor({ 
-                name: 'Marine Headquarters Bounty Division', 
-                iconURL: interaction.guild.iconURL() 
-            });
-
-        // Add Pirate King section (always at top of long view)
-        if (pirateKing) {
-            const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
-            const pirateKingTitle = pirateKing.data.level >= 50 ? 'Yonko' : this.getPirateTitle(pirateKing.data.level);
-            embed.addFields({
-                name: '👑 THE PIRATE KING 👑',
-                value: `**${pirateKing.member.displayName}** - *${pirateKingTitle}*\n${pirateKingValue}`,
-                inline: false
-            });
-        }
-
-        // Build bounty list
-        if (result.rows.length > 0) {
-            let bountyList = '';
-            for (let i = 0; i < result.rows.length; i++) {
-                const row = result.rows[i];
-                const rank = offset + i + 1;
-
-                // Get rank emoji/icon
-                let rankIcon = '';
-                if (rank === 1) rankIcon = '🥇';
-                else if (rank === 2) rankIcon = '🥈';
-                else if (rank === 3) rankIcon = '🥉';
-                else if (rank <= 10) rankIcon = '⚔️';
-                else rankIcon = '🗡️';
-
-                try {
-                    const member = await interaction.guild.members.fetch(row.user_id);
-                    const bountyValue = this.formatBountyValue(type, row, formatValue);
-                    bountyList += `${rankIcon} **#${rank}** ${member.displayName}\n${bountyValue}\n\n`;
-                } catch (error) {
-                    const bountyValue = this.formatBountyValue(type, row, formatValue);
-                    bountyList += `${rankIcon} **#${rank}** *Pirate Fled*\n${bountyValue}\n\n`;
-                }
-            }
-
-            embed.addFields({
-                name: `⚡ WANTED PIRATES - PAGE ${page} ⚡`,
-                value: bountyList,
-                inline: false
-            });
-        } else {
-            embed.addFields({
-                name: '⚡ WANTED PIRATES ⚡',
-                value: '*No bounties found on this page...*',
-                inline: false
-            });
-        }
-
-        // Create navigation buttons
-        const components = [];
-        if (totalPages > 1) {
-            const navButtons = new ActionRowBuilder();
-
-            // Previous page
-            if (page > 1) {
-                navButtons.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page - 1}_${type}`)
-                        .setLabel('◀ Previous')
-                        .setStyle(ButtonStyle.Primary)
-                        .setEmoji('📜')
-                );
-            }
-
-            // Page info
-            navButtons.addComponents(
-                new ButtonBuilder()
-                    .setCustomId('page_info')
-                    .setLabel(`${page}/${totalPages}`)
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(true)
-            );
-
-            // Next page
-            if (page < totalPages) {
-                navButtons.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page + 1}_${type}`)
-                        .setLabel('Next ▶')
-                        .setStyle(ButtonStyle.Primary)
-                        .setEmoji('📜')
-                );
-            }
-
-            components.push(navButtons);
-        }
-
-        // View switching buttons
-        const viewButtons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_short_1_${type}`)
-                    .setLabel('📋 Short View')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('🏴‍☠️'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_long_${page}_${type}`)
-                    .setLabel('📜 Long View')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('📜'),
-                new ButtonBuilder()
-                    .setCustomId(`bounty_refresh_long_${type}`)
-                    .setLabel('🔄 Refresh')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('⚓')
-            );
-
-        // Type selection buttons
-        const typeButtons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_long_${page}_xp`)
-                    .setLabel('Bounty')
-                    .setStyle(type === 'xp' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('💰'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_long_${page}_level`)
-                    .setLabel('Level')
-                    .setStyle(type === 'level' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('⭐'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_long_${page}_messages`)
-                    .setLabel('Messages')
-                    .setStyle(type === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('💬'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_long_${page}_reactions`)
-                    .setLabel('Reactions')
-                    .setStyle(type === 'reactions' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('👍'),
-                new ButtonBuilder()
-                    .setCustomId(`leaderboard_long_${page}_voice`)
-                    .setLabel('Voice')
-                    .setStyle(type === 'voice' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setEmoji('🎙️')
-            );
-
-        components.push(viewButtons, typeButtons);
 
             // Create One Piece themed embed
             const embed = new EmbedBuilder()
