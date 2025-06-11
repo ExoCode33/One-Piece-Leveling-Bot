@@ -360,10 +360,10 @@ module.exports = {
             // Create embed description parts
             let embedDescription = '**🎯 TOP 3 MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\n';
             
+            let initialReplyDone = false;
+            
             // Add Pirate King if exists
             if (pirateKingUser) {
-                embedDescription = '**🎯 TOP 3 MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\n';
-                
                 // Create Pirate King poster
                 const kingBounty = PIRATE_KING_BOUNTY;
                 const kingThreat = 'PIRATE KING - Supreme ruler of all pirates';
@@ -411,10 +411,30 @@ module.exports = {
                         .setTimestamp();
 
                     // Send Pirate King first
-                    const kingResponse = isButtonInteraction 
-                        ? await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] })
-                        : await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                    if (isButtonInteraction) {
+                        await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                    } else {
+                        await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                    }
+                    initialReplyDone = true;
                 }
+            }
+            
+            // If no Pirate King, send initial embed first
+            if (!initialReplyDone) {
+                const initialEmbed = new EmbedBuilder()
+                    .setColor(0x1a1a1a)
+                    .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
+                    .setDescription(embedDescription)
+                    .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
+                    .setTimestamp();
+
+                if (isButtonInteraction) {
+                    await interaction.editReply({ embeds: [initialEmbed], components: [row] });
+                } else {
+                    await interaction.reply({ embeds: [initialEmbed], components: [row] });
+                }
+                initialReplyDone = true;
             }
             
             // Create regular top 3 posters
@@ -480,20 +500,6 @@ module.exports = {
                 });
             }
 
-            if (!pirateKingUser) {
-                // If no Pirate King, send the initial embed
-                const initialEmbed = new EmbedBuilder()
-                    .setColor(0x1a1a1a)
-                    .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
-                    .setDescription(embedDescription)
-                    .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
-                    .setTimestamp();
-
-                await (isButtonInteraction 
-                    ? interaction.editReply({ embeds: [initialEmbed], components: [row] })
-                    : interaction.reply({ embeds: [initialEmbed], components: [row] }));
-            }
-
             return;
 
         } else if (view === 'full') {
@@ -534,6 +540,8 @@ module.exports = {
 
             // Create embed description
             let embedDescription = '**🎯 TOP 3 MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\n';
+            
+            let initialReplyDone = false;
             
             // Add Pirate King if exists
             if (pirateKingUser) {
@@ -584,10 +592,30 @@ module.exports = {
                         .setTimestamp();
 
                     // Send Pirate King first
-                    const kingResponse = isButtonInteraction 
-                        ? await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] })
-                        : await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                    if (isButtonInteraction) {
+                        await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                    } else {
+                        await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                    }
+                    initialReplyDone = true;
                 }
+            }
+
+            // If no Pirate King, send initial embed first
+            if (!initialReplyDone) {
+                const initialEmbed = new EmbedBuilder()
+                    .setColor(0x1a1a1a)
+                    .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
+                    .setDescription(embedDescription)
+                    .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
+                    .setTimestamp();
+
+                if (isButtonInteraction) {
+                    await interaction.editReply({ embeds: [initialEmbed], components: [row] });
+                } else {
+                    await interaction.reply({ embeds: [initialEmbed], components: [row] });
+                }
+                initialReplyDone = true;
             }
 
             // Create top 3 posters
@@ -673,20 +701,6 @@ ${leaderboard.length > 10 ? `\n🏴‍☠️ *... and ${leaderboard.length - 10}
 
             // Send the top 10 list
             await interaction.followUp({ embeds: [listEmbed] });
-
-            if (!pirateKingUser) {
-                // If no Pirate King, send the initial embed
-                const initialEmbed = new EmbedBuilder()
-                    .setColor(0x1a1a1a)
-                    .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
-                    .setDescription(embedDescription)
-                    .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
-                    .setTimestamp();
-
-                await (isButtonInteraction 
-                    ? interaction.editReply({ embeds: [initialEmbed], components: [row] })
-                    : interaction.reply({ embeds: [initialEmbed], components: [row] }));
-            }
 
             return;
         }
