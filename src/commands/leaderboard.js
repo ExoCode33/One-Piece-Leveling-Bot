@@ -37,7 +37,7 @@ module.exports = {
 
     async execute(interaction, client) {
         try {
-            // Only defer if not already deferred (for button interactions)
+            // IMMEDIATELY defer the interaction to prevent timeout
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferReply();
             }
@@ -47,9 +47,15 @@ module.exports = {
             const type = interaction.options.getString('type') || 'xp';
             const guildId = interaction.guildId;
 
-            // Get Pirate King (excluded role user)
-            const pirateKingRoleId = process.env.LEADERBOARD_EXCLUDE_ROLE;
+            // Quick validation before heavy database operations
+            if (!guildId) {
+                const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+                return await interaction[responseMethod]('❌ This command can only be used in a server.');
+            }
+
+            // Get Pirate King (excluded role user) - optimize this query
             let pirateKing = null;
+            const pirateKingRoleId = process.env.LEADERBOARD_EXCLUDE_ROLE;
 
             if (pirateKingRoleId && pirateKingRoleId !== 'your_exclude_role_id') {
                 try {
@@ -60,6 +66,7 @@ module.exports = {
                             SELECT total_xp, level, messages, reactions, voice_time
                             FROM user_levels
                             WHERE user_id = $1 AND guild_id = $2
+                            LIMIT 1
                         `;
                         const pirateKingResult = await client.db.query(pirateKingQuery, [pirateKingMember.id, guildId]);
                         
@@ -72,6 +79,7 @@ module.exports = {
                     }
                 } catch (error) {
                     console.error('Error fetching Pirate King:', error);
+                    // Continue without Pirate King rather than failing
                 }
             }
 
@@ -86,26 +94,31 @@ module.exports = {
             try {
                 const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
                 await interaction[responseMethod]('❌ An error occurred while fetching the bounty board.');
-            } catch {}
+            } catch (responseError) {
+                console.error('Error sending error response:', responseError);
+            }
         }
     },
 
     async handleShortView(interaction, client, pirateKing, type) {
         const guildId = interaction.guildId;
         
-        // Determine sort field and display format
-        const { sortField, formatValue } = this.getSortConfig(type);
+        try {
+            // Determine sort field and display format
+            const { sortField, formatValue } = this.getSortConfig(type);
 
-        // Get top 3 (excluding Pirate King)
-        const excludeCondition = pirateKing ? `AND user_id != '${pirateKing.member.id}'` : '';
-        const query = `
-            SELECT user_id, total_xp, level, messages, reactions, voice_time
-            FROM user_levels
-            WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
-            ORDER BY ${sortField} DESC, total_xp DESC
-            LIMIT 3
-        `;
-        const result = await client.db.query(query, [guildId]);
+            // Get top 3 (excluding Pirate King) - optimized query
+            const excludeCondition = pirateKing ? `AND user_id != $2` : '';
+            const queryParams = pirateKing ? [guildId, pirateKing.member.id] : [guildId];
+            
+            const query = `
+                SELECT user_id, total_xp, level, messages, reactions, voice_time
+                FROM user_levels
+                WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
+                ORDER BY ${sortField} DESC, total_xp DESC
+                LIMIT 3
+            `;
+            const result = await client.db.query(query, queryParams);
 
         // Create One Piece themed embed
         const embed = new EmbedBuilder()
@@ -231,34 +244,39 @@ module.exports = {
         const usersPerPage = 10;
         const offset = (page - 1) * usersPerPage;
 
-        // Determine sort field and display format
-        const { sortField, displayName, formatValue } = this.getSortConfig(type);
+        try {
+            // Determine sort field and display format
+            const { sortField, displayName, formatValue } = this.getSortConfig(type);
 
-        // Get total count (excluding Pirate King)
-        const excludeCondition = pirateKing ? `AND user_id != '${pirateKing.member.id}'` : '';
-        const countQuery = `
-            SELECT COUNT(*) as total
-            FROM user_levels
-            WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
-        `;
-        const countResult = await client.db.query(countQuery, [guildId]);
-        const totalUsers = parseInt(countResult.rows[0].total);
-        const totalPages = Math.ceil(totalUsers / usersPerPage);
+            // Optimize queries with proper parameterization
+            const excludeCondition = pirateKing ? `AND user_id != $2` : '';
+            const baseParams = pirateKing ? [guildId, pirateKing.member.id] : [guildId];
 
-        if (page > totalPages && totalPages > 0) {
-            const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
-            return await interaction[responseMethod](`❌ Page ${page} doesn't exist. There are only ${totalPages} pages in this bounty ledger.`);
-        }
+            // Get total count (excluding Pirate King)
+            const countQuery = `
+                SELECT COUNT(*) as total
+                FROM user_levels
+                WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
+            `;
+            const countResult = await client.db.query(countQuery, baseParams);
+            const totalUsers = parseInt(countResult.rows[0].total);
+            const totalPages = Math.ceil(totalUsers / usersPerPage);
 
-        // Fetch leaderboard data (excluding Pirate King)
-        const query = `
-            SELECT user_id, total_xp, level, messages, reactions, voice_time
-            FROM user_levels
-            WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
-            ORDER BY ${sortField} DESC, total_xp DESC
-            LIMIT $2 OFFSET $3
-        `;
-        const result = await client.db.query(query, [guildId, usersPerPage, offset]);
+            if (page > totalPages && totalPages > 0) {
+                const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+                return await interaction[responseMethod](`❌ Page ${page} doesn't exist. There are only ${totalPages} pages in this bounty ledger.`);
+            }
+
+            // Fetch leaderboard data (excluding Pirate King)
+            const query = `
+                SELECT user_id, total_xp, level, messages, reactions, voice_time
+                FROM user_levels
+                WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
+                ORDER BY ${sortField} DESC, total_xp DESC
+                LIMIT ${baseParams.length + 1} OFFSET ${baseParams.length + 2}
+            `;
+            const queryParams = [...baseParams, usersPerPage, offset];
+            const result = await client.db.query(query, queryParams);
 
         // Create One Piece themed embed
         const embed = new EmbedBuilder()
@@ -410,17 +428,23 @@ module.exports = {
 
         components.push(viewButtons, typeButtons);
 
-        embed.setFooter({ 
-            text: `⚓ Marine Intelligence • Page ${page}/${totalPages} • ${totalUsers} total bounties`, 
-            iconURL: client.user.displayAvatarURL() 
-        });
+            embed.setFooter({ 
+                text: `⚓ Marine Intelligence • Page ${page}/${totalPages} • ${totalUsers} total bounties`, 
+                iconURL: client.user.displayAvatarURL() 
+            });
 
-        const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
-        await interaction[responseMethod]({ 
-            embeds: [embed], 
-            components: components,
-            allowedMentions: { users: [] } 
-        });
+            const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+            await interaction[responseMethod]({ 
+                embeds: [embed], 
+                components: components,
+                allowedMentions: { users: [] } 
+            });
+
+        } catch (error) {
+            console.error('Error in handleLongView:', error);
+            const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+            await interaction[responseMethod]('❌ An error occurred while fetching the long bounty view.');
+        }
     },
 
     getSortConfig(type) {
