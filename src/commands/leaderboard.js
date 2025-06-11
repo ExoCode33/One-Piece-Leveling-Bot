@@ -30,10 +30,10 @@ module.exports = {
     ),
 
   async execute(interaction, client, xpTracker) {
-    // Button handler support
-    if (interaction.isButton && interaction.customId.startsWith('lb_view_')) {
+    // Fix: Only check customId if this is a button interaction
+    if (interaction.isButton && interaction.customId && interaction.customId.startsWith('lb_view_')) {
       interaction.options = {
-        getString: (name) => interaction.customId.replace('lb_view_', ''),
+        getString: () => interaction.customId.replace('lb_view_', ''),
       };
     }
 
