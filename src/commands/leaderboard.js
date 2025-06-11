@@ -87,18 +87,59 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.lineWidth = 3;
         ctx.strokeRect(12, 12, 276, 376);
 
-        // === TEXT RENDERING WITH SIMPLE APPROACH ===
+        // === ATTEMPT TEXT RENDERING WITH DIFFERENT APPROACH ===
         
-        // Red rectangle for "WANTED" text
-        ctx.fillStyle = '#FF0000';
-        ctx.fillRect(75, 25, 150, 35);
-        
-        // White rectangle for "DEAD OR ALIVE"
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(90, 65, 120, 20);
-        
-        // For now, let's skip text and focus on layout
-        // We'll add simple shapes to represent text areas
+        // Try to register a font first
+        try {
+            // "WANTED" text - try multiple approaches
+            ctx.fillStyle = '#FF0000';
+            ctx.fillRect(75, 25, 150, 35); // Red background
+            
+            // Approach 1: Simple text
+            ctx.fillStyle = '#FFFFFF';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = '24px sans-serif';
+            ctx.fillText('WANTED', 150, 42);
+            
+            // If that doesn't work, try with strokeText
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.strokeText('WANTED', 150, 42);
+            
+        } catch (e) {
+            console.log('Font approach 1 failed, trying approach 2');
+        }
+
+        // "DEAD OR ALIVE" text
+        try {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(90, 65, 120, 20); // White background
+            ctx.fillStyle = '#000000';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('DEAD OR ALIVE', 150, 75);
+            ctx.strokeStyle = '#000000';
+            ctx.strokeText('DEAD OR ALIVE', 150, 75);
+        } catch (e) {
+            console.log('Font approach 2 failed');
+        }
+
+        // Try Canvas measureText to see if fonts are working at all
+        try {
+            const testText = 'TEST';
+            const metrics = ctx.measureText(testText);
+            console.log('Canvas text metrics working:', metrics.width > 0);
+            
+            if (metrics.width > 0) {
+                // If measureText works, fonts should work
+                ctx.fillStyle = '#00FF00'; // Bright green for testing
+                ctx.font = '20px sans-serif';
+                ctx.fillText('TEXT WORKS', 150, 100);
+            }
+        } catch (e) {
+            console.log('Canvas text completely broken');
+        }
 
         // Decorative line under header
         ctx.strokeStyle = '#8B0000';
@@ -176,29 +217,101 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.fillStyle = '#000000';
         ctx.fillRect(frameX, frameY + frameHeight - 30, frameWidth, 30);
 
-        // Red rectangle for bounty
-        ctx.fillStyle = '#8B0000';
-        ctx.fillRect(75, 260, 150, 30);
+        // Pirate name on black zone with white text - TRY AGAIN
+        try {
+            const displayName = member ? member.displayName : `User ${user.userId}`;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 15);
+            
+            // Also try stroke text
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1;
+            ctx.strokeText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 15);
+        } catch (e) {
+            console.log('Name text failed');
+        }
 
-        // Yellow rectangle for "BERRY"
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(110, 295, 80, 20);
+        // Bounty amount - TRY AGAIN
+        try {
+            ctx.fillStyle = '#8B0000';
+            ctx.fillRect(75, 260, 150, 30); // Red background
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`B${bounty.toLocaleString()}`, 150, 275);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.strokeText(`B${bounty.toLocaleString()}`, 150, 275);
+        } catch (e) {
+            console.log('Bounty text failed');
+        }
 
-        // Threat level box
-        const threatBoxY = 325;
-        ctx.fillStyle = 'rgba(139, 0, 0, 0.3)';
-        ctx.fillRect(30, threatBoxY, 240, 40);
-        ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(30, threatBoxY, 240, 40);
+        // "BERRY" text - TRY AGAIN
+        try {
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(110, 295, 80, 20); // Yellow background
+            ctx.fillStyle = '#000000';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('BERRY', 150, 305);
+            ctx.strokeStyle = '#000000';
+            ctx.strokeText('BERRY', 150, 305);
+        } catch (e) {
+            console.log('Berry text failed');
+        }
 
-        // White background for threat text
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(35, threatBoxY + 5, 230, 30);
+        // Threat assessment text
+        try {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(35, threatBoxY + 5, 230, 30); // White background
+            ctx.fillStyle = '#000000';
+            ctx.font = '8px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText('THREAT ASSESSMENT', 150, threatBoxY + 8);
+            
+            // Split threat text
+            ctx.font = '7px sans-serif';
+            const words = threatLevel.split(' ');
+            const line1 = words.slice(0, 4).join(' ');
+            const line2 = words.slice(4).join(' ');
+            ctx.fillText(line1, 150, threatBoxY + 18);
+            if (line2) ctx.fillText(line2, 150, threatBoxY + 28);
+        } catch (e) {
+            console.log('Threat text failed');
+        }
 
-        // Level/XP info background
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(75, 375, 150, 20);
+        // Level/XP info
+        try {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(75, 375, 150, 20); // White background
+            ctx.fillStyle = '#000000';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`Level ${user.level} - ${user.xp.toLocaleString()} XP`, 150, 385);
+        } catch (e) {
+            console.log('Level text failed');
+        }
+
+        // Rank badge text
+        try {
+            ctx.fillStyle = '#8B0000';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (rank === 'KING') {
+                ctx.fillText('K', badgeX, badgeY);
+            } else {
+                ctx.fillText(`${rank}`, badgeX, badgeY);
+            }
+        } catch (e) {
+            console.log('Badge text failed');
+        }
 
         // Rank badge in corner
         const badgeX = 260;
