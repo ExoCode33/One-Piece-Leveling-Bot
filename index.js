@@ -74,6 +74,7 @@ class LevelingBot {
         this.levelUpConfig = {
             enabled: process.env.LEVELUP_ENABLED !== 'false', // Default true
             channel: process.env.LEVELUP_CHANNEL || null,
+            channelName: process.env.LEVELUP_CHANNEL_NAME || null, // New: Channel name option
             message: process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!',
             showXP: process.env.LEVELUP_SHOW_XP !== 'false', // Default true
             showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false', // Default true
@@ -395,11 +396,21 @@ class LevelingBot {
             if (this.levelUpConfig.enabled) {
                 let channel = null;
                 
+                // Try to find channel by ID first
                 if (this.levelUpConfig.channel) {
                     channel = guild.channels.cache.get(this.levelUpConfig.channel);
                 }
                 
-                // If no specific channel set, try to find a general channel
+                // If no ID channel found, try to find by name
+                if (!channel && this.levelUpConfig.channelName) {
+                    channel = guild.channels.cache.find(ch => 
+                        ch.type === 0 && // Text channel
+                        ch.name.toLowerCase() === this.levelUpConfig.channelName.toLowerCase() &&
+                        ch.permissionsFor(guild.members.me).has(['SendMessages', 'EmbedLinks'])
+                    );
+                }
+                
+                // If still no channel, try to find a general channel
                 if (!channel) {
                     channel = guild.channels.cache.find(ch => 
                         ch.type === 0 && // Text channel
@@ -698,6 +709,7 @@ class LevelingBot {
         this.levelUpConfig = {
             enabled: process.env.LEVELUP_ENABLED !== 'false',
             channel: process.env.LEVELUP_CHANNEL || null,
+            channelName: process.env.LEVELUP_CHANNEL_NAME || null,
             message: process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!',
             showXP: process.env.LEVELUP_SHOW_XP !== 'false',
             showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false',
