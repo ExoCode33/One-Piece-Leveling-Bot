@@ -1,12 +1,11 @@
 // src/utils/xpTracker.js - XP Tracking and Management System
 
-const XPLogger = require('./xpLogger');
+const { sendXPLog } = require('./xpLogger');
 
 class XPTracker {
     constructor(client, db) {
         this.client = client;
         this.db = db;
-        this.logger = new XPLogger(client);
         
         // Cooldown maps
         this.messageCooldowns = new Map();
@@ -53,6 +52,12 @@ class XPTracker {
             case 'exponential':
             default:
                 return Math.floor(Math.pow(level / multiplier, 2) * 100);
+        }
+    }
+
+    async debugLog(message) {
+        if (process.env.DEBUG_MODE === 'true') {
+            console.log(`[DEBUG] ${message}`);
         }
     }
 
@@ -110,7 +115,7 @@ class XPTracker {
             await this.db.query(upsertQuery, [userId, guildId, newTotalXP, newLevel, messages, reactions, voiceTime]);
             
             // Debug logging
-            await this.logger.debugLog(`XP Update: User ${userId}, Activity: ${activityType}, XP: +${finalXP}, Total: ${newTotalXP}, Level: ${newLevel}`);
+            await this.debugLog(`XP Update: User ${userId}, Activity: ${activityType}, XP: +${finalXP}, Total: ${newTotalXP}, Level: ${newLevel}`);
             
             // Get user object for logging
             const guild = this.client.guilds.cache.get(guildId);
@@ -124,39 +129,23 @@ class XPTracker {
                 }
             }
             
-            // Professional XP logging
-            if (user) {
-                await this.logger.sendXPLog(activityType, user, finalXP, {
+            // Professional XP logging (for non-levelup activities)
+            if (user && activityType !== 'levelup') {
+                await sendXPLog(this.client, activityType, user, finalXP, {
                     ...additionalInfo,
                     totalXP: newTotalXP,
-                    level: newLevel,
-                    guildName: guild?.name,
-                    guildIcon: guild?.iconURL()
+                    level: newLevel
                 });
             }
             
             // Check for level up
             if (newLevel > currentLevel) {
                 await this.handleLevelUp(userId, guildId, newLevel, currentLevel, newTotalXP);
-                
-                // Log level up event
-                if (user) {
-                    const nextLevelXP = this.calculateXPForLevel(newLevel + 1);
-                    await this.logger.sendXPLog('levelup', user, 0, {
-                        newLevel,
-                        oldLevel: currentLevel,
-                        totalXP: newTotalXP,
-                        nextLevelXP,
-                        roleReward: process.env[`LEVEL_${newLevel}_ROLE`],
-                        guildName: guild?.name,
-                        guildIcon: guild?.iconURL()
-                    });
-                }
             }
             
             return finalXP;
         } catch (error) {
-            await this.logger.logError(error, 'updateUserLevel');
+            console.error('Error updating user level:', error);
             return 0;
         }
     }
@@ -170,7 +159,7 @@ class XPTracker {
             const user = await guild.members.fetch(userId);
             if (!user) return;
             
-            await this.logger.debugLog(`Level Up: ${user.user.tag} reached level ${newLevel}`);
+            await this.debugLog(`Level Up: ${user.user.tag} reached level ${newLevel}`);
             
             // Check for role rewards
             const roleId = process.env[`LEVEL_${newLevel}_ROLE`];
@@ -182,67 +171,23 @@ class XPTracker {
                         console.log(`[LEVEL UP] Added role ${role.name} to ${user.user.tag}`);
                     }
                 } catch (error) {
-                    await this.logger.logError(error, `Adding role for level ${newLevel}`);
+                    console.error(`Error adding role for level ${newLevel}:`, error);
                 }
             }
             
-            // Send level up message to user's channel or designated channel
-            await this.sendLevelUpMessage(user, newLevel, oldLevel, totalXP, guild);
-            
+            // ONLY send One Piece themed level up message
+            const levelUpEnabled = process.env.LEVELUP_ENABLED !== 'false';
+            if (levelUpEnabled) {
+                // Send the One Piece themed level up log
+                await sendXPLog(this.client, 'levelup', user.user, 0, {
+                    newLevel,
+                    oldLevel,
+                    totalXP,
+                    roleReward: process.env[`LEVEL_${newLevel}_ROLE`]
+                });
+            }
         } catch (error) {
-            await this.logger.logError(error, 'handleLevelUp');
-        }
-    }
-
-    // Send level up message
-    async sendLevelUpMessage(user, newLevel, oldLevel, totalXP, guild) {
-        const levelUpEnabled = process.env.LEVELUP_ENABLED !== 'false';
-        if (!levelUpEnabled) return;
-
-        const channelId = process.env.LEVELUP_CHANNEL;
-        let channel = null;
-        
-        if (channelId && channelId !== 'your_levelup_channel_id') {
-            channel = guild.channels.cache.get(channelId);
-        }
-        
-        if (!channel) {
-            // Use a general channel if levelup channel not found
-            channel = guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(guild.members.me).has('SendMessages'));
-        }
-        
-        if (channel) {
-            let message = process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!';
-            message = message.replace('{user}', process.env.LEVELUP_PING_USER === 'true' ? `<@${user.id}>` : user.user.username);
-            message = message.replace('{level}', newLevel);
-            message = message.replace('{oldlevel}', oldLevel);
-            
-            const { EmbedBuilder } = require('discord.js');
-            const embed = new EmbedBuilder()
-                .setTitle('🎉 Level Up!')
-                .setDescription(message)
-                .setColor(0x00AE86)
-                .setThumbnail(user.user.displayAvatarURL());
-            
-            if (process.env.LEVELUP_SHOW_XP === 'true') {
-                embed.addFields({ name: 'Total XP', value: totalXP.toLocaleString(), inline: true });
-            }
-            
-            if (process.env.LEVELUP_SHOW_PROGRESS === 'true') {
-                const nextLevelXP = this.calculateXPForLevel(newLevel + 1);
-                const currentLevelXP = this.calculateXPForLevel(newLevel);
-                embed.addFields({ name: 'Next Level', value: `${nextLevelXP - currentLevelXP} XP needed`, inline: true });
-            }
-            
-            const roleId = process.env[`LEVEL_${newLevel}_ROLE`];
-            if (process.env.LEVELUP_SHOW_ROLE === 'true' && roleId && roleId !== 'your_role_id_here') {
-                const role = guild.roles.cache.get(roleId);
-                if (role) {
-                    embed.addFields({ name: 'Role Unlocked', value: role.name, inline: true });
-                }
-            }
-            
-            await channel.send({ embeds: [embed] });
+            console.error('Error handling level up:', error);
         }
     }
 
@@ -326,14 +271,7 @@ class XPTracker {
                 startTime: Date.now(),
                 lastXPTime: Date.now()
             });
-            
-            await this.logger.debugLog(`Voice session started: ${member.user.tag} joined ${newState.channel.name}`);
-            
-            // Log voice session start
-            await this.logger.logVoiceSession('start', member.user, {
-                channelName: newState.channel.name,
-                memberCount: newState.channel.members.filter(m => !m.user.bot).size
-            });
+            await this.debugLog(`Voice session started: ${member.user.tag} joined ${newState.channel.name}`);
         }
         
         // User left a voice channel
@@ -350,16 +288,10 @@ class XPTracker {
                         VALUES ($1, $2, $3, to_timestamp($4/1000), NOW(), $5)
                     `, [userId, guildId, session.channelId, session.startTime, duration]);
                 } catch (error) {
-                    await this.logger.logError(error, 'Recording voice session');
+                    console.error('Error recording voice session:', error);
                 }
                 
-                // Log voice session end
-                await this.logger.logVoiceSession('end', member.user, {
-                    duration,
-                    xpGained: Math.floor(duration * ((parseInt(process.env.VOICE_XP_MIN) + parseInt(process.env.VOICE_XP_MAX)) / 2))
-                });
-                
-                await this.logger.debugLog(`Voice session ended: ${member.user.tag} left after ${duration} minutes`);
+                await this.debugLog(`Voice session ended: ${member.user.tag} left after ${duration} minutes`);
             }
         }
         
@@ -368,7 +300,7 @@ class XPTracker {
             const session = this.voiceSessions.get(sessionKey);
             if (session) {
                 session.channelId = newState.channelId;
-                await this.logger.debugLog(`Voice session moved: ${member.user.tag} moved to ${newState.channel.name}`);
+                await this.debugLog(`Voice session moved: ${member.user.tag} moved to ${newState.channel.name}`);
             }
         }
     }
@@ -416,8 +348,13 @@ class XPTracker {
                 
                 session.lastXPTime = Date.now();
                 
+                // Log XP if enabled
+                if (process.env.DEBUG_VOICE === 'true') {
+                    await this.debugLog(`Voice XP awarded: ${userId} (+${xpAmount} XP) in ${channel.name}`);
+                }
+                
             } catch (error) {
-                await this.logger.logError(error, 'Voice XP processing');
+                console.error('Error in voice XP loop:', error);
             }
         }
     }
@@ -451,7 +388,7 @@ class XPTracker {
                 progressPercentage: Math.floor((progressXP / neededXP) * 100)
             };
         } catch (error) {
-            await this.logger.logError(error, 'Getting user stats');
+            console.error('Error getting user stats:', error);
             return null;
         }
     }
@@ -509,118 +446,8 @@ class XPTracker {
                 type
             };
         } catch (error) {
-            await this.logger.logError(error, 'Getting leaderboard');
+            console.error('Error getting leaderboard:', error);
             return null;
-        }
-    }
-
-    // Get server statistics
-    async getServerStats(guildId) {
-        try {
-            const query = `
-                SELECT 
-                    COUNT(*) as total_users,
-                    SUM(total_xp) as total_xp,
-                    SUM(messages) as total_messages,
-                    SUM(reactions) as total_reactions,
-                    SUM(voice_time) as total_voice_time,
-                    MAX(total_xp) as highest_xp,
-                    MAX(level) as highest_level,
-                    AVG(total_xp) as avg_xp,
-                    AVG(level) as avg_level
-                FROM user_levels 
-                WHERE guild_id = $1
-            `;
-            const result = await this.db.query(query, [guildId]);
-            
-            // Get level distribution
-            const levelDistQuery = `
-                SELECT level, COUNT(*) as count
-                FROM user_levels 
-                WHERE guild_id = $1
-                GROUP BY level
-                ORDER BY level
-            `;
-            const levelDistResult = await this.db.query(levelDistQuery, [guildId]);
-            
-            return {
-                ...result.rows[0],
-                levelDistribution: levelDistResult.rows
-            };
-        } catch (error) {
-            await this.logger.logError(error, 'Getting server stats');
-            return null;
-        }
-    }
-
-    // Manual XP adjustment
-    async adjustUserXP(userId, guildId, xpChange, reason = 'Manual adjustment') {
-        try {
-            const userQuery = `
-                SELECT total_xp, level FROM user_levels 
-                WHERE user_id = $1 AND guild_id = $2
-            `;
-            let userResult = await this.db.query(userQuery, [userId, guildId]);
-            
-            let currentXP = 0;
-            let currentLevel = 0;
-            
-            if (userResult.rows.length > 0) {
-                currentXP = userResult.rows[0].total_xp;
-                currentLevel = userResult.rows[0].level;
-            }
-            
-            const newTotalXP = Math.max(0, currentXP + xpChange);
-            const newLevel = this.calculateLevel(newTotalXP);
-            
-            const upsertQuery = `
-                INSERT INTO user_levels (user_id, guild_id, total_xp, level, last_updated)
-                VALUES ($1, $2, $3, $4, NOW())
-                ON CONFLICT (user_id, guild_id)
-                DO UPDATE SET 
-                    total_xp = $3,
-                    level = $4,
-                    last_updated = NOW()
-            `;
-            
-            await this.db.query(upsertQuery, [userId, guildId, newTotalXP, newLevel]);
-            
-            // Log the manual adjustment
-            await this.logger.debugLog(`Manual XP adjustment: User ${userId}, Change: ${xpChange}, Reason: ${reason}, New Total: ${newTotalXP}`);
-            
-            // Check for level changes
-            if (newLevel > currentLevel) {
-                await this.handleLevelUp(userId, guildId, newLevel, currentLevel, newTotalXP);
-            }
-            
-            return {
-                oldXP: currentXP,
-                newXP: newTotalXP,
-                oldLevel: currentLevel,
-                newLevel: newLevel,
-                change: xpChange
-            };
-        } catch (error) {
-            await this.logger.logError(error, 'Manual XP adjustment');
-            return null;
-        }
-    }
-
-    // Reset user progress
-    async resetUser(userId, guildId) {
-        try {
-            const deleteQuery = `
-                DELETE FROM user_levels 
-                WHERE user_id = $1 AND guild_id = $2
-            `;
-            const result = await this.db.query(deleteQuery, [userId, guildId]);
-            
-            await this.logger.debugLog(`User reset: ${userId} in guild ${guildId}`);
-            
-            return result.rowCount > 0;
-        } catch (error) {
-            await this.logger.logError(error, 'Resetting user');
-            return false;
         }
     }
 }
