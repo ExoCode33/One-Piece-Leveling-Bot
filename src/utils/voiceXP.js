@@ -5,15 +5,16 @@
  * @returns {number} XP amount to award per minute in voice
  */
 function getVoiceXP() {
-    // Base XP per minute in voice chat
-    const baseXP = parseInt(process.env.VOICE_BASE_XP) || 10;
+    // Get XP range from your environment variables
+    const min = parseInt(process.env.VOICE_XP_MIN) || 45;
+    const max = parseInt(process.env.VOICE_XP_MAX) || 55;
+    const multiplier = parseFloat(process.env.XP_MULTIPLIER) || 1.0;
     
-    // Add some randomness (±30% variation)
-    const randomMultiplier = 0.7 + (Math.random() * 0.6);
-    const finalXP = Math.floor(baseXP * randomMultiplier);
+    // Calculate random XP within range
+    const baseXP = Math.floor(Math.random() * (max - min + 1)) + min;
+    const finalXP = Math.floor(baseXP * multiplier);
     
-    // Ensure minimum XP
-    return Math.max(finalXP, 5);
+    return finalXP;
 }
 
 /**
