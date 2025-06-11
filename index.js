@@ -675,6 +675,7 @@ class LevelingBot {
         
         console.log('Configuration reloaded:', this.config);
         console.log('Level roles reloaded:', this.levelRoles);
+        console.log('Level up config reloaded:', this.levelUpConfig);
         
         await interaction.reply({ content: '✅ Configuration reloaded from environment variables!', ephemeral: true });
     }
