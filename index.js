@@ -567,7 +567,9 @@ client.on('interactionCreate', async interaction => {
 
         // Handle refresh button
         if (interaction.isButton() && interaction.customId.startsWith('bounty_refresh_')) {
-            const type = interaction.customId.split('_')[2] || 'xp';
+            const parts = interaction.customId.split('_');
+            const view = parts[2]; // 'short' or 'long'
+            const type = parts[3] || 'xp';
             
             await interaction.deferUpdate();
             
@@ -578,7 +580,7 @@ client.on('interactionCreate', async interaction => {
                 reply: async (options) => await interaction.editReply(options),
                 options: {
                     getString: (name) => {
-                        if (name === 'view') return 'short';
+                        if (name === 'view') return view;
                         if (name === 'type') return type;
                         return null;
                     },
