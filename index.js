@@ -1,123 +1,101 @@
-// src/commands/index.js - Command Router and Handler
-const { SlashCommandBuilder } = require('discord.js');
+// index.js
 
-// Import individual command modules
-const levelCommands = require('./level');
-const leaderboardCommands = require('./leaderboard');
-const adminCommands = require('./admin');
-const utilityCommands = require('./utility');
+const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
+require('dotenv').config();
+const { sendXPLog } = require('./src/commands/utility');
+const level = require('./src/commands/level');
+const admin = require('./src/commands/admin');
+const leaderboard = require('./src/commands/leaderboard');
 
-// Simple debug replacement
-const debug = {
-    command: (...args) => console.log('[CMD]', ...args),
-    error: (category, ...args) => console.error('[ERROR]', category, ...args),
-    success: (category, ...args) => console.log('[SUCCESS]', category, ...args)
-};
+// === Database Setup ===
+const { Pool } = require('pg');
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
+db.connect().then(() => console.log('[INFO] Database initialized successfully')).catch(console.error);
 
-class CommandHandler {
-    constructor(bot) {
-        this.bot = bot;
-        this.client = bot.client;
-        this.db = bot.db;
-        
-        // Initialize command modules with bot instance
-        this.levelCommands = new levelCommands(bot);
-        this.leaderboardCommands = new leaderboardCommands(bot);
-        this.adminCommands = new adminCommands(bot);
-        this.utilityCommands = new utilityCommands(bot);
-    }
+// === Discord Client Setup ===
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildVoiceStates
+    ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User, Partials.GuildMember],
+});
 
-    // Get all command definitions
-    getCommandDefinitions() {
-        return [
-            // Level Commands
-            ...this.levelCommands.getDefinitions(),
-            
-            // Leaderboard Commands
-            ...this.leaderboardCommands.getDefinitions(),
-            
-            // Admin Commands
-            ...this.adminCommands.getDefinitions(),
-            
-            // Utility Commands
-            ...this.utilityCommands.getDefinitions()
-        ];
-    }
+client.commands = new Collection();
+client.db = db;
 
-    // Handle command execution
-    async handleCommand(interaction) {
-        debug.command(`Command: /${interaction.commandName} from ${interaction.user.username}`);
-        
-        try {
-            const commandName = interaction.commandName;
-            
-            // Route to appropriate command handler
-            switch (commandName) {
-                // Level Commands
-                case 'level':
-                    await this.levelCommands.handleLevel(interaction);
-                    break;
-                
-                // Leaderboard Commands
-                case 'leaderboard':
-                    await this.leaderboardCommands.handleLeaderboard(interaction);
-                    break;
-                
-                // Admin Commands
-                case 'setlevelrole':
-                    await this.adminCommands.handleSetLevelRole(interaction);
-                    break;
-                case 'reload':
-                    await this.adminCommands.handleReload(interaction);
-                    break;
-                case 'initrookies':
-                    await this.adminCommands.handleInitRookies(interaction);
-                    break;
-                
-                // Utility Commands
-                case 'levelroles':
-                    await this.utilityCommands.handleLevelRoles(interaction);
-                    break;
-                case 'settings':
-                    await this.utilityCommands.handleSettings(interaction);
-                    break;
-                case 'debug':
-                    await this.utilityCommands.handleDebug(interaction);
-                    break;
-                
-                default:
-                    await interaction.reply({ 
-                        content: 'Unknown command!', 
-                        flags: 64
-                    });
-            }
-            
-            debug.command(`Command /${interaction.commandName} completed successfully`);
-            
-        } catch (error) {
-            debug.error('Command Execution', error);
-            
-            // Handle different interaction states
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ 
-                    content: 'An error occurred while executing the command.', 
-                    flags: 64
-                });
-            } else if (interaction.deferred) {
-                await interaction.editReply({ 
-                    content: 'An error occurred while executing the command.'
-                });
-            }
-        }
-    }
-
-    // Update configuration for all command modules
-    updateConfiguration() {
-        this.levelCommands.updateConfig();
-        this.leaderboardCommands.updateConfig();
-        this.adminCommands.updateConfig();
-        this.utilityCommands.updateConfig();
+// === Register Slash Commands ===
+const commandFiles = [level, admin, leaderboard];
+for (const command of commandFiles) {
+    if (command.data && command.execute) {
+        client.commands.set(command.data.name, command);
     }
 }
 
-module.exports = CommandHandler;
+// === Slash Command Handler ===
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
+
+    try {
+        await command.execute(interaction, client);
+    } catch (error) {
+        console.error(error);
+        await interaction.reply({ content: 'There was an error executing this command.', ephemeral: true });
+    }
+});
+
+// === XP/Level Event Example: Message XP ===
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+    // Award XP logic here (using your level.js functions)
+    const xpAmount = await level.giveXP(message, client);
+
+    // Log to XP channel (if enabled)
+    if (xpAmount && process.env.XP_LOG_CHANNEL) {
+        sendXPLog(client, `📝 **Message XP**: ${message.author} (+${xpAmount} XP) in <#${message.channel.id}>`);
+    }
+});
+
+// === XP/Level Event Example: Reaction XP ===
+client.on('messageReactionAdd', async (reaction, user) => {
+    if (user.bot) return;
+    // Award Reaction XP logic here (using your level.js functions)
+    const xpAmount = await level.giveReactionXP(reaction, user, client);
+
+    // Log to XP channel (if enabled)
+    if (xpAmount && process.env.XP_LOG_CHANNEL) {
+        sendXPLog(client, `👍 **Reaction XP**: ${user} (+${xpAmount} XP) for reacting in <#${reaction.message.channel.id}>`);
+    }
+});
+
+// === XP/Level Event Example: Voice XP ===
+client.on('voiceStateUpdate', async (oldState, newState) => {
+    // Implement your voice XP logic (in level.js or here)
+    // Example pseudo-code:
+    // const xpAmount = await level.giveVoiceXP(newState, client);
+
+    // // Log to XP channel (if enabled)
+    // if (xpAmount && process.env.XP_LOG_CHANNEL) {
+    //     sendXPLog(client, `🔊 **Voice XP**: <@${newState.id}> (+${xpAmount} XP) in voice channel \`${newState.channel?.name}\``);
+    // }
+});
+
+// === Bot Ready Event ===
+client.once('ready', () => {
+    console.log(`[INFO] Bot logged in as ${client.user.tag}`);
+    // Register slash commands globally or per guild if needed
+    // (Add your command registration logic if not automated)
+});
+
+// === Login ===
+client.login(process.env.DISCORD_TOKEN);
+
