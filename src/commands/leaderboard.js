@@ -120,9 +120,10 @@ module.exports = {
         // Add Pirate King section
         if (pirateKing) {
             const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
+            const pirateKingTitle = pirateKing.data.level >= 50 ? '👑 Yonko' : this.getPirateTitle(pirateKing.data.level);
             embed.addFields({
                 name: '👑 THE PIRATE KING 👑',
-                value: `**${pirateKing.member.displayName}**\n${pirateKingValue}\n*🌟 Ruler of the Grand Line 🌟*`,
+                value: `**${pirateKing.member.displayName}** - *${pirateKingTitle}*\n${pirateKingValue}\n*🌟 Ruler of the Grand Line 🌟*`,
                 inline: false
             });
         }
@@ -131,18 +132,20 @@ module.exports = {
         if (result.rows.length > 0) {
             let top3Text = '';
             const emojis = ['🥇', '🥈', '🥉'];
-            const titles = ['First Mate', 'Navigator', 'Cook'];
+            const titles = ['First Mate', 'Navigator', 'Boatswain'];
 
             for (let i = 0; i < result.rows.length; i++) {
                 const row = result.rows[i];
                 try {
                     const member = await interaction.guild.members.fetch(row.user_id);
                     const bountyValue = this.formatBountyValue(type, row, formatValue);
-                    top3Text += `${emojis[i]} **${member.displayName}** - *${titles[i]}*\n${bountyValue}\n\n`;
+                    const pirateTitle = this.getPirateTitle(row.level);
+                    top3Text += `${emojis[i]} **${member.displayName}** - *${pirateTitle}*\n${bountyValue}\n\n`;
                 } catch (error) {
                     // User left server
                     const bountyValue = this.formatBountyValue(type, row, formatValue);
-                    top3Text += `${emojis[i]} **User Left** - *${titles[i]}*\n${bountyValue}\n\n`;
+                    const pirateTitle = this.getPirateTitle(row.level);
+                    top3Text += `${emojis[i]} **User Left** - *${pirateTitle}*\n${bountyValue}\n\n`;
                 }
             }
 
@@ -265,9 +268,10 @@ module.exports = {
         // Add Pirate King section (always at top of long view)
         if (pirateKing) {
             const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
+            const pirateKingTitle = pirateKing.data.level >= 50 ? '👑 Yonko' : this.getPirateTitle(pirateKing.data.level);
             embed.addFields({
                 name: '👑 THE PIRATE KING 👑',
-                value: `**${pirateKing.member.displayName}**\n${pirateKingValue}`,
+                value: `**${pirateKing.member.displayName}** - *${pirateKingTitle}*\n${pirateKingValue}`,
                 inline: false
             });
         }
@@ -451,5 +455,19 @@ module.exports = {
         } else {
             return formatValue(row[this.getSortConfig(type).sortField]);
         }
+    },
+
+    getPirateTitle(level) {
+        if (level >= 50) return '👑 Yonko';
+        if (level >= 45) return '⚡ Yonko Commander';
+        if (level >= 40) return '🗡️ Warlord';
+        if (level >= 35) return '🧭 First Mate';
+        if (level >= 30) return '🗺️ Navigator';
+        if (level >= 25) return '⚓ Boatswain';
+        if (level >= 20) return '⚓ Helmsman';
+        if (level >= 15) return '💣 Gunner';
+        if (level >= 10) return '🧨 Powder Monkey';
+        if (level >= 5) return '🔨 Deckhand';
+        return '👶 Cabin Boy';
     }
 };
