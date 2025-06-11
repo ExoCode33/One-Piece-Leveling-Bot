@@ -1,4 +1,3 @@
-
 // src/commands/leaderboard.js - One Piece Themed Leaderboard
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
@@ -34,12 +33,20 @@ module.exports = {
         // Fetch all users from database
         let leaderboard = await xpTracker.getLeaderboard(guild.id);
 
-        // Find Pirate King(s) (user(s) with the Pirate King role)
+        // Fetch guild members (for role checks)
         let pirateKingUser = null;
+        let king = null;
+        let members = null;
         if (LEADERBOARD_EXCLUDE_ROLE) {
-            const members = await guild.members.fetch();
-            const king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
-            if (king) {
+            try {
+                members = await guild.members.fetch();
+            } catch (err) {
+                members = null;
+            }
+            if (members && members.size) {
+                king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
+            }
+            if (king && king.user && king.user.id) {
                 pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
                 leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
             }
