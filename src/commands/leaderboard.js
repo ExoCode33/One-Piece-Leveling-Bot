@@ -1,7 +1,9 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard
+// src/commands/leaderboard.js - Enhanced One Piece Themed Leaderboard
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
+const Canvas = require('canvas');
+const path = require('path');
 
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Role ID for Pirate King
 
@@ -12,11 +14,145 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-function getThreatLevel(rank) {
-    if (rank === 1) return 'EXTREMELY DANGEROUS';
-    if (rank === 2) return 'HIGHLY DANGEROUS';
-    if (rank === 3) return 'VERY DANGEROUS';
-    return 'DANGEROUS';
+// Threat levels based on level from bountySystem.js
+function getThreatLevel(level) {
+    const threatLevels = {
+        0: "New individual detected. No criminal activity reported.",
+        5: "Criminal activity confirmed in East Blue region.",
+        10: "Multiple incidents involving Marine personnel.",
+        15: "Subject has crossed into Grand Line territory.",
+        20: "Dangerous individual. Multiple Marine casualties reported.",
+        25: "HIGH PRIORITY TARGET: Classified as extremely dangerous.",
+        30: "ADVANCED COMBATANT: Confirmed use of advanced fighting techniques.",
+        35: "TERRITORIAL THREAT: Capable of commanding large operations.",
+        40: "ELITE LEVEL THREAT: Extreme danger to Marine operations.",
+        45: "EXTRAORDINARY ABILITIES: Unprecedented power levels detected.",
+        50: "EMPEROR CLASS THREAT: Controls vast territories."
+    };
+
+    // Find the appropriate threat level based on user's level
+    let applicableLevel = 0;
+    for (let threatLevel of Object.keys(threatLevels).map(Number).sort((a, b) => b - a)) {
+        if (level >= threatLevel) {
+            applicableLevel = threatLevel;
+            break;
+        }
+    }
+    
+    return threatLevels[applicableLevel];
+}
+
+function getThreatLevelShort(level) {
+    if (level >= 50) return 'EMPEROR CLASS';
+    if (level >= 45) return 'EXTRAORDINARY';
+    if (level >= 40) return 'ELITE THREAT';
+    if (level >= 35) return 'TERRITORIAL';
+    if (level >= 30) return 'ADVANCED COMBATANT';
+    if (level >= 25) return 'HIGH PRIORITY';
+    if (level >= 20) return 'DANGEROUS';
+    if (level >= 15) return 'GRAND LINE';
+    if (level >= 10) return 'MARINE THREAT';
+    if (level >= 5) return 'EAST BLUE';
+    return 'MONITORING';
+}
+
+// Function to create wanted poster with profile picture
+async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
+    try {
+        const canvas = Canvas.createCanvas(400, 500);
+        const ctx = canvas.getContext('2d');
+
+        // Background (parchment/wanted poster style)
+        ctx.fillStyle = '#F4E4BC';
+        ctx.fillRect(0, 0, 400, 500);
+
+        // Red border
+        ctx.strokeStyle = '#DC143C';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(4, 4, 392, 492);
+
+        // Inner border
+        ctx.strokeStyle = '#8B0000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 20, 360, 460);
+
+        // WANTED text
+        ctx.fillStyle = '#8B0000';
+        ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('WANTED', 200, 60);
+
+        // Dead or Alive
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('DEAD OR ALIVE', 200, 85);
+
+        // Get user avatar
+        let member;
+        try {
+            member = await guild.members.fetch(user.userId);
+        } catch (err) {
+            member = null;
+        }
+
+        if (member) {
+            const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256 });
+            const avatar = await Canvas.loadImage(avatarURL);
+            
+            // Draw circular avatar
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(200, 200, 80, 0, Math.PI * 2, true);
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(avatar, 120, 120, 160, 160);
+            ctx.restore();
+
+            // Avatar border
+            ctx.strokeStyle = '#8B0000';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(200, 200, 80, 0, Math.PI * 2, true);
+            ctx.stroke();
+        }
+
+        // Pirate name
+        const displayName = member ? member.displayName : `User ${user.userId}`;
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 24px Arial';
+        ctx.fillText(displayName.toUpperCase(), 200, 320);
+
+        // Bounty
+        ctx.fillStyle = '#8B0000';
+        ctx.font = 'bold 32px Arial';
+        ctx.fillText(`฿${bounty.toLocaleString()}`, 200, 360);
+
+        // Threat level
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(threatLevel, 200, 390);
+
+        // Level and XP
+        ctx.font = '14px Arial';
+        ctx.fillText(`Level ${user.level} • ${user.xp} XP`, 200, 420);
+
+        // Rank badge
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(350, 50, 25, 0, Math.PI * 2, true);
+        ctx.fill();
+        ctx.strokeStyle = '#8B0000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        ctx.fillStyle = '#8B0000';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(`#${rank}`, 350, 55);
+
+        return canvas.toBuffer();
+    } catch (error) {
+        console.error('Error creating wanted poster:', error);
+        return null;
+    }
 }
 
 module.exports = {
@@ -167,64 +303,79 @@ module.exports = {
                 entriesToShow = leaderboard.slice(0, 10);
             }
 
-            // Create the newspaper-style embed
+            // Create the newspaper-style embed with RED theme
             const embed = new EmbedBuilder()
-                .setColor(0x2f3136); // Dark color to match screenshot
+                .setColor(0xDC143C) // Crimson red color
+                .setThumbnail('https://i.imgur.com/YourOnePieceLogo.png'); // Optional: Add One Piece logo
 
             let description = '';
 
-            // Header
-            description += '📰 **WORLD ECONOMIC NEWS PAPER** 📰\n\n';
-            description += '```\n';
-            description += '┌─────────────────────────────────────┐\n';
-            description += '│     URGENT BOUNTY BULLETIN         │\n';
-            description += '│    TOP CRIMINALS IDENTIFIED        │\n';
-            description += '└─────────────────────────────────────┘\n';
+            // Header with skull and crossbones
+            description += '💀 **WORLD GOVERNMENT BOUNTY BULLETIN** 💀\n\n';
+            description += '```ansi\n';
+            description += '\u001b[31m┌─────────────────────────────────────┐\n';
+            description += '│     🚨 URGENT BOUNTY ALERT 🚨     │\n';
+            description += '│    EXTREMELY DANGEROUS PIRATES     │\n';
+            description += '│        APPROACH WITH CAUTION       │\n';
+            description += '└─────────────────────────────────────┘\u001b[0m\n';
             description += '```\n\n';
 
-            // Top Threats section
-            description += '━━━━━━━━ 🔥 **TOP THREATS** 🔥 ━━━━━━━━\n\n';
+            // Enhanced TOP THREATS section with red styling
+            description += '```ansi\n';
+            description += '\u001b[31m═══════ 🔥 TOP THREATS 🔥 ═══════\u001b[0m\n';
+            description += '```\n\n';
 
             let rank = 1;
             for (const user of entriesToShow) {
+                let member = null;
                 let memberName = null;
+                
                 try {
-                    const member = await guild.members.fetch(user.userId).catch(() => null);
-                    memberName = member ? member.displayName.toUpperCase() : `UNKNOWN_PIRATE_${user.userId}`;
+                    member = await guild.members.fetch(user.userId).catch(() => null);
+                    memberName = member ? member.displayName : `User_${user.userId}`;
                 } catch (err) {
-                    memberName = `UNKNOWN_PIRATE_${user.userId}`;
+                    memberName = `User_${user.userId}`;
                 }
 
                 const bounty = getBountyForLevel(user.level);
-                const threatLevel = getThreatLevel(rank);
+                const threatLevel = getThreatLevelShort(user.level);
+                const fullThreat = getThreatLevel(user.level);
 
-                description += '```\n';
-                description += `[RANK ${rank}] ${memberName}\n`;
-                description += `BOUNTY: ฿${bounty.toLocaleString()}\n`;
-                description += `THREAT: ${threatLevel}\n`;
-                description += '```\n';
-
-                // Add level and rep info below each wanted poster
-                description += `🏴‍☠️ ⚔️ Level ${user.level} | ⭐ ${user.xp} Rep\n\n`;
+                // Compact wanted poster
+                description += `${pirateRankEmoji(rank)} **[RANK ${rank}]** <@${user.userId}>\n`;
+                description += '```ansi\n';
+                description += `\u001b[31m┌────── WANTED ──────┐\n`;
+                description += `│ ${memberName.toUpperCase().padEnd(17)} │\n`;
+                description += `│                    │\n`;
+                description += `│      [PHOTO]       │\n`;
+                description += `│       WANTED       │\n`;
+                description += `│                    │\n`;
+                description += `│ ฿${bounty.toLocaleString().padEnd(15)} │\n`;
+                description += `│ ${threatLevel.padEnd(17)} │\n`;
+                description += `└────────────────────┘\u001b[0m\n`;
+                description += '```';
+                
+                // Compact info below
+                description += `⚔️ **Lv.${user.level}** • ⭐ **${user.xp}** • 🚨 *${fullThreat}*\n\n`;
 
                 rank++;
             }
 
-            // Show remaining count for short view
+            // Show remaining count
             if (view === 'short' && leaderboard.length > 3) {
                 const remaining = leaderboard.length - 3;
-                description += `*... and ${remaining} more dangerous pirates*\n\n`;
+                description += `\n🏴‍☠️ *... and ${remaining} more notorious pirates roaming the seas...*\n\n`;
             } else if (view === 'long' && leaderboard.length > 10) {
                 const remaining = leaderboard.length - 10;
-                description += `*... and ${remaining} more dangerous pirates*\n\n`;
+                description += `\n🏴‍☠️ *... and ${remaining} more notorious pirates roaming the seas...*\n\n`;
             }
 
-            // Footer
-            description += '```\n';
-            description += '┌─────────────────────────────────────┐\n';
-            description += '│  USE /leaderboard FOR FULL LIST    │\n';
-            description += '│     STAY VIGILANT, STAY SAFE       │\n';
-            description += '└─────────────────────────────────────┘\n';
+            // Enhanced footer
+            description += '```ansi\n';
+            description += '\u001b[31m┌─────────────────────────────────┐\n';
+            description += '│  ⚠️  REPORT SIGHTINGS NOW  ⚠️   │\n';
+            description += '│   USE /leaderboard FOR MORE    │\n';
+            description += '└─────────────────────────────────┘\u001b[0m\n';
             description += '```\n';
 
             const currentTime = new Date().toLocaleTimeString('en-US', { 
@@ -232,9 +383,19 @@ module.exports = {
                 minute: '2-digit',
                 hour12: true 
             });
-            description += `⚠️ **WORLD GOVERNMENT URGENT BULLETIN** ⚠️ • **TOP THREATS ONLY** • Today at ${currentTime}`;
+            
+            description += `🌊 **MARINE HQ** • ${currentTime} • **JUSTICE PREVAILS** 🦅`;
 
             embed.setDescription(description);
+            
+            // Add footer with World Government seal
+            embed.setFooter({ 
+                text: 'World Government • Marine HQ',
+                iconURL: 'https://i.imgur.com/YourMarineIcon.png' // Optional: Add Marine logo
+            });
+
+            // Add timestamp
+            embed.setTimestamp();
 
             // Return ONLY embeds and components for short/long view - NO CONTENT
             const responseData = { 
