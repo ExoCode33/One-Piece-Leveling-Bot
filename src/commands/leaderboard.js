@@ -1,4 +1,4 @@
-=// src/commands/leaderboard.js - Enhanced One Piece Themed Leaderboard with Authentic Wanted Posters
+// src/commands/leaderboard.js - Enhanced One Piece Themed Leaderboard with Authentic Wanted Posters
 
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
