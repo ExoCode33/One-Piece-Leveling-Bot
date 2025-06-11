@@ -31,7 +31,13 @@ module.exports = {
         const view = interaction.options.getString('view') || 'short';
 
         // Fetch all users from database
-        let leaderboard = await xpTracker.getLeaderboard(guild.id);
+        let leaderboard;
+        try {
+            leaderboard = await xpTracker.getLeaderboard(guild.id);
+        } catch (err) {
+            console.error(err);
+            return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true });
+        }
 
         // Pirate King detection (fully error proof)
         let pirateKingUser = null;
@@ -91,11 +97,17 @@ module.exports = {
         }
 
         for (const user of entriesToShow) {
-            desc += `${pirateRankEmoji(rank)} ${rank}. <@${user.userId}> — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
+            let memberName = null;
+            try {
+                const member = await guild.members.fetch(user.userId).catch(() => null);
+                memberName = member ? member.displayName : `Unknown Pirate (ID: ${user.userId})`;
+            } catch (err) {
+                memberName = `Unknown Pirate (ID: ${user.userId})`;
+            }
+            desc += `${pirateRankEmoji(rank)} ${rank}. **${memberName}** — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
             rank++;
         }
 
-        // Never send empty description
         embed.setDescription(desc && desc.length > 0
             ? desc
             : "No pirates have earned any bounty yet! Be the first to make your mark on the seas."
