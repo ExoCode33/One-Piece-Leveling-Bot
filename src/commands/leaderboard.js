@@ -118,19 +118,22 @@ module.exports = {
 
         if (view === 'full') {
             // Full view: Display list without embed
-            let text = '';
+            let text = '🏴‍☠️ **FULL PIRATE LEADERBOARD** 🏴‍☠️\n\n';
             let rank = 1;
 
             if (pirateKingUser) {
-                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
+                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - Level ${pirateKingUser.level} - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
 
             for (const user of leaderboard) {
-                text += `${pirateRankEmoji(rank)} ${rank}. <@${user.userId}> — Level ${user.level} — ฿${getBountyForLevel(user.level).toLocaleString()}\n`;
+                const bounty = getBountyForLevel(user.level);
+                text += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}> — Level **${user.level}** — ฿**${bounty.toLocaleString()}**\n`;
                 rank++;
             }
 
-            if (text.length === 0) text = "No pirates have earned any bounty yet! Be the first to make your mark on the seas.";
+            if (leaderboard.length === 0) {
+                text += "No pirates have earned any bounty yet! Be the first to make your mark on the seas.";
+            }
             
             // Truncate if too long
             const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
