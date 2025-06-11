@@ -2,11 +2,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, Permission
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Import our custom modules (comment out if you don't have them yet)
-// const debug = require('./debug');
-// const LeaderboardManager = require('./leaderboard');
-
-// Simple debug replacement if modules aren't available
+// Simple debug replacement
 const debug = {
     debug: (...args) => console.log('[DEBUG]', ...args),
     voice: (...args) => console.log('[VOICE]', ...args),
@@ -16,17 +12,7 @@ const debug = {
     levelup: (...args) => console.log('[LEVELUP]', ...args),
     success: (category, ...args) => console.log('[SUCCESS]', category, ...args),
     error: (category, ...args) => console.error('[ERROR]', category, ...args),
-    warn: (category, ...args) => console.warn('[WARN]', category, ...args),
-    xpTransaction: () => {},
-    voiceSession: () => {},
-    cooldownCheck: () => {},
-    levelUpProcess: () => {},
-    commandExecution: () => {},
-    dbQuery: () => {},
-    getStatus: () => ({ main: false, voice: false, xp: false, database: false, commands: false }),
-    getStatusString: () => 'Debug modules not loaded',
-    toggle: () => false,
-    reload: () => {}
+    warn: (category, ...args) => console.warn('[WARN]', category, ...args)
 };
 
 class LevelingBot {
@@ -51,11 +37,11 @@ class LevelingBot {
         // Voice tracking
         this.voiceTracker = new Map();
         
-        // Cooldown tracking (prevent spam)
+        // Cooldown tracking
         this.messageCooldowns = new Map();
         this.reactionCooldowns = new Map();
 
-        // XP Configuration from environment variables
+        // XP Configuration
         this.config = {
             messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 25,
             messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 35,
@@ -74,7 +60,7 @@ class LevelingBot {
             xpMultiplier: parseFloat(process.env.XP_MULTIPLIER) || 1.0
         };
 
-        // Level roles from environment variables
+        // Level roles
         this.levelRoles = {
             0: process.env.LEVEL_0_ROLE || null,
             5: process.env.LEVEL_5_ROLE || null,
@@ -89,7 +75,7 @@ class LevelingBot {
             50: process.env.LEVEL_50_ROLE || null
         };
 
-        // Level up message configuration
+        // Level up configuration
         this.levelUpConfig = {
             enabled: process.env.LEVELUP_ENABLED !== 'false',
             channel: process.env.LEVELUP_CHANNEL || null,
@@ -120,7 +106,6 @@ class LevelingBot {
         };
 
         debug.debug('Bot Configuration loaded');
-        debug.debug('XP Log Config:', this.xpLogConfig);
 
         this.initializeDatabase();
         this.setupEventHandlers();
@@ -366,10 +351,7 @@ class LevelingBot {
                 );
             }
 
-            if (!logChannel) {
-                debug.warn('XP Log', 'No XP log channel configured or found');
-                return;
-            }
+            if (!logChannel) return;
 
             // Create log message based on type
             let logMessage = '';
@@ -514,6 +496,8 @@ class LevelingBot {
             debug.error('Cooldown Logging', error);
         }
     }
+
+    getBountyForLevel(level) {
         if (level <= 0) return '0';
         if (level === 1) return '5,000,000';
         if (level === 2) return '10,000,000';
@@ -995,7 +979,8 @@ class LevelingBot {
             { name: '🎯 Max Level', value: this.config.maxLevel.toString(), inline: true },
             { name: '✨ XP Multiplier', value: `×${this.config.xpMultiplier}`, inline: true },
             { name: '🔊 Voice Requirements', value: `Min ${this.config.voiceMinMembers} members\nAFK Detection: ${this.config.voiceAntiAFK ? '✅' : '❌'}`, inline: true },
-            { name: '🎉 Level Up Messages', value: `${this.levelUpConfig.enabled ? '✅ Enabled' : '❌ Disabled'}\nPing User: ${this.levelUpConfig.pingUser ? '✅' : '❌'}`, inline: true }
+            { name: '🎉 Level Up Messages', value: `${this.levelUpConfig.enabled ? '✅ Enabled' : '❌ Disabled'}\nPing User: ${this.levelUpConfig.pingUser ? '✅' : '❌'}`, inline: true },
+            { name: '📊 XP Logging', value: `${this.xpLogConfig.enabled ? '✅ Enabled' : '❌ Disabled'}\nChannel: ${this.xpLogConfig.channelName || 'Not Set'}`, inline: true }
         );
         
         await interaction.reply({ embeds: [embed] });
@@ -1040,6 +1025,17 @@ class LevelingBot {
             40: process.env.LEVEL_40_ROLE || null,
             45: process.env.LEVEL_45_ROLE || null,
             50: process.env.LEVEL_50_ROLE || null
+        };
+
+        this.xpLogConfig = {
+            enabled: process.env.XP_LOG_ENABLED === 'true' || false,
+            channel: process.env.XP_LOG_CHANNEL || null,
+            channelName: process.env.XP_LOG_CHANNEL_NAME || null,
+            logMessages: process.env.XP_LOG_MESSAGES !== 'false',
+            logReactions: process.env.XP_LOG_REACTIONS !== 'false', 
+            logVoice: process.env.XP_LOG_VOICE !== 'false',
+            logLevelUps: process.env.XP_LOG_LEVELUPS !== 'false',
+            showCooldowns: process.env.XP_LOG_SHOW_COOLDOWNS === 'true' || false
         };
         
         debug.success('Configuration Reload', 'All configurations reloaded');
@@ -1130,7 +1126,7 @@ class LevelingBot {
             const embed = new EmbedBuilder()
                 .setColor('#0099ff')
                 .setTitle('🐛 Debug Status')
-                .setDescription('```\nDebug modules not loaded.\nCreate debug.js file for advanced debugging.\n```')
+                .setDescription('```\nBasic debug logging enabled.\nCreate debug.js file for advanced debugging.\n```')
                 .setTimestamp();
             
             return await interaction.reply({ embeds: [embed], flags: 64 });
