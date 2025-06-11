@@ -650,7 +650,16 @@
     async start() {
         try {
             debug.debug('Starting bot...');
-            await this.client.login(process.env.const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, PermissionFlagsBits, ActivityType } = require('discord.js');
+            await this.client.login(process.env.DISCORD_TOKEN);
+        } catch (error) {
+            debug.error('Bot Start', error);
+        }
+    }
+}
+
+// Start the bot
+const bot = new LevelingBot();
+bot.start();const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, PermissionFlagsBits, ActivityType } = require('discord.js');
 const { Pool } = require('pg');
 require('dotenv').config();
 
