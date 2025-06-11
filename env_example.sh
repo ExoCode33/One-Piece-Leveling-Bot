@@ -1,0 +1,11 @@
+# Discord Bot Configuration
+DISCORD_TOKEN=your_discord_bot_token_here
+
+# PostgreSQL Database Configuration
+DATABASE_URL=postgresql://username:password@hostname:port/database_name
+
+# Environment
+NODE_ENV=production
+
+# Example Railway PostgreSQL URL format:
+# DATABASE_URL=postgresql://postgres:password@containers-us-west-xxx.railway.app:5432/railway
