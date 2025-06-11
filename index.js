@@ -30,12 +30,29 @@ class LevelingBot {
 
         // XP Configuration from environment variables
         this.config = {
-            messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 15,
-            messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 25,
-            reactionXP: parseInt(process.env.REACTION_XP) || 5,
-            voiceXPPerMinute: parseInt(process.env.VOICE_XP_PER_MINUTE) || 1,
+            // Message XP
+            messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 25,
+            messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 35,
             messageCooldown: parseInt(process.env.MESSAGE_COOLDOWN) || 60000, // 60 seconds
-            reactionCooldown: parseInt(process.env.REACTION_COOLDOWN) || 30000, // 30 seconds
+            
+            // Voice XP  
+            voiceXPMin: parseInt(process.env.VOICE_XP_MIN) || 45,
+            voiceXPMax: parseInt(process.env.VOICE_XP_MAX) || 55,
+            voiceCooldown: parseInt(process.env.VOICE_COOLDOWN) || 180000, // 180 seconds
+            voiceMinMembers: parseInt(process.env.VOICE_MIN_MEMBERS) || 2,
+            voiceAntiAFK: process.env.VOICE_ANTI_AFK === 'true' || true,
+            
+            // Reaction XP
+            reactionXPMin: parseInt(process.env.REACTION_XP_MIN) || 25,
+            reactionXPMax: parseInt(process.env.REACTION_XP_MAX) || 35,
+            reactionCooldown: parseInt(process.env.REACTION_COOLDOWN) || 300000, // 300 seconds
+            
+            // Formula settings
+            formulaCurve: process.env.FORMULA_CURVE || 'exponential', // 'linear', 'exponential', 'logarithmic'
+            formulaMultiplier: parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75,
+            maxLevel: parseInt(process.env.MAX_LEVEL) || 50,
+            
+            // Global settings
             xpMultiplier: parseFloat(process.env.XP_MULTIPLIER) || 1.0
         };
 
@@ -53,8 +70,20 @@ class LevelingBot {
             50: process.env.LEVEL_50_ROLE || null
         };
 
+        // Level up message configuration
+        this.levelUpConfig = {
+            enabled: process.env.LEVELUP_ENABLED !== 'false', // Default true
+            channel: process.env.LEVELUP_CHANNEL || null,
+            message: process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!',
+            showXP: process.env.LEVELUP_SHOW_XP !== 'false', // Default true
+            showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false', // Default true
+            showRole: process.env.LEVELUP_SHOW_ROLE !== 'false', // Default true
+            pingUser: process.env.LEVELUP_PING_USER === 'true' || false
+        };
+
         console.log('Bot Configuration:', this.config);
         console.log('Level Roles:', this.levelRoles);
+        console.log('Level Up Config:', this.levelUpConfig);
 
         this.initializeDatabase();
         this.setupEventHandlers();
@@ -151,10 +180,11 @@ class LevelingBot {
             
             this.reactionCooldowns.set(cooldownKey, now + this.config.reactionCooldown);
             
-            await this.addXP(user.id, reaction.message.guild.id, this.config.reactionXP, 'reaction');
+            const reactionXP = Math.floor(Math.random() * (this.config.reactionXPMax - this.config.reactionXPMin + 1)) + this.config.reactionXPMin;
+            await this.addXP(user.id, reaction.message.guild.id, reactionXP, 'reaction');
         });
 
-        // Voice XP tracking
+        // Voice XP tracking with AFK detection
         this.client.on('voiceStateUpdate', async (oldState, newState) => {
             const userId = newState.id;
             const guildId = newState.guild.id;
@@ -163,17 +193,39 @@ class LevelingBot {
             if (!oldState.channelId && newState.channelId) {
                 this.voiceTracker.set(`${userId}-${guildId}`, {
                     startTime: Date.now(),
-                    channelId: newState.channelId
+                    channelId: newState.channelId,
+                    lastActivity: Date.now()
                 });
             }
             
-            // User left a voice channel
-            if (oldState.channelId && !newState.channelId) {
+            // User left a voice channel or switched channels
+            if (oldState.channelId && (!newState.channelId || oldState.channelId !== newState.channelId)) {
                 const session = this.voiceTracker.get(`${userId}-${guildId}`);
                 if (session) {
                     const duration = Math.floor((Date.now() - session.startTime) / 1000);
                     await this.processVoiceXP(userId, guildId, duration, oldState.channelId);
                     this.voiceTracker.delete(`${userId}-${guildId}`);
+                }
+                
+                // If switched channels, start new session
+                if (newState.channelId && oldState.channelId !== newState.channelId) {
+                    this.voiceTracker.set(`${userId}-${guildId}`, {
+                        startTime: Date.now(),
+                        channelId: newState.channelId,
+                        lastActivity: Date.now()
+                    });
+                }
+            }
+            
+            // Update activity for AFK detection (mute/deafen changes)
+            if (oldState.channelId && newState.channelId && oldState.channelId === newState.channelId) {
+                const session = this.voiceTracker.get(`${userId}-${guildId}`);
+                if (session) {
+                    // Update activity if user unmutes or undeafens
+                    if ((oldState.mute && !newState.mute) || (oldState.deaf && !newState.deaf) || 
+                        (oldState.selfMute && !newState.selfMute) || (oldState.selfDeaf && !newState.selfDeaf)) {
+                        session.lastActivity = Date.now();
+                    }
                 }
             }
         });
@@ -218,12 +270,35 @@ class LevelingBot {
             // Count non-bot members in voice channel
             const humanMembers = channel.members.filter(member => !member.user.bot).size;
             
-            // Only give XP if there are 2+ human members (excluding bots)
-            if (humanMembers >= 2) {
-                const voiceXP = Math.floor(duration / 60) * this.config.voiceXPPerMinute; // XP per minute from config
+            // Only give XP if there are enough human members
+            if (humanMembers >= this.config.voiceMinMembers) {
+                // Check for AFK if enabled
+                let activeTime = duration;
+                if (this.config.voiceAntiAFK) {
+                    const session = this.voiceTracker.get(`${userId}-${guildId}`);
+                    if (session && session.lastActivity) {
+                        const timeSinceActivity = (Date.now() - session.lastActivity) / 1000;
+                        // If inactive for more than 10 minutes, reduce XP accordingly
+                        if (timeSinceActivity > 600) {
+                            activeTime = Math.max(0, duration - timeSinceActivity);
+                        }
+                    }
+                }
                 
-                if (voiceXP > 0) {
-                    await this.addXP(userId, guildId, voiceXP, 'voice');
+                // Apply cooldown check for voice XP
+                const cooldownKey = `voice-${userId}-${guildId}`;
+                const now = Date.now();
+                const lastVoiceXP = this.voiceTracker.get(cooldownKey) || 0;
+                
+                if (now - lastVoiceXP >= this.config.voiceCooldown) {
+                    const minutes = Math.floor(activeTime / 60);
+                    if (minutes > 0) {
+                        const voiceXP = Math.floor(Math.random() * (this.config.voiceXPMax - this.config.voiceXPMin + 1)) + this.config.voiceXPMin;
+                        const totalVoiceXP = voiceXP * minutes;
+                        
+                        await this.addXP(userId, guildId, totalVoiceXP, 'voice');
+                        this.voiceTracker.set(cooldownKey, now);
+                    }
                 }
             }
             
@@ -251,7 +326,7 @@ class LevelingBot {
                       type === 'reaction' ? 'reactions = user_levels.reactions + 1' : 
                       'voice_time = user_levels.voice_time + $4'}
                 RETURNING total_xp, level
-            `, [userId, guildId, finalXP, type === 'voice' ? Math.floor(xpAmount / this.config.voiceXPPerMinute) : 1]);
+            `, [userId, guildId, finalXP, type === 'voice' ? Math.floor(xpAmount / ((this.config.voiceXPMin + this.config.voiceXPMax) / 2)) : 1]);
             
             const newTotalXP = result.rows[0].total_xp;
             const currentLevel = result.rows[0].level;
@@ -271,13 +346,31 @@ class LevelingBot {
     }
 
     calculateLevel(totalXP) {
-        // Based on your formula: roughly 25,427.5 XP needed for level 50
-        // Using a curve that matches your requirements
-        return Math.floor(Math.sqrt(totalXP / 100));
+        switch (this.config.formulaCurve) {
+            case 'linear':
+                return Math.floor(totalXP / (1000 * this.config.formulaMultiplier));
+            case 'exponential':
+                return Math.floor(Math.pow(totalXP / (100 * this.config.formulaMultiplier), 0.5));
+            case 'logarithmic':
+                return Math.floor(Math.log(totalXP / 100 + 1) * this.config.formulaMultiplier * 10);
+            default:
+                // Default exponential curve matching your calculator
+                return Math.floor(Math.pow(totalXP / (100 * this.config.formulaMultiplier), 0.5));
+        }
     }
 
     calculateXPForLevel(level) {
-        return level * level * 100;
+        switch (this.config.formulaCurve) {
+            case 'linear':
+                return level * 1000 * this.config.formulaMultiplier;
+            case 'exponential':
+                return Math.floor(Math.pow(level, 2) * 100 * this.config.formulaMultiplier);
+            case 'logarithmic':
+                return Math.floor((Math.exp(level / (this.config.formulaMultiplier * 10)) - 1) * 100);
+            default:
+                // Default exponential curve
+                return Math.floor(Math.pow(level, 2) * 100 * this.config.formulaMultiplier);
+        }
     }
 
     async handleLevelUp(userId, guildId, newLevel, oldLevel) {
@@ -298,43 +391,62 @@ class LevelingBot {
                 }
             }
             
-            // Send level up message to any channel (or configure via LEVEL_UP_CHANNEL env var)
-            const levelUpChannelId = process.env.LEVEL_UP_CHANNEL;
-            let channel = null;
-            
-            if (levelUpChannelId) {
-                channel = guild.channels.cache.get(levelUpChannelId);
-            }
-            
-            // If no specific channel set, try to find a general channel
-            if (!channel) {
-                channel = guild.channels.cache.find(ch => 
-                    ch.type === 0 && // Text channel
-                    ch.permissionsFor(guild.members.me).has(['SendMessages', 'EmbedLinks']) &&
-                    (ch.name.includes('general') || ch.name.includes('chat') || ch.name.includes('level'))
-                );
-            }
-            
-            if (channel) {
-                const embed = new EmbedBuilder()
-                    .setColor('#00ff00')
-                    .setTitle('🎉 Level Up!')
-                    .setDescription(`Congratulations ${user}! You've reached **Level ${newLevel}**!`)
-                    .addFields(
-                        { name: 'Previous Level', value: oldLevel.toString(), inline: true },
-                        { name: 'New Level', value: newLevel.toString(), inline: true }
-                    )
-                    .setThumbnail(user.user.displayAvatarURL())
-                    .setTimestamp();
+            // Send level up message
+            if (this.levelUpConfig.enabled) {
+                let channel = null;
                 
-                if (this.levelRoles[newLevel]) {
-                    const role = guild.roles.cache.get(this.levelRoles[newLevel]);
-                    if (role) {
-                        embed.addFields({ name: 'Role Reward', value: role.name, inline: true });
-                    }
+                if (this.levelUpConfig.channel) {
+                    channel = guild.channels.cache.get(this.levelUpConfig.channel);
                 }
                 
-                await channel.send({ embeds: [embed] });
+                // If no specific channel set, try to find a general channel
+                if (!channel) {
+                    channel = guild.channels.cache.find(ch => 
+                        ch.type === 0 && // Text channel
+                        ch.permissionsFor(guild.members.me).has(['SendMessages', 'EmbedLinks']) &&
+                        (ch.name.includes('general') || ch.name.includes('chat') || ch.name.includes('level'))
+                    );
+                }
+                
+                if (channel) {
+                    let message = this.levelUpConfig.message
+                        .replace('{user}', this.levelUpConfig.pingUser ? `<@${userId}>` : user.user.username)
+                        .replace('{level}', newLevel.toString())
+                        .replace('{oldlevel}', oldLevel.toString());
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor('#00ff00')
+                        .setTitle('🎉 Level Up!')
+                        .setDescription(message)
+                        .setThumbnail(user.user.displayAvatarURL())
+                        .setTimestamp();
+                    
+                    if (this.levelUpConfig.showProgress) {
+                        embed.addFields(
+                            { name: 'Previous Level', value: oldLevel.toString(), inline: true },
+                            { name: 'New Level', value: newLevel.toString(), inline: true }
+                        );
+                    }
+                    
+                    if (this.levelUpConfig.showXP) {
+                        const userData = await this.db.query(
+                            'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                            [userId, guildId]
+                        );
+                        if (userData.rows.length > 0) {
+                            embed.addFields({ name: 'Total XP', value: userData.rows[0].total_xp.toLocaleString(), inline: true });
+                        }
+                    }
+                    
+                    if (this.levelUpConfig.showRole && this.levelRoles[newLevel]) {
+                        const role = guild.roles.cache.get(this.levelRoles[newLevel]);
+                        if (role) {
+                            embed.addFields({ name: 'Role Reward', value: role.name, inline: true });
+                        }
+                    }
+                    
+                    await channel.send({ embeds: [embed] });
+                }
             }
         } catch (error) {
             console.error('Level up handling error:', error);
@@ -498,13 +610,54 @@ class LevelingBot {
         
         // Reload configuration from environment variables
         this.config = {
-            messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 15,
-            messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 25,
-            reactionXP: parseInt(process.env.REACTION_XP) || 5,
-            voiceXPPerMinute: parseInt(process.env.VOICE_XP_PER_MINUTE) || 1,
+            // Message XP
+            messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 25,
+            messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 35,
             messageCooldown: parseInt(process.env.MESSAGE_COOLDOWN) || 60000,
-            reactionCooldown: parseInt(process.env.REACTION_COOLDOWN) || 30000,
+            
+            // Voice XP  
+            voiceXPMin: parseInt(process.env.VOICE_XP_MIN) || 45,
+            voiceXPMax: parseInt(process.env.VOICE_XP_MAX) || 55,
+            voiceCooldown: parseInt(process.env.VOICE_COOLDOWN) || 180000,
+            voiceMinMembers: parseInt(process.env.VOICE_MIN_MEMBERS) || 2,
+            voiceAntiAFK: process.env.VOICE_ANTI_AFK === 'true' || true,
+            
+            // Reaction XP
+            reactionXPMin: parseInt(process.env.REACTION_XP_MIN) || 25,
+            reactionXPMax: parseInt(process.env.REACTION_XP_MAX) || 35,
+            reactionCooldown: parseInt(process.env.REACTION_COOLDOWN) || 300000,
+            
+            // Formula settings
+            formulaCurve: process.env.FORMULA_CURVE || 'exponential',
+            formulaMultiplier: parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75,
+            maxLevel: parseInt(process.env.MAX_LEVEL) || 50,
+            
+            // Global settings
             xpMultiplier: parseFloat(process.env.XP_MULTIPLIER) || 1.0
+        };
+
+        this.levelRoles = {
+            5: process.env.LEVEL_5_ROLE || null,
+            10: process.env.LEVEL_10_ROLE || null,
+            15: process.env.LEVEL_15_ROLE || null,
+            20: process.env.LEVEL_20_ROLE || null,
+            25: process.env.LEVEL_25_ROLE || null,
+            30: process.env.LEVEL_30_ROLE || null,
+            35: process.env.LEVEL_35_ROLE || null,
+            40: process.env.LEVEL_40_ROLE || null,
+            45: process.env.LEVEL_45_ROLE || null,
+            50: process.env.LEVEL_50_ROLE || null
+        };
+        
+        this.levelUpConfig = {
+            enabled: process.env.LEVELUP_ENABLED !== 'false',
+            channel: process.env.LEVELUP_CHANNEL || null,
+            message: process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!',
+            showXP: process.env.LEVELUP_SHOW_XP !== 'false',
+            showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false',
+            showRole: process.env.LEVELUP_SHOW_ROLE !== 'false',
+            pingUser: process.env.LEVELUP_PING_USER === 'true' || false
+        };MULTIPLIER) || 1.0
         };
 
         this.levelRoles = {
