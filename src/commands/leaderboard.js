@@ -47,17 +47,29 @@ module.exports = {
             return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true });
         }
 
-        // Safe Pirate King handling
+        // === Safe Pirate King role detection ===
         let pirateKingUser = null;
         let kingMember = null;
+        let kingId = null;
+
         if (LEADERBOARD_EXCLUDE_ROLE && guild && guild.members) {
             try {
                 const members = await guild.members.fetch();
-                const king = members.find(m => m.roles && m.roles.cache && m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
-                if (king && king.user && king.user.id) {
+                const king = members.find(m =>
+                    m.roles &&
+                    m.roles.cache &&
+                    m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE) &&
+                    ((m.user && m.user.id) || m.id)
+                );
+                if (king) {
+                    if (king.user && king.user.id) kingId = king.user.id;
+                    else if (king.id) kingId = king.id;
+                }
+
+                if (kingId) {
                     kingMember = king;
-                    pirateKingUser = leaderboard.find(u => u.userId === king.user.id) || { userId: king.user.id, level: 0, xp: 0 };
-                    leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
+                    pirateKingUser = leaderboard.find(u => u.userId === kingId) || { userId: kingId, level: 0, xp: 0 };
+                    leaderboard = leaderboard.filter(u => u.userId !== kingId);
                 }
             } catch (err) {
                 // Just leave pirateKingUser and kingMember null if any error happens
@@ -80,7 +92,7 @@ module.exports = {
             let rank = 1;
 
             if (pirateKingUser) {
-                const kingDisplay = kingMember ? kingMember.displayName : `Pirate King (ID: ${pirateKingUser.userId})`;
+                const kingDisplay = kingMember && kingMember.displayName ? kingMember.displayName : `Pirate King (ID: ${pirateKingUser.userId})`;
                 text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> — Level ${pirateKingUser.level} — ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
 
@@ -104,7 +116,7 @@ module.exports = {
         let rank = 1;
 
         if (pirateKingUser) {
-            const kingDisplay = kingMember ? kingMember.displayName : `Pirate King (ID: ${pirateKingUser.userId})`;
+            const kingDisplay = kingMember && kingMember.displayName ? kingMember.displayName : `Pirate King (ID: ${pirateKingUser.userId})`;
             desc += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> — Level ${pirateKingUser.level} — ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
         }
 
