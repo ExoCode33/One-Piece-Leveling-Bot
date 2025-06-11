@@ -1,4 +1,166 @@
-// src/commands/leaderboard.js - Enhanced One Piece Themed Leaderboard with Authentic Wanted Posters
+} else {
+            // Top 10 list with enhanced styling (same poster layout for top 3)
+            const topTen = leaderboard.slice(0, 10);
+            const topThree = topTen.slice(0, 3);
+
+            // Create embed description
+            let embedDescription = '**🎯 TOP 3 MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\n';
+            
+            // Add Pirate King if exists
+            if (pirateKingUser) {
+                // Create Pirate King poster
+                const kingBounty = PIRATE_KING_BOUNTY;
+                const kingThreat = 'PIRATE KING - Supreme ruler of all pirates';
+                const kingPosterBuffer = await createWantedPoster(pirateKingUser, '👑', kingBounty, kingThreat, guild);
+                
+                if (kingPosterBuffer) {
+                    const kingAttachment = new AttachmentBuilder(kingPosterBuffer, { 
+                        name: 'pirate_king_poster.png' 
+                    });
+                    
+                    // Create Pirate King embed first
+                    const kingEmbed = new EmbedBuilder()
+                        .setColor(0xFFD700)
+                        .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
+                        .setDescription(embedDescription)
+                        .addFields(
+                            {
+                                name: '👑 **PIRATE KING**',
+                                value: `<@${pirateKingUser.userId}> - Level ${pirateKingUser.level}`,
+                                inline: false
+                            },
+                            {
+                                name: '💰 Bounty',
+                                value: `฿${PIRATE_KING_BOUNTY.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '⚠️ Threat',
+                                value: 'PIRATE KING CLASS',
+                                inline: true
+                            },
+                            {
+                                name: '💎 Total XP',
+                                value: `${pirateKingUser.xp.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '📈 Status',
+                                value: 'Supreme ruler who conquered the Grand Line',
+                                inline: false
+                            }
+                        )
+                        .setImage('attachment://pirate_king_poster.png')
+                        .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
+                        .setTimestamp();
+
+                    // Send Pirate King first
+                    const kingResponse = isButtonInteraction 
+                        ? await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] })
+                        : await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                }
+            }
+
+            // Create top 3 posters
+            const attachments = [];
+            const embeds = [];
+            
+            for (let i = 0; i < topThree.length; i++) {
+                const user = topThree[i];
+                const bounty = getBountyForLevel(user.level);
+                const threatLevel = getThreatLevel(user.level);
+                const threat = getThreatLevelShort(user.level);
+                
+                const posterBuffer = await createWantedPoster(user, i + 1, bounty, threatLevel, guild);
+                if (posterBuffer) {
+                    const attachment = new AttachmentBuilder(posterBuffer, { 
+                        name: `wanted_poster_${i + 1}.png` 
+                    });
+                    attachments.push(attachment);
+                    
+                    // Create individual embed for each poster
+                    const posterEmbed = new EmbedBuilder()
+                        .setColor(0x1a1a1a)
+                        .addFields(
+                            {
+                                name: `${pirateRankEmoji(i + 1)} **#${i + 1}**`,
+                                value: `<@${user.userId}> - Level ${user.level}`,
+                                inline: false
+                            },
+                            {
+                                name: '💰 Bounty',
+                                value: `฿${bounty.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '⚠️ Threat',
+                                value: threat,
+                                inline: true
+                            },
+                            {
+                                name: '💎 Total XP',
+                                value: `${user.xp.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '📈 Status',
+                                value: i === 0 ? 'Most dangerous pirate in the server' : 
+                                       i === 1 ? 'Rising through the ranks' : 
+                                       'New to the Grand Line',
+                                inline: false
+                            }
+                        )
+                        .setImage(`attachment://wanted_poster_${i + 1}.png`);
+                    
+                    embeds.push(posterEmbed);
+                }
+            }
+
+            // Send all top 3 posters as follow-ups
+            for (let i = 0; i < embeds.length; i++) {
+                await interaction.followUp({ 
+                    embeds: [embeds[i]], 
+                    files: [attachments[i]] 
+                });
+            }
+
+            // Create top 10 list embed (without posters)
+            const listEmbed = new EmbedBuilder()
+                .setColor(0xDC143C)
+                .setTitle('⚓ COMPLETE TOP 10 RANKINGS ⚓')
+                .setDescription(`
+**📊 TOP 10 MOST WANTED PIRATES**
+
+${topTen.map((user, index) => {
+    const bounty = getBountyForLevel(user.level);
+    const threat = getThreatLevelShort(user.level);
+    return `${pirateRankEmoji(index + 1)} **#${index + 1}** <@${user.userId}>\n💰 ฿${bounty.toLocaleString()} • ⚔️ Lv.${user.level} • ⭐ ${user.xp.toLocaleString()} XP\n📍 *${threat}*`;
+}).join('\n\n')}
+
+${leaderboard.length > 10 ? `\n🏴‍☠️ *... and ${leaderboard.length - 10} more pirates sailing the seas*` : ''}
+                `)
+                .setFooter({ text: 'Marine Intelligence Division • Stay Vigilant' })
+                .setTimestamp();
+
+            // Send the top 10 list
+            await interaction.followUp({ embeds: [listEmbed] });
+
+            if (!pirateKingUser) {
+                // If no Pirate King, send the initial embed
+                const initialEmbed = new EmbedBuilder()
+                    .setColor(0x1a1a1a)
+                    .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
+                    .setDescription(embedDescription)
+                    .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
+                    .setTimestamp();
+
+                await (isButtonInteraction 
+                    ? interaction.editReply({ embeds: [initialEmbed], components: [row] })
+                    : interaction.reply({ embeds: [initialEmbed], components: [row] }));
+            }
+
+            return;
+        }// src/commands/leaderboard.js - Enhanced One Piece Themed Leaderboard with Authentic Wanted Posters
 
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
@@ -57,61 +219,51 @@ function getThreatLevelShort(level) {
 // Enhanced wanted poster creation with authentic One Piece styling
 async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
     try {
-        const canvas = Canvas.createCanvas(500, 650);
+        const canvas = Canvas.createCanvas(250, 320); // Larger poster size
         const ctx = canvas.getContext('2d');
 
-        // Create aged paper background
-        const gradient = ctx.createLinearGradient(0, 0, 0, 650);
-        gradient.addColorStop(0, '#F5E6D3');
-        gradient.addColorStop(0.5, '#F4E4BC');
-        gradient.addColorStop(1, '#E8D5B0');
+        // Create dark textured background
+        const gradient = ctx.createLinearGradient(0, 0, 0, 320);
+        gradient.addColorStop(0, '#0a0a0a');
+        gradient.addColorStop(0.5, '#111111');
+        gradient.addColorStop(1, '#080808');
         ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 500, 650);
+        ctx.fillRect(0, 0, 250, 320);
 
-        // Add paper texture/aging effects
-        ctx.fillStyle = 'rgba(139, 69, 19, 0.1)';
-        for (let i = 0; i < 50; i++) {
+        // Add dark texture/grunge effects
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        for (let i = 0; i < 100; i++) {
             ctx.beginPath();
-            ctx.arc(Math.random() * 500, Math.random() * 650, Math.random() * 3, 0, Math.PI * 2);
+            ctx.arc(Math.random() * 250, Math.random() * 320, Math.random() * 2, 0, Math.PI * 2);
             ctx.fill();
+        }
+
+        // Add noise texture
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        for (let i = 0; i < 200; i++) {
+            ctx.fillRect(Math.random() * 250, Math.random() * 320, 1, 1);
         }
 
         // Main red border (thick)
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 12;
-        ctx.strokeRect(6, 6, 488, 638);
+        ctx.lineWidth = 6;
+        ctx.strokeRect(3, 3, 244, 314);
 
         // Inner decorative border
         ctx.strokeStyle = '#DC143C';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(25, 25, 450, 600);
-
-        // Decorative corner elements
-        const cornerSize = 30;
-        ctx.fillStyle = '#8B0000';
-        // Top left corner
-        ctx.fillRect(25, 25, cornerSize, 5);
-        ctx.fillRect(25, 25, 5, cornerSize);
-        // Top right corner
-        ctx.fillRect(445, 25, cornerSize, 5);
-        ctx.fillRect(470, 25, 5, cornerSize);
-        // Bottom left corner
-        ctx.fillRect(25, 620, cornerSize, 5);
-        ctx.fillRect(25, 595, 5, cornerSize);
-        // Bottom right corner
-        ctx.fillRect(445, 620, cornerSize, 5);
-        ctx.fillRect(470, 595, 5, cornerSize);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(9, 9, 232, 302);
 
         // "WANTED" header with shadow effect
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
         ctx.shadowBlur = 3;
         ctx.shadowOffsetX = 2;
         ctx.shadowOffsetY = 2;
         
         ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 56px serif';
+        ctx.font = 'bold 28px serif';
         ctx.textAlign = 'center';
-        ctx.fillText('WANTED', 250, 85);
+        ctx.fillText('WANTED', 125, 45);
         
         // Reset shadow
         ctx.shadowColor = 'transparent';
@@ -120,16 +272,16 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.shadowOffsetY = 0;
 
         // "DEAD OR ALIVE" subtitle
-        ctx.fillStyle = '#000';
-        ctx.font = 'bold 18px serif';
-        ctx.fillText('DEAD OR ALIVE', 250, 110);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 10px serif';
+        ctx.fillText('DEAD OR ALIVE', 125, 60);
 
         // Decorative line under header
         ctx.strokeStyle = '#8B0000';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(80, 120);
-        ctx.lineTo(420, 120);
+        ctx.moveTo(30, 70);
+        ctx.lineTo(220, 70);
         ctx.stroke();
 
         // Get user avatar and create photo frame
@@ -140,33 +292,33 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             member = null;
         }
 
-        // Photo frame (polaroid style)
-        const frameX = 150;
-        const frameY = 140;
-        const frameWidth = 200;
-        const frameHeight = 220;
+        // Photo frame (larger, polaroid style)
+        const frameX = 75;
+        const frameY = 80;
+        const frameWidth = 100;
+        const frameHeight = 120;
         
         // White photo frame background
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(frameX - 10, frameY - 10, frameWidth + 20, frameHeight + 20);
+        ctx.fillRect(frameX - 5, frameY - 5, frameWidth + 10, frameHeight + 10);
         
         // Photo frame shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-        ctx.fillRect(frameX - 8, frameY - 8, frameWidth + 16, frameHeight + 16);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(frameX - 3, frameY - 3, frameWidth + 6, frameHeight + 6);
         
         // Photo frame border
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(frameX - 10, frameY - 10, frameWidth + 20, frameHeight + 20);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(frameX - 5, frameY - 5, frameWidth + 10, frameHeight + 10);
 
         if (member) {
-            const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512 });
+            const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256 });
             const avatar = await Canvas.loadImage(avatarURL);
             
             // Clip to photo area
             ctx.save();
             ctx.beginPath();
-            ctx.rect(frameX, frameY, frameWidth, frameHeight - 40); // Leave space for name
+            ctx.rect(frameX, frameY, frameWidth, frameHeight - 25); // Leave space for name
             ctx.clip();
             
             // Draw avatar to fill the frame
@@ -174,116 +326,97 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             let drawWidth = frameWidth;
             let drawHeight = frameWidth / aspectRatio;
             
-            if (drawHeight < frameHeight - 40) {
-                drawHeight = frameHeight - 40;
+            if (drawHeight < frameHeight - 25) {
+                drawHeight = frameHeight - 25;
                 drawWidth = drawHeight * aspectRatio;
             }
             
             const drawX = frameX + (frameWidth - drawWidth) / 2;
-            const drawY = frameY + (frameHeight - 40 - drawHeight) / 2;
+            const drawY = frameY + (frameHeight - 25 - drawHeight) / 2;
             
             ctx.drawImage(avatar, drawX, drawY, drawWidth, drawHeight);
             ctx.restore();
         } else {
             // Placeholder if no avatar
             ctx.fillStyle = '#DDD';
-            ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 40);
+            ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 25);
             ctx.fillStyle = '#666';
-            ctx.font = '20px serif';
+            ctx.font = '12px serif';
             ctx.textAlign = 'center';
-            ctx.fillText('NO PHOTO', frameX + frameWidth/2, frameY + (frameHeight - 40)/2);
+            ctx.fillText('NO PHOTO', frameX + frameWidth/2, frameY + (frameHeight - 25)/2);
         }
 
-        // Pirate name on photo
-        const displayName = member ? member.displayName : `User ${user.userId}`;
+        // Black name zone below photo
         ctx.fillStyle = '#000';
+        ctx.fillRect(frameX, frameY + frameHeight - 25, frameWidth, 25);
+
+        // Pirate name on black zone with white text
+        const displayName = member ? member.displayName : `User ${user.userId}`;
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 9px serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 10);
+
+        // Bounty amount (larger)
+        ctx.fillStyle = '#8B0000';
         ctx.font = 'bold 18px serif';
         ctx.textAlign = 'center';
-        ctx.fillText(displayName.toUpperCase(), frameX + frameWidth/2, frameY + frameHeight - 15);
-
-        // Bounty amount (large and prominent)
-        ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 48px serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`₿${bounty.toLocaleString()}`, 250, 420);
+        ctx.fillText(`₿${bounty.toLocaleString()}`, 125, 230);
 
         // Berry symbol decoration
         ctx.fillStyle = '#FFD700';
-        ctx.font = 'bold 32px serif';
-        ctx.fillText('BERRY', 250, 450);
+        ctx.font = 'bold 12px serif';
+        ctx.fillText('BERRY', 125, 245);
 
-        // Threat level box
-        const threatBoxY = 470;
-        ctx.fillStyle = 'rgba(139, 0, 0, 0.1)';
-        ctx.fillRect(50, threatBoxY, 400, 60);
+        // Threat level box (larger)
+        const threatBoxY = 255;
+        ctx.fillStyle = 'rgba(139, 0, 0, 0.2)';
+        ctx.fillRect(25, threatBoxY, 200, 35);
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(50, threatBoxY, 400, 60);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(25, threatBoxY, 200, 35);
 
-        ctx.fillStyle = '#000';
-        ctx.font = 'bold 14px serif';
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 7px serif';
         ctx.textAlign = 'center';
-        ctx.fillText('THREAT ASSESSMENT', 250, threatBoxY + 20);
-        ctx.font = '12px serif';
-        ctx.fillText(threatLevel, 250, threatBoxY + 40);
+        ctx.fillText('THREAT ASSESSMENT', 125, threatBoxY + 10);
+        ctx.font = '6px serif';
+        ctx.fillText(threatLevel.substring(0, 35), 125, threatBoxY + 22);
 
-        // Level and XP info
-        ctx.fillStyle = '#000';
-        ctx.font = 'bold 16px serif';
-        ctx.fillText(`Level ${user.level} • ${user.xp.toLocaleString()} XP`, 250, 560);
+        // Level and XP info (larger)
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 8px serif';
+        ctx.fillText(`Level ${user.level} • ${user.xp.toLocaleString()} XP`, 125, 305);
 
-        // Rank badge in corner
-        const badgeX = 420;
-        const badgeY = 60;
+        // Rank badge in corner (larger)
+        const badgeX = 220;
+        const badgeY = 35;
         
         // Badge background
-        ctx.fillStyle = '#FFD700';
+        ctx.fillStyle = rank === '👑' ? '#FFD700' : '#FFD700';
         ctx.beginPath();
-        ctx.arc(badgeX, badgeY, 35, 0, Math.PI * 2);
+        ctx.arc(badgeX, badgeY, 15, 0, Math.PI * 2);
         ctx.fill();
         
         // Badge border
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(badgeX, badgeY, 35, 0, Math.PI * 2);
+        ctx.arc(badgeX, badgeY, 15, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Rank number
+        // Rank number or crown
         ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 20px serif';
+        ctx.font = 'bold 10px serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`#${rank}`, badgeX, badgeY + 7);
+        ctx.fillText(rank === '👑' ? '👑' : `#${rank}`, badgeX, badgeY + 3);
 
-        // Marine/World Government stamps
-        ctx.fillStyle = 'rgba(139, 0, 0, 0.3)';
-        ctx.font = 'bold 24px serif';
-        ctx.save();
-        ctx.translate(80, 580);
-        ctx.rotate(-0.3);
-        ctx.fillText('MARINE', 0, 0);
-        ctx.restore();
-
-        ctx.save();
-        ctx.translate(380, 580);
-        ctx.rotate(0.2);
-        ctx.fillText('WORLD GOVT', 0, 0);
-        ctx.restore();
-
-        // Bottom decorative border
-        ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(50, 590);
-        ctx.lineTo(450, 590);
-        ctx.stroke();
-
-        // Date stamp
-        ctx.fillStyle = '#666';
-        ctx.font = '12px serif';
+        // Date stamp (smaller)
+        ctx.fillStyle = '#999';
+        ctx.font = '6px serif';
         ctx.textAlign = 'center';
         const currentDate = new Date().toLocaleDateString();
-        ctx.fillText(`Issued: ${currentDate}`, 250, 615);
+        ctx.fillText(`Issued: ${currentDate}`, 125, 315);
 
         return canvas.toBuffer();
     } catch (error) {
@@ -383,14 +516,78 @@ module.exports = {
         );
 
         if (view === 'posters') {
-            // Create wanted posters for top 3
+            // Create wanted posters for top 3 (all in one embed with side-by-side layout)
             const topThree = leaderboard.slice(0, 3);
+            
+            // Create embed description parts
+            let embedDescription = '**🎯 TOP 3 MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\n';
+            
+            // Add Pirate King if exists
+            if (pirateKingUser) {
+                embedDescription = '**🎯 TOP 3 MOST DANGEROUS CRIMINALS**\nThe following individuals are considered extremely dangerous and should be approached with extreme caution.\n\n';
+                
+                // Create Pirate King poster
+                const kingBounty = PIRATE_KING_BOUNTY;
+                const kingThreat = 'PIRATE KING - Supreme ruler of all pirates';
+                const kingPosterBuffer = await createWantedPoster(pirateKingUser, '👑', kingBounty, kingThreat, guild);
+                
+                if (kingPosterBuffer) {
+                    const kingAttachment = new AttachmentBuilder(kingPosterBuffer, { 
+                        name: 'pirate_king_poster.png' 
+                    });
+                    
+                    // Create Pirate King embed first
+                    const kingEmbed = new EmbedBuilder()
+                        .setColor(0xFFD700)
+                        .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
+                        .setDescription(embedDescription)
+                        .addFields(
+                            {
+                                name: '👑 **PIRATE KING**',
+                                value: `<@${pirateKingUser.userId}> - Level ${pirateKingUser.level}`,
+                                inline: false
+                            },
+                            {
+                                name: '💰 Bounty',
+                                value: `฿${PIRATE_KING_BOUNTY.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '⚠️ Threat',
+                                value: 'PIRATE KING CLASS',
+                                inline: true
+                            },
+                            {
+                                name: '💎 Total XP',
+                                value: `${pirateKingUser.xp.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '📈 Status',
+                                value: 'Supreme ruler who conquered the Grand Line',
+                                inline: false
+                            }
+                        )
+                        .setImage('attachment://pirate_king_poster.png')
+                        .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
+                        .setTimestamp();
+
+                    // Send Pirate King first
+                    const kingResponse = isButtonInteraction 
+                        ? await interaction.editReply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] })
+                        : await interaction.reply({ embeds: [kingEmbed], files: [kingAttachment], components: [row] });
+                }
+            }
+            
+            // Create regular top 3 posters
             const attachments = [];
+            const embeds = [];
             
             for (let i = 0; i < topThree.length; i++) {
                 const user = topThree[i];
                 const bounty = getBountyForLevel(user.level);
                 const threatLevel = getThreatLevel(user.level);
+                const threat = getThreatLevelShort(user.level);
                 
                 const posterBuffer = await createWantedPoster(user, i + 1, bounty, threatLevel, guild);
                 if (posterBuffer) {
@@ -398,42 +595,68 @@ module.exports = {
                         name: `wanted_poster_${i + 1}.png` 
                     });
                     attachments.push(attachment);
+                    
+                    // Create individual embed for each poster
+                    const posterEmbed = new EmbedBuilder()
+                        .setColor(0x1a1a1a)
+                        .addFields(
+                            {
+                                name: `${pirateRankEmoji(i + 1)} **#${i + 1}**`,
+                                value: `<@${user.userId}> - Level ${user.level}`,
+                                inline: false
+                            },
+                            {
+                                name: '💰 Bounty',
+                                value: `฿${bounty.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '⚠️ Threat',
+                                value: threat,
+                                inline: true
+                            },
+                            {
+                                name: '💎 Total XP',
+                                value: `${user.xp.toLocaleString()}`,
+                                inline: true
+                            },
+                            {
+                                name: '📈 Status',
+                                value: i === 0 ? 'Most dangerous pirate in the server' : 
+                                       i === 1 ? 'Rising through the ranks' : 
+                                       'New to the Grand Line',
+                                inline: false
+                            }
+                        )
+                        .setImage(`attachment://wanted_poster_${i + 1}.png`);
+                    
+                    embeds.push(posterEmbed);
                 }
             }
 
-            // Create a newspaper-style embed
-            const embed = new EmbedBuilder()
-                .setColor(0x8B0000)
-                .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
-                .setDescription(`
-**📰 WORLD GOVERNMENT BOUNTY BULLETIN**
-*Latest updates from Marine Headquarters*
+            // Send all top 3 posters as follow-ups
+            for (let i = 0; i < embeds.length; i++) {
+                await interaction.followUp({ 
+                    embeds: [embeds[i]], 
+                    files: [attachments[i]] 
+                });
+            }
 
-**🎯 TOP 3 MOST DANGEROUS CRIMINALS**
-The following individuals are considered extremely dangerous and should be approached with extreme caution.
+            if (!pirateKingUser) {
+                // If no Pirate King, send the initial embed
+                const initialEmbed = new EmbedBuilder()
+                    .setColor(0x1a1a1a)
+                    .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
+                    .setDescription(embedDescription)
+                    .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
+                    .setTimestamp();
 
-${pirateKingUser ? `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n` : ''}
+                await (isButtonInteraction 
+                    ? interaction.editReply({ embeds: [initialEmbed], components: [row] })
+                    : interaction.reply({ embeds: [initialEmbed], components: [row] }));
+            }
 
-${topThree.map((user, index) => {
-    const bounty = getBountyForLevel(user.level);
-    const threat = getThreatLevelShort(user.level);
-    return `${pirateRankEmoji(index + 1)} **#${index + 1}** <@${user.userId}> - Level ${user.level}\n💰 **Bounty:** ฿${bounty.toLocaleString()}\n⚠️ **Threat:** ${threat}\n`;
-}).join('\n')}
-
-*Wanted posters attached below. Report any sightings immediately to your local Marine base.*
-                `)
-                .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
-                .setTimestamp();
-
-            const responseData = { 
-                embeds: [embed], 
-                files: attachments,
-                components: [row]
-            };
-            
-            return isButtonInteraction 
-                ? interaction.editReply(responseData)
-                : interaction.reply(responseData);
+            return;
 
         } else if (view === 'full') {
             // Full text list
