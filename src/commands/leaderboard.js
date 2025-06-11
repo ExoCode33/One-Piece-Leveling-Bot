@@ -234,17 +234,30 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             console.log('Name text failed');
         }
 
-        // Bounty amount - TRY AGAIN
+        // Bounty amount - FIX THE ACTUAL VALUES
         try {
             ctx.fillStyle = '#8B0000';
             ctx.fillRect(75, 260, 150, 30); // Red background
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = '16px sans-serif';
+            ctx.font = '14px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(`B${bounty.toLocaleString()}`, 150, 275);
+            
+            // Format bounty properly
+            let bountyText;
+            if (bounty >= 1000000000) {
+                bountyText = `${(bounty / 1000000000).toFixed(1)}B`;
+            } else if (bounty >= 1000000) {
+                bountyText = `${(bounty / 1000000).toFixed(0)}M`;
+            } else if (bounty >= 1000) {
+                bountyText = `${(bounty / 1000).toFixed(0)}K`;
+            } else {
+                bountyText = bounty.toString();
+            }
+            
+            ctx.fillText(`₿${bountyText}`, 150, 275);
             ctx.strokeStyle = '#FFFFFF';
-            ctx.strokeText(`B${bounty.toLocaleString()}`, 150, 275);
+            ctx.strokeText(`₿${bountyText}`, 150, 275);
         } catch (e) {
             console.log('Bounty text failed');
         }
@@ -264,7 +277,7 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             console.log('Berry text failed');
         }
 
-        // Threat assessment text
+        // Threat assessment text - FIX CONTENT
         try {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(35, threatBoxY + 5, 230, 30); // White background
@@ -274,26 +287,46 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             ctx.textBaseline = 'top';
             ctx.fillText('THREAT ASSESSMENT', 150, threatBoxY + 8);
             
-            // Split threat text
+            // Simplify threat text
             ctx.font = '7px sans-serif';
-            const words = threatLevel.split(' ');
-            const line1 = words.slice(0, 4).join(' ');
-            const line2 = words.slice(4).join(' ');
-            ctx.fillText(line1, 150, threatBoxY + 18);
-            if (line2) ctx.fillText(line2, 150, threatBoxY + 28);
+            let simpleThreat;
+            if (threatLevel.includes('YONKO')) {
+                simpleThreat = 'YONKO LEVEL THREAT';
+            } else if (threatLevel.includes('PIRATE KING')) {
+                simpleThreat = 'PIRATE KING CLASS';
+            } else if (threatLevel.includes('dangerous')) {
+                simpleThreat = 'EXTREMELY DANGEROUS';
+            } else if (threatLevel.includes('Grand Line')) {
+                simpleThreat = 'GRAND LINE PIRATE';
+            } else {
+                simpleThreat = 'ROOKIE PIRATE';
+            }
+            
+            ctx.fillText(simpleThreat, 150, threatBoxY + 22);
         } catch (e) {
             console.log('Threat text failed');
         }
 
-        // Level/XP info
+        // Level/XP info - FIX CONTENT  
         try {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(75, 375, 150, 20); // White background
             ctx.fillStyle = '#000000';
-            ctx.font = '10px sans-serif';
+            ctx.font = '9px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(`Level ${user.level} - ${user.xp.toLocaleString()} XP`, 150, 385);
+            
+            // Format XP for display
+            let xpText;
+            if (user.xp >= 1000000) {
+                xpText = `${(user.xp / 1000000).toFixed(1)}M XP`;
+            } else if (user.xp >= 1000) {
+                xpText = `${(user.xp / 1000).toFixed(1)}K XP`;
+            } else {
+                xpText = `${user.xp} XP`;
+            }
+            
+            ctx.fillText(`Level ${user.level} • ${xpText}`, 150, 385);
         } catch (e) {
             console.log('Level text failed');
         }
