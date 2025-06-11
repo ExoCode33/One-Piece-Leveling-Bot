@@ -92,27 +92,44 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.lineWidth = 2;
         ctx.strokeRect(9, 9, 232, 302);
 
-        // "WANTED" header with shadow effect
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-        ctx.shadowBlur = 3;
-        ctx.shadowOffsetX = 2;
-        ctx.shadowOffsetY = 2;
-        
-        ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 28px Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('WANTED', 125, 45);
-        
-        // Reset shadow
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
+        // Load font and render text - try different approaches
+        try {
+            // "WANTED" header with shadow effect
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+            ctx.shadowBlur = 3;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+            
+            ctx.fillStyle = '#8B0000';
+            ctx.font = 'bold 28px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('WANTED', 125, 45);
+            
+            // Reset shadow
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
 
-        // "DEAD OR ALIVE" subtitle
-        ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 10px Arial, sans-serif';
-        ctx.fillText('DEAD OR ALIVE', 125, 60);
+            // "DEAD OR ALIVE" subtitle
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('DEAD OR ALIVE', 125, 60);
+
+        } catch (fontError) {
+            console.warn('Font rendering issue, using fallback');
+            // Fallback without custom fonts
+            ctx.fillStyle = '#8B0000';
+            ctx.font = 'bold 28px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('WANTED', 125, 45);
+            
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 10px monospace';
+            ctx.fillText('DEAD OR ALIVE', 125, 60);
+        }
 
         // Decorative line under header
         ctx.strokeStyle = '#8B0000';
@@ -179,31 +196,31 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             ctx.fillStyle = '#DDD';
             ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 25);
             ctx.fillStyle = '#666';
-            ctx.font = '12px Arial, sans-serif';
+            ctx.font = '12px monospace';
             ctx.textAlign = 'center';
             ctx.fillText('NO PHOTO', frameX + frameWidth/2, frameY + (frameHeight - 25)/2);
         }
 
         // Black name zone below photo
-        ctx.fillStyle = '#000';
+        ctx.fillStyle = '#000000';
         ctx.fillRect(frameX, frameY + frameHeight - 25, frameWidth, 25);
 
         // Pirate name on black zone with white text
         const displayName = member ? member.displayName : `User ${user.userId}`;
-        ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 9px Arial, sans-serif';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 9px monospace';
         ctx.textAlign = 'center';
         ctx.fillText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 10);
 
         // Bounty amount (larger)
         ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.font = 'bold 18px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`₿${bounty.toLocaleString()}`, 125, 230);
+        ctx.fillText(`B${bounty.toLocaleString()}`, 125, 230);
 
         // Berry symbol decoration
         ctx.fillStyle = '#FFD700';
-        ctx.font = 'bold 12px Arial, sans-serif';
+        ctx.font = 'bold 12px monospace';
         ctx.fillText('BERRY', 125, 245);
 
         // Threat level box (larger)
@@ -214,29 +231,31 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.lineWidth = 1;
         ctx.strokeRect(25, threatBoxY, 200, 35);
 
-        ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 7px Arial, sans-serif';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('THREAT ASSESSMENT', 125, threatBoxY + 10);
-        ctx.font = '6px Arial, sans-serif';
-        // Split long threat text into multiple lines
+        
+        // Split threat text into lines
+        ctx.font = '6px monospace';
         const words = threatLevel.split(' ');
-        const line1 = words.slice(0, Math.ceil(words.length/2)).join(' ');
-        const line2 = words.slice(Math.ceil(words.length/2)).join(' ');
+        const maxWordsPerLine = 6;
+        const line1 = words.slice(0, maxWordsPerLine).join(' ');
+        const line2 = words.slice(maxWordsPerLine).join(' ');
         ctx.fillText(line1, 125, threatBoxY + 20);
         if (line2) ctx.fillText(line2, 125, threatBoxY + 28);
 
         // Level and XP info (larger)
-        ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 8px Arial, sans-serif';
-        ctx.fillText(`Level ${user.level} • ${user.xp.toLocaleString()} XP`, 125, 305);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(`Level ${user.level} - ${user.xp.toLocaleString()} XP`, 125, 305);
 
         // Rank badge in corner (larger)
         const badgeX = 220;
         const badgeY = 35;
         
         // Badge background
-        ctx.fillStyle = rank === '👑' ? '#FFD700' : '#FFD700';
+        ctx.fillStyle = '#FFD700';
         ctx.beginPath();
         ctx.arc(badgeX, badgeY, 15, 0, Math.PI * 2);
         ctx.fill();
@@ -250,18 +269,18 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         
         // Rank number or crown
         ctx.fillStyle = '#8B0000';
-        ctx.font = 'bold 10px Arial, sans-serif';
+        ctx.font = 'bold 10px monospace';
         ctx.textAlign = 'center';
         if (rank === '👑') {
-            ctx.font = '12px Arial, sans-serif';
-            ctx.fillText('👑', badgeX, badgeY + 4);
+            ctx.font = '12px monospace';
+            ctx.fillText('KING', badgeX, badgeY + 3);
         } else {
             ctx.fillText(`#${rank}`, badgeX, badgeY + 3);
         }
 
         // Date stamp (smaller)
-        ctx.fillStyle = '#999';
-        ctx.font = '6px Arial, sans-serif';
+        ctx.fillStyle = '#999999';
+        ctx.font = '6px monospace';
         ctx.textAlign = 'center';
         const currentDate = new Date().toLocaleDateString();
         ctx.fillText(`Issued: ${currentDate}`, 125, 315);
@@ -336,10 +355,22 @@ module.exports = {
                 const king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
                 if (king) {
                     pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
-                    leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
+                    if (pirateKingUser) {
+                        leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
+                    }
                 }
             } catch (err) {
+                console.error('Error finding Pirate King:', err);
                 pirateKingUser = null;
+            }
+        }
+
+        // If no role-based Pirate King, check if top user has reached level 50
+        if (!pirateKingUser && leaderboard.length > 0) {
+            const topUser = leaderboard[0];
+            if (topUser.level >= 50) {
+                pirateKingUser = topUser;
+                leaderboard = leaderboard.slice(1); // Remove from regular leaderboard
             }
         }
 
