@@ -379,26 +379,86 @@ class LevelingBot {
     }
 
     getBountyForLevel(level) {
-        // One Piece accurate bounty progression
-        if (level <= 0) return '0';              // No bounty yet
-        if (level <= 5) return '30,000,000';     // Early East Blue level (like Arlong)
-        if (level <= 10) return '81,000,000';    // Around Don Krieg/Kuro level
-        if (level <= 15) return '120,000,000';   // Crocodile pre-timeskip level
-        if (level <= 20) return '200,000,000';   // Bellamy/Foxy level
-        if (level <= 25) return '320,000,000';   // Pre-timeskip Luffy level
-        if (level <= 30) return '500,000,000';   // Post-timeskip Luffy Dressrosa
-        if (level <= 35) return '860,000,000';   // Charlotte Cracker level
-        if (level <= 40) return '1,057,000,000'; // Charlotte Katakuri level
-        if (level <= 45) return '1,500,000,000'; // Luffy post-Wano (Gear 5)
-        if (level <= 50) return '3,000,000,000'; // Current Luffy bounty
+        // Progressive bounty increase every level, respecting role milestones
+        if (level <= 0) return '0';
         
-        // For levels above 50 - beyond current manga
-        if (level <= 55) return '4,000,000,000';    // Approaching Yonko level
-        if (level <= 60) return '4,600,000,000';    // Shanks/Big Mom territory
+        // Level 1-4: Build up to first role
+        if (level === 1) return '5,000,000';
+        if (level === 2) return '10,000,000';
+        if (level === 3) return '18,000,000';
+        if (level === 4) return '25,000,000';
         
-        // Legendary territory (Roger/Whitebeard level)
-        const baseBounty = 5000000000; // 5 billion base
-        const multiplier = Math.pow(1.2, level - 60);
+        // Level 5-9: Build up to second role  
+        if (level === 5) return '30,000,000';    // Role milestone
+        if (level === 6) return '38,000,000';
+        if (level === 7) return '48,000,000';
+        if (level === 8) return '60,000,000';
+        if (level === 9) return '75,000,000';
+        
+        // Level 10-14: Build up to third role
+        if (level === 10) return '81,000,000';   // Role milestone
+        if (level === 11) return '90,000,000';
+        if (level === 12) return '100,000,000';
+        if (level === 13) return '110,000,000';
+        if (level === 14) return '115,000,000';
+        
+        // Level 15-19: Build up to fourth role
+        if (level === 15) return '120,000,000';  // Role milestone
+        if (level === 16) return '135,000,000';
+        if (level === 17) return '155,000,000';
+        if (level === 18) return '177,000,000';
+        if (level === 19) return '190,000,000';
+        
+        // Level 20-24: Build up to fifth role
+        if (level === 20) return '200,000,000';  // Role milestone
+        if (level === 21) return '230,000,000';
+        if (level === 22) return '260,000,000';
+        if (level === 23) return '290,000,000';
+        if (level === 24) return '310,000,000';
+        
+        // Level 25-29: Build up to sixth role
+        if (level === 25) return '320,000,000';  // Role milestone
+        if (level === 26) return '360,000,000';
+        if (level === 27) return '410,000,000';
+        if (level === 28) return '450,000,000';
+        if (level === 29) return '480,000,000';
+        
+        // Level 30-34: Build up to seventh role
+        if (level === 30) return '500,000,000';  // Role milestone
+        if (level === 31) return '580,000,000';
+        if (level === 32) return '670,000,000';
+        if (level === 33) return '760,000,000';
+        if (level === 34) return '820,000,000';
+        
+        // Level 35-39: Build up to eighth role
+        if (level === 35) return '860,000,000';  // Role milestone
+        if (level === 36) return '920,000,000';
+        if (level === 37) return '980,000,000';
+        if (level === 38) return '1,020,000,000';
+        if (level === 39) return '1,040,000,000';
+        
+        // Level 40-44: Build up to ninth role
+        if (level === 40) return '1,057,000,000'; // Role milestone
+        if (level === 41) return '1,150,000,000';
+        if (level === 42) return '1,250,000,000';
+        if (level === 43) return '1,350,000,000';
+        if (level === 44) return '1,450,000,000';
+        
+        // Level 45-49: Build up to tenth role
+        if (level === 45) return '1,500,000,000'; // Role milestone
+        if (level === 46) return '1,800,000,000';
+        if (level === 47) return '2,200,000,000';
+        if (level === 48) return '2,600,000,000';
+        if (level === 49) return '2,900,000,000';
+        
+        // Level 50+: Yonko territory
+        if (level === 50) return '3,000,000,000'; // Role milestone
+        if (level <= 55) return `${3000 + (level - 50) * 200},000,000`; // +200M per level
+        if (level <= 60) return `${4000 + (level - 55) * 120},000,000`; // +120M per level
+        
+        // Beyond level 60 - legendary territory
+        const baseBounty = 4600000000; // 4.6 billion base
+        const multiplier = Math.pow(1.1, level - 60);
         const bounty = Math.floor(baseBounty * multiplier);
         return bounty.toLocaleString();
     }
@@ -608,35 +668,121 @@ class LevelingBot {
     }
 
     async handleLeaderboardCommand(interaction) {
-        const result = await this.db.query(
-            'SELECT user_id, level, total_xp FROM user_levels WHERE guild_id = $1 ORDER BY total_xp DESC LIMIT 10',
-            [interaction.guild.id]
-        );
-        
-        if (result.rows.length === 0) {
-            return await interaction.reply({ content: 'No pirates have started their journey yet! 🏴‍☠️', ephemeral: true });
-        }
-        
-        const embed = new EmbedBuilder()
-            .setColor('#FF6B00')
-            .setTitle('🏴‍☠️ Most Wanted Pirates')
-            .setDescription('*The World Government\'s Most Wanted List*')
-            .setFooter({ text: 'World Government • Marine Headquarters' })
-            .setTimestamp();
-        
-        let description = '';
-        for (let i = 0; i < result.rows.length; i++) {
-            const userData = result.rows[i];
-            const user = await interaction.guild.members.fetch(userData.user_id).catch(() => null);
-            const username = user ? user.user.username : 'Unknown Pirate';
-            const bountyAmount = this.getBountyForLevel(userData.level);
+        try {
+            const guild = interaction.guild;
+            const excludeRoleId = this.leaderboardConfig.excludeRole;
             
-            const medal = i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-            description += `${medal} **${username}**\n💰 Bounty: ₿${bountyAmount} • ⚔️ Level ${userData.level}\n⭐ ${userData.total_xp.toLocaleString()} Reputation\n\n`;
+            // Get leaderboard data
+            const result = await this.db.query(
+                'SELECT user_id, level, total_xp FROM user_levels WHERE guild_id = $1 ORDER BY total_xp DESC LIMIT 15',
+                [interaction.guild.id]
+            );
+            
+            if (result.rows.length === 0) {
+                return await interaction.reply({ content: 'No pirates have started their journey yet! 🏴‍☠️', ephemeral: true });
+            }
+
+            // Filter out excluded role members and get top 10
+            let filteredUsers = [];
+            let excludedCount = 0;
+            
+            for (const userData of result.rows) {
+                if (filteredUsers.length >= 10) break;
+                
+                try {
+                    const member = await guild.members.fetch(userData.user_id);
+                    
+                    // Skip if user has excluded role
+                    if (excludeRoleId && member.roles.cache.has(excludeRoleId)) {
+                        excludedCount++;
+                        continue;
+                    }
+                    
+                    filteredUsers.push({
+                        member,
+                        level: userData.level,
+                        totalXp: userData.total_xp
+                    });
+                } catch (error) {
+                    // User left server, skip
+                    continue;
+                }
+            }
+
+            if (filteredUsers.length === 0) {
+                return await interaction.reply({ content: 'No eligible pirates found for the leaderboard! 🏴‍☠️', ephemeral: true });
+            }
+
+            // Update top player role
+            await this.updateTopPlayerRole(guild, filteredUsers[0].member);
+
+            // Create leaderboard embed
+            const embed = new EmbedBuilder()
+                .setColor('#FF6B00')
+                .setTitle('🏴‍☠️ Most Wanted Pirates')
+                .setDescription('*The World Government\'s Most Wanted List*')
+                .setFooter({ text: 'World Government • Marine Headquarters' })
+                .setTimestamp();
+            
+            let description = '';
+            for (let i = 0; i < filteredUsers.length; i++) {
+                const userData = filteredUsers[i];
+                const bountyAmount = this.getBountyForLevel(userData.level);
+                
+                let medal;
+                if (i === 0) medal = '👑'; // Crown for #1
+                else if (i === 1) medal = '🥈';
+                else if (i === 2) medal = '🥉';
+                else medal = `${i + 1}.`;
+                
+                description += `${medal} **${userData.member.user.username}**\n💰 Bounty: ₿${bountyAmount} • ⚔️ Level ${userData.level}\n⭐ ${userData.totalXp.toLocaleString()} Reputation\n\n`;
+            }
+            
+            embed.setDescription(description);
+            
+            // Add footer info about exclusions
+            if (excludedCount > 0) {
+                embed.addFields({ 
+                    name: 'ℹ️ Note', 
+                    value: `${excludedCount} member(s) excluded from rankings`, 
+                    inline: false 
+                });
+            }
+
+            await interaction.reply({ embeds: [embed] });
+            
+        } catch (error) {
+            console.error('Leaderboard command error:', error);
+            await interaction.reply({ content: 'An error occurred while fetching the leaderboard.', ephemeral: true });
         }
-        
-        embed.setDescription(description);
-        await interaction.reply({ embeds: [embed] });
+    }
+
+    async updateTopPlayerRole(guild, topMember) {
+        try {
+            const topRoleId = this.leaderboardConfig.topRole;
+            if (!topRoleId) return; // No top role configured
+            
+            const topRole = guild.roles.cache.get(topRoleId);
+            if (!topRole) return; // Role doesn't exist
+            
+            // Remove the role from everyone who currently has it
+            const membersWithRole = guild.members.cache.filter(member => member.roles.cache.has(topRoleId));
+            for (const [, member] of membersWithRole) {
+                if (member.id !== topMember.id) {
+                    await member.roles.remove(topRole);
+                    console.log(`Removed top role from ${member.user.username}`);
+                }
+            }
+            
+            // Give the role to the current #1 player
+            if (!topMember.roles.cache.has(topRoleId)) {
+                await topMember.roles.add(topRole);
+                console.log(`Assigned top role to ${topMember.user.username}`);
+            }
+            
+        } catch (error) {
+            console.error('Error updating top player role:', error);
+        }
     }
 
     async handleSetLevelRoleCommand(interaction) {
@@ -777,15 +923,9 @@ class LevelingBot {
             50: process.env.LEVEL_50_ROLE || null
         };
         
-        this.levelUpConfig = {
-            enabled: process.env.LEVELUP_ENABLED !== 'false',
-            channel: process.env.LEVELUP_CHANNEL || null,
-            channelName: process.env.LEVELUP_CHANNEL_NAME || null,
-            message: process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!',
-            showXP: process.env.LEVELUP_SHOW_XP !== 'false',
-            showProgress: process.env.LEVELUP_SHOW_PROGRESS !== 'false',
-            showRole: process.env.LEVELUP_SHOW_ROLE !== 'false',
-            pingUser: process.env.LEVELUP_PING_USER === 'true' || false
+        this.leaderboardConfig = {
+            topRole: process.env.LEADERBOARD_TOP_ROLE || null,
+            excludeRole: process.env.LEADERBOARD_EXCLUDE_ROLE || null
         };
         
         console.log('Configuration reloaded:', this.config);
