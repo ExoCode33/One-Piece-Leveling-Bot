@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
 const { Pool } = require('pg');
-const BotCommands = require('./commands');
+const CommandHandler = require('./src/commands');
 require('dotenv').config();
 
 // Simple debug replacement
@@ -45,8 +45,8 @@ class LevelingBot {
         // Load configuration
         this.loadConfiguration();
 
-        // Initialize commands
-        this.commands = new BotCommands(this);
+        // Initialize command handler
+        this.commandHandler = new CommandHandler(this);
 
         debug.debug('Bot Configuration loaded');
 
@@ -124,12 +124,8 @@ class LevelingBot {
     // Method to reload configuration (called by commands)
     reloadConfiguration() {
         this.loadConfiguration();
-        // Update the commands instance with new config
-        this.commands.config = this.config;
-        this.commands.levelRoles = this.levelRoles;
-        this.commands.levelUpConfig = this.levelUpConfig;
-        this.commands.leaderboardConfig = this.leaderboardConfig;
-        this.commands.xpLogConfig = this.xpLogConfig;
+        // Update the command handler with new config
+        this.commandHandler.updateConfiguration();
     }
 
     async initializeDatabase() {
@@ -188,7 +184,7 @@ class LevelingBot {
             console.log(`✅ Logged in as ${this.client.user.tag}`);
             debug.success('Bot Started', `${this.client.user.tag} is online`);
             
-            this.client.user.setActivity('Leveling System', { type: ActivityType.Watching });
+            this.client.user.setActivity('Leveling System | /level', { type: ActivityType.Watching });
         });
 
         // Message XP
@@ -294,11 +290,24 @@ class LevelingBot {
             }
         });
 
-        // Slash commands - Now handled by commands module
+        // Slash commands - Now handled by command handler
         this.client.on('interactionCreate', async (interaction) => {
             if (!interaction.isChatInputCommand()) return;
             
-            await this.commands.handleCommand(interaction);
+            await this.commandHandler.handleCommand(interaction);
+        });
+
+        // Error handling
+        this.client.on('error', error => {
+            debug.error('Discord Client', error);
+        });
+
+        this.client.on('warn', warning => {
+            debug.warn('Discord Client', warning);
+        });
+
+        process.on('unhandledRejection', error => {
+            debug.error('Unhandled Rejection', error);
         });
     }
 
@@ -715,7 +724,7 @@ class LevelingBot {
         this.client.once('ready', async () => {
             try {
                 console.log('Registering slash commands...');
-                const commands = this.commands.getCommandDefinitions();
+                const commands = this.commandHandler.getCommandDefinitions();
                 await this.client.application.commands.set(commands);
                 console.log('✅ Slash commands registered successfully');
             } catch (error) {
@@ -727,6 +736,7 @@ class LevelingBot {
     async start() {
         try {
             console.log('🚀 Starting bot...');
+            console.log('📁 Using modular command structure');
             await this.client.login(process.env.DISCORD_TOKEN);
         } catch (error) {
             console.error('❌ Failed to start bot:', error);
