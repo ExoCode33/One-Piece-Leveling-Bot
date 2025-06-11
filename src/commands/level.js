@@ -40,32 +40,42 @@ function calculateXPForLevel(level) {
 }
 
 function getPirateTitle(level) {
-    if (level >= 50) return '👑 Pirate King';
-    if (level >= 45) return '🌟 Yonko';
-    if (level >= 40) return '⚡ Supernova';
-    if (level >= 35) return '🔥 Captain';
-    if (level >= 30) return '⚔️ Vice Captain';
-    if (level >= 25) return '🗡️ Swordsman';
-    if (level >= 20) return '🏴‍☠️ Pirate';
-    if (level >= 15) return '⚓ Crew Member';
-    if (level >= 10) return '🌊 Sailor';
-    if (level >= 5) return '🚢 Deck Hand';
+    if (level >= 50) return '👑 Yonko';
+    if (level >= 45) return '⚡ Yonko Commander';
+    if (level >= 40) return '🗡️ Warlord';
+    if (level >= 35) return '🧭 First Mate';
+    if (level >= 30) return '🗺️ Navigator';
+    if (level >= 25) return '⚓ Boatswain';
+    if (level >= 20) return '⚓ Helmsman';
+    if (level >= 15) return '💣 Gunner';
+    if (level >= 10) return '🧨 Powder Monkey';
+    if (level >= 5) return '🔨 Deckhand';
     return '👶 Cabin Boy';
 }
 
 function getBountyDescription(level, totalXP) {
     if (level >= 50) {
-        return '*The World Government fears this legendary pirate! Their bounty shakes the very foundations of the Grand Line!*';
+        return '*One of the Four Emperors! This legendary Yonko rules over vast territories in the New World!*';
+    } else if (level >= 45) {
+        return '*A fearsome commander serving under a Yonko! Their strength rivals that of admirals!*';
     } else if (level >= 40) {
-        return '*A notorious pirate whose name is whispered across all four seas!*';
+        return '*A Shichibukai! This Warlord has made a pact with the World Government!*';
+    } else if (level >= 35) {
+        return '*The trusted right hand of a great captain! This First Mate commands respect across the seas!*';
     } else if (level >= 30) {
-        return '*This pirate has proven themselves worthy of commanding their own crew!*';
+        return '*The ship\'s Navigator! Their knowledge of the Grand Line\'s treacherous waters is unmatched!*';
+    } else if (level >= 25) {
+        return '*The ship\'s Boatswain! They keep the crew in line and the ship running smoothly!*';
     } else if (level >= 20) {
-        return '*The Marines have taken notice of this rising threat!*';
+        return '*The ship\'s Helmsman! They guide the vessel through the most dangerous waters!*';
+    } else if (level >= 15) {
+        return '*A skilled Gunner! Their cannon fire strikes fear into enemy ships!*';
     } else if (level >= 10) {
-        return '*This adventurer is making waves on the Grand Line!*';
+        return '*A reliable Powder Monkey! They keep the cannons loaded and ready for battle!*';
+    } else if (level >= 5) {
+        return '*A hardworking Deckhand! They\'ve proven their worth aboard the ship!*';
     } else {
-        return '*A promising rookie ready to set sail for adventure!*';
+        return '*A rookie Cabin Boy just starting their pirate adventure!*';
     }
 }
 
@@ -133,11 +143,16 @@ module.exports = {
 
             // Determine embed color based on level
             let embedColor = 0x8B4513; // Brown (default)
-            if (row.level >= 50) embedColor = 0xFFD700; // Gold (Pirate King)
-            else if (row.level >= 40) embedColor = 0xDC143C; // Crimson (Supernova)
-            else if (row.level >= 30) embedColor = 0xFF4500; // Orange Red (Captain)
-            else if (row.level >= 20) embedColor = 0x1E90FF; // Dodger Blue (Pirate)
-            else if (row.level >= 10) embedColor = 0x32CD32; // Lime Green (Sailor)
+            if (row.level >= 50) embedColor = 0xFFD700; // Gold (Yonko)
+            else if (row.level >= 45) embedColor = 0x8A2BE2; // Blue Violet (Yonko Commander)
+            else if (row.level >= 40) embedColor = 0xDC143C; // Crimson (Warlord)
+            else if (row.level >= 35) embedColor = 0xFF4500; // Orange Red (First Mate)
+            else if (row.level >= 30) embedColor = 0x1E90FF; // Dodger Blue (Navigator)
+            else if (row.level >= 25) embedColor = 0x32CD32; // Lime Green (Boatswain)
+            else if (row.level >= 20) embedColor = 0x9932CC; // Dark Orchid (Helmsman)
+            else if (row.level >= 15) embedColor = 0xFF6347; // Tomato (Gunner)
+            else if (row.level >= 10) embedColor = 0xFFA500; // Orange (Powder Monkey)
+            else if (row.level >= 5) embedColor = 0x20B2AA; // Light Sea Green (Deckhand)
 
             const embed = new EmbedBuilder()
                 .setTitle(`🏴‍☠️ ${targetUser.username}'s Bounty Poster`)
@@ -192,20 +207,26 @@ module.exports = {
             // Add special level milestone information
             if (row.level === 50) {
                 embed.addFields({
-                    name: '👑 LEGENDARY STATUS',
-                    value: '**You have reached the pinnacle of piracy! The seas bow before your legend!**',
+                    name: '👑 YONKO STATUS',
+                    value: '**You have reached the pinnacle! One of the Four Emperors ruling the New World!**',
                     inline: false
                 });
             } else if (row.level >= 45) {
                 embed.addFields({
-                    name: '🌟 YONKO STATUS',
-                    value: '**One of the Four Emperors! Your name strikes fear across the Grand Line!**',
+                    name: '⚡ YONKO COMMANDER STATUS',
+                    value: '**A fearsome commander! Your strength rivals that of Marine Admirals!**',
                     inline: false
                 });
             } else if (row.level >= 40) {
                 embed.addFields({
-                    name: '⚡ SUPERNOVA STATUS',
-                    value: '**A rising star whose bounty has exploded overnight!**',
+                    name: '🗡️ WARLORD STATUS',
+                    value: '**One of the Seven Warlords of the Sea! The World Government acknowledges your power!**',
+                    inline: false
+                });
+            } else if (row.level >= 35) {
+                embed.addFields({
+                    name: '🧭 FIRST MATE STATUS',
+                    value: '**The trusted right hand! You command respect across all crews!**',
                     inline: false
                 });
             }
