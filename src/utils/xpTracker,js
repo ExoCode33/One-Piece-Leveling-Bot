@@ -1,0 +1,349 @@
+// src/utils/xpTracker.js - XP Tracking and Management System
+
+const XPLogger = require('./xpLogger');
+
+class XPTracker {
+    constructor(client, db) {
+        this.client = client;
+        this.db = db;
+        this.logger = new XPLogger(client);
+        
+        // Cooldown maps
+        this.messageCooldowns = new Map();
+        this.reactionCooldowns = new Map();
+        this.voiceSessions = new Map();
+    }
+
+    // Helper functions
+    getRandomXP(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    calculateLevel(xp) {
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+        
+        let level;
+        switch (curve) {
+            case 'linear':
+                level = Math.floor(xp / (1000 * multiplier));
+                break;
+            case 'logarithmic':
+                level = Math.floor(Math.log(xp / 100 + 1) * multiplier);
+                break;
+            case 'exponential':
+            default:
+                level = Math.floor(Math.sqrt(xp / 100) * multiplier);
+                break;
+        }
+        
+        return Math.min(level, maxLevel);
+    }
+
+    calculateXPForLevel(level) {
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        
+        switch (curve) {
+            case 'linear':
+                return Math.floor(level * 1000 * multiplier);
+            case 'logarithmic':
+                return Math.floor((Math.exp(level / multiplier) - 1) * 100);
+            case 'exponential':
+            default:
+                return Math.floor(Math.pow(level / multiplier, 2) * 100);
+        }
+    }
+
+    // Main XP update function
+    async updateUserLevel(userId, guildId, xpGain, activityType, additionalInfo = {}) {
+        try {
+            // Get current user data
+            const userQuery = `
+                SELECT total_xp, level, messages, reactions, voice_time 
+                FROM user_levels 
+                WHERE user_id = $1 AND guild_id = $2
+            `;
+            let userResult = await this.db.query(userQuery, [userId, guildId]);
+            
+            let currentXP = 0;
+            let currentLevel = 0;
+            let messages = 0;
+            let reactions = 0;
+            let voiceTime = 0;
+            
+            if (userResult.rows.length > 0) {
+                const row = userResult.rows[0];
+                currentXP = row.total_xp;
+                currentLevel = row.level;
+                messages = row.messages;
+                reactions = row.reactions;
+                voiceTime = row.voice_time;
+            }
+            
+            // Apply XP multiplier
+            const multiplier = parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+            const finalXP = Math.floor(xpGain * multiplier);
+            const newTotalXP = currentXP + finalXP;
+            const newLevel = this.calculateLevel(newTotalXP);
+            
+            // Update activity counters
+            if (activityType === 'message') messages++;
+            if (activityType === 'reaction') reactions++;
+            if (activityType === 'voice') voiceTime += 1; // 1 minute increment
+            
+            // Upsert user data
+            const upsertQuery = `
+                INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, last_updated)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET 
+                    total_xp = $3,
+                    level = $4,
+                    messages = $5,
+                    reactions = $6,
+                    voice_time = $7,
+                    last_updated = NOW()
+            `;
+            
+            await this.db.query(upsertQuery, [userId, guildId, newTotalXP, newLevel, messages, reactions, voiceTime]);
+            
+            // Debug logging
+            await this.logger.debugLog(`XP Update: User ${userId}, Activity: ${activityType}, XP: +${finalXP}, Total: ${newTotalXP}, Level: ${newLevel}`);
+            
+            // Get user object for logging
+            const guild = this.client.guilds.cache.get(guildId);
+            let user = null;
+            if (guild) {
+                try {
+                    const member = await guild.members.fetch(userId);
+                    user = member.user;
+                } catch (error) {
+                    user = { username: 'Unknown User', discriminator: '0000', displayAvatarURL: () => null };
+                }
+            }
+            
+            // Professional XP logging
+            if (user) {
+                await this.logger.sendXPLog(activityType, user, finalXP, {
+                    ...additionalInfo,
+                    totalXP: newTotalXP,
+                    level: newLevel,
+                    guildName: guild?.name,
+                    guildIcon: guild?.iconURL()
+                });
+            }
+            
+            // Check for level up
+            if (newLevel > currentLevel) {
+                await this.handleLevelUp(userId, guildId, newLevel, currentLevel, newTotalXP);
+                
+                // Log level up event
+                if (user) {
+                    const nextLevelXP = this.calculateXPForLevel(newLevel + 1);
+                    await this.logger.sendXPLog('levelup', user, 0, {
+                        newLevel,
+                        oldLevel: currentLevel,
+                        totalXP: newTotalXP,
+                        nextLevelXP,
+                        roleReward: process.env[`LEVEL_${newLevel}_ROLE`],
+                        guildName: guild?.name,
+                        guildIcon: guild?.iconURL()
+                    });
+                }
+            }
+            
+            return finalXP;
+        } catch (error) {
+            await this.logger.logError(error, 'updateUserLevel');
+            return 0;
+        }
+    }
+
+    // Handle level up logic
+    async handleLevelUp(userId, guildId, newLevel, oldLevel, totalXP) {
+        try {
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+            
+            const user = await guild.members.fetch(userId);
+            if (!user) return;
+            
+            await this.logger.debugLog(`Level Up: ${user.user.tag} reached level ${newLevel}`);
+            
+            // Check for role rewards
+            const roleId = process.env[`LEVEL_${newLevel}_ROLE`];
+            if (roleId && roleId !== 'your_role_id_here') {
+                try {
+                    const role = guild.roles.cache.get(roleId);
+                    if (role && !user.roles.cache.has(roleId)) {
+                        await user.roles.add(role);
+                        console.log(`[LEVEL UP] Added role ${role.name} to ${user.user.tag}`);
+                    }
+                } catch (error) {
+                    await this.logger.logError(error, `Adding role for level ${newLevel}`);
+                }
+            }
+            
+            // Send level up message to user's channel or designated channel
+            await this.sendLevelUpMessage(user, newLevel, oldLevel, totalXP, guild);
+            
+        } catch (error) {
+            await this.logger.logError(error, 'handleLevelUp');
+        }
+    }
+
+    // Send level up message
+    async sendLevelUpMessage(user, newLevel, oldLevel, totalXP, guild) {
+        const levelUpEnabled = process.env.LEVELUP_ENABLED !== 'false';
+        if (!levelUpEnabled) return;
+
+        const channelId = process.env.LEVELUP_CHANNEL;
+        let channel = null;
+        
+        if (channelId && channelId !== 'your_levelup_channel_id') {
+            channel = guild.channels.cache.get(channelId);
+        }
+        
+        if (!channel) {
+            // Use a general channel if levelup channel not found
+            channel = guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(guild.members.me).has('SendMessages'));
+        }
+        
+        if (channel) {
+            let message = process.env.LEVELUP_MESSAGE || 'Congratulations {user}! You\'ve reached **Level {level}**!';
+            message = message.replace('{user}', process.env.LEVELUP_PING_USER === 'true' ? `<@${user.id}>` : user.user.username);
+            message = message.replace('{level}', newLevel);
+            message = message.replace('{oldlevel}', oldLevel);
+            
+            const { EmbedBuilder } = require('discord.js');
+            const embed = new EmbedBuilder()
+                .setTitle('🎉 Level Up!')
+                .setDescription(message)
+                .setColor(0x00AE86)
+                .setThumbnail(user.user.displayAvatarURL());
+            
+            if (process.env.LEVELUP_SHOW_XP === 'true') {
+                embed.addFields({ name: 'Total XP', value: totalXP.toLocaleString(), inline: true });
+            }
+            
+            if (process.env.LEVELUP_SHOW_PROGRESS === 'true') {
+                const nextLevelXP = this.calculateXPForLevel(newLevel + 1);
+                const currentLevelXP = this.calculateXPForLevel(newLevel);
+                embed.addFields({ name: 'Next Level', value: `${nextLevelXP - currentLevelXP} XP needed`, inline: true });
+            }
+            
+            const roleId = process.env[`LEVEL_${newLevel}_ROLE`];
+            if (process.env.LEVELUP_SHOW_ROLE === 'true' && roleId && roleId !== 'your_role_id_here') {
+                const role = guild.roles.cache.get(roleId);
+                if (role) {
+                    embed.addFields({ name: 'Role Unlocked', value: role.name, inline: true });
+                }
+            }
+            
+            await channel.send({ embeds: [embed] });
+        }
+    }
+
+    // Message XP handler
+    async handleMessageXP(message) {
+        if (message.author.bot || !message.guild) return;
+        
+        const userId = message.author.id;
+        const guildId = message.guildId;
+        const cooldownKey = `${userId}-${guildId}`;
+        const cooldownTime = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
+        
+        // Check cooldown
+        if (this.messageCooldowns.has(cooldownKey)) {
+            const expirationTime = this.messageCooldowns.get(cooldownKey) + cooldownTime;
+            if (Date.now() < expirationTime) return;
+        }
+        
+        // Set cooldown
+        this.messageCooldowns.set(cooldownKey, Date.now());
+        setTimeout(() => this.messageCooldowns.delete(cooldownKey), cooldownTime);
+        
+        // Award XP
+        const minXP = parseInt(process.env.MESSAGE_XP_MIN) || 25;
+        const maxXP = parseInt(process.env.MESSAGE_XP_MAX) || 35;
+        const xpAmount = this.getRandomXP(minXP, maxXP);
+        
+        await this.updateUserLevel(userId, guildId, xpAmount, 'message', {
+            channelId: message.channel.id,
+            messageLength: message.content.length
+        });
+    }
+
+    // Reaction XP handler
+    async handleReactionXP(reaction, user) {
+        if (user.bot || !reaction.message.guild) return;
+        
+        const userId = user.id;
+        const guildId = reaction.message.guildId;
+        const cooldownKey = `${userId}-${guildId}`;
+        const cooldownTime = parseInt(process.env.REACTION_COOLDOWN) || 300000;
+        
+        // Check cooldown
+        if (this.reactionCooldowns.has(cooldownKey)) {
+            const expirationTime = this.reactionCooldowns.get(cooldownKey) + cooldownTime;
+            if (Date.now() < expirationTime) return;
+        }
+        
+        // Set cooldown
+        this.reactionCooldowns.set(cooldownKey, Date.now());
+        setTimeout(() => this.reactionCooldowns.delete(cooldownKey), cooldownTime);
+        
+        // Award XP
+        const minXP = parseInt(process.env.REACTION_XP_MIN) || 25;
+        const maxXP = parseInt(process.env.REACTION_XP_MAX) || 35;
+        const xpAmount = this.getRandomXP(minXP, maxXP);
+        
+        await this.updateUserLevel(userId, guildId, xpAmount, 'reaction', {
+            channelId: reaction.message.channel.id,
+            emoji: reaction.emoji.name || reaction.emoji.toString(),
+            messageAuthor: reaction.message.author.username
+        });
+    }
+
+    // Voice state change handler
+    async handleVoiceStateUpdate(oldState, newState) {
+        const userId = newState.id || oldState.id;
+        const guildId = newState.guild.id;
+        
+        if (!userId || !guildId) return;
+        
+        const member = newState.member || oldState.member;
+        if (!member || member.user.bot) return;
+        
+        const sessionKey = `${userId}-${guildId}`;
+        
+        // User joined a voice channel
+        if (!oldState.channelId && newState.channelId) {
+            this.voiceSessions.set(sessionKey, {
+                channelId: newState.channelId,
+                startTime: Date.now(),
+                lastXPTime: Date.now()
+            });
+            
+            await this.logger.debugLog(`Voice session started: ${member.user.tag} joined ${newState.channel.name}`);
+            
+            // Log voice session start
+            await this.logger.logVoiceSession('start', member.user, {
+                channelName: newState.channel.name,
+                memberCount: newState.channel.members.filter(m => !m.user.bot).size
+            });
+        }
+        
+        // User left a voice channel
+        else if (oldState.channelId && !newState.channelId) {
+            const session = this.voiceSessions.get(sessionKey);
+            if (session) {
+                const duration = Math.floor((Date.now() - session.startTime) / 60000); // minutes
+                this.voiceSessions.delete(sessionKey);
+                
+                // Record session in database
+                try {
+                    await this.db.query(`
+                        INSERT INTO voice_sessions (user_id, guild_id, channel_id, start_time, end_time, duration)
