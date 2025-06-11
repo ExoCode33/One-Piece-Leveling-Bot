@@ -95,40 +95,40 @@ class LevelingBot {
             await this.db.query(`
                 CREATE TABLE IF NOT EXISTS user_levels (
                     id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
+                    user_id TEXT NOT NULL,
+                    guild_id TEXT NOT NULL,
                     messages INTEGER DEFAULT 0,
                     reactions INTEGER DEFAULT 0,
                     voice_time INTEGER DEFAULT 0,
-                    total_xp INTEGER DEFAULT 0,
+                    total_xp BIGINT DEFAULT 0,
                     level INTEGER DEFAULT 0,
-                    last_message_time TIMESTAMP DEFAULT NOW(),
-                    last_reaction_time TIMESTAMP DEFAULT NOW(),
+                    last_message_time DATE DEFAULT CURRENT_DATE,
+                    last_reaction_time DATE DEFAULT CURRENT_DATE,
                     UNIQUE(user_id, guild_id)
                 );
             `);
 
             await this.db.query(`
                 CREATE TABLE IF NOT EXISTS guild_settings (
-                    guild_id VARCHAR(20) PRIMARY KEY,
-                    level_roles JSONB DEFAULT '{}',
-                    xp_multiplier FLOAT DEFAULT 1.0,
+                    guild_id TEXT PRIMARY KEY,
+                    level_roles JSON DEFAULT '{}',
+                    xp_multiplier REAL DEFAULT 1.0,
                     voice_xp_rate INTEGER DEFAULT 1,
                     message_xp_min INTEGER DEFAULT 15,
                     message_xp_max INTEGER DEFAULT 25,
                     reaction_xp INTEGER DEFAULT 5,
-                    level_up_channel VARCHAR(20),
-                    created_at TIMESTAMP DEFAULT NOW()
+                    level_up_channel TEXT,
+                    created_at DATE DEFAULT CURRENT_DATE
                 );
             `);
 
             await this.db.query(`
                 CREATE TABLE IF NOT EXISTS voice_sessions (
                     id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    start_time TIMESTAMP DEFAULT NOW(),
-                    end_time TIMESTAMP,
+                    user_id TEXT NOT NULL,
+                    guild_id TEXT NOT NULL,
+                    start_time DATE DEFAULT CURRENT_DATE,
+                    end_time DATE,
                     duration INTEGER DEFAULT 0
                 );
             `);
