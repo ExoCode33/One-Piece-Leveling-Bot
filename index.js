@@ -28,11 +28,33 @@ class LevelingBot {
         this.messageCooldowns = new Map();
         this.reactionCooldowns = new Map();
 
-        // Level roles configuration (editable per guild)
-        this.defaultLevelRoles = {
-            5: null, 10: null, 15: null, 20: null, 25: null,
-            30: null, 35: null, 40: null, 45: null, 50: null
+        // XP Configuration from environment variables
+        this.config = {
+            messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 15,
+            messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 25,
+            reactionXP: parseInt(process.env.REACTION_XP) || 5,
+            voiceXPPerMinute: parseInt(process.env.VOICE_XP_PER_MINUTE) || 1,
+            messageCooldown: parseInt(process.env.MESSAGE_COOLDOWN) || 60000, // 60 seconds
+            reactionCooldown: parseInt(process.env.REACTION_COOLDOWN) || 30000, // 30 seconds
+            xpMultiplier: parseFloat(process.env.XP_MULTIPLIER) || 1.0
         };
+
+        // Level roles from environment variables
+        this.levelRoles = {
+            5: process.env.LEVEL_5_ROLE || null,
+            10: process.env.LEVEL_10_ROLE || null,
+            15: process.env.LEVEL_15_ROLE || null,
+            20: process.env.LEVEL_20_ROLE || null,
+            25: process.env.LEVEL_25_ROLE || null,
+            30: process.env.LEVEL_30_ROLE || null,
+            35: process.env.LEVEL_35_ROLE || null,
+            40: process.env.LEVEL_40_ROLE || null,
+            45: process.env.LEVEL_45_ROLE || null,
+            50: process.env.LEVEL_50_ROLE || null
+        };
+
+        console.log('Bot Configuration:', this.config);
+        console.log('Level Roles:', this.levelRoles);
 
         this.initializeDatabase();
         this.setupEventHandlers();
@@ -101,16 +123,15 @@ class LevelingBot {
             const cooldownKey = `${message.author.id}-${message.guild.id}`;
             const now = Date.now();
             
-            // 60 second cooldown for message XP
+            // 60 second cooldown for message XP (configurable)
             if (this.messageCooldowns.has(cooldownKey)) {
                 const cooldownEnd = this.messageCooldowns.get(cooldownKey);
                 if (now < cooldownEnd) return;
             }
             
-            this.messageCooldowns.set(cooldownKey, now + 60000);
+            this.messageCooldowns.set(cooldownKey, now + this.config.messageCooldown);
             
-            const settings = await this.getGuildSettings(message.guild.id);
-            const xpGain = Math.floor(Math.random() * (settings.message_xp_max - settings.message_xp_min + 1)) + settings.message_xp_min;
+            const xpGain = Math.floor(Math.random() * (this.config.messageXPMax - this.config.messageXPMin + 1)) + this.config.messageXPMin;
             
             await this.addXP(message.author.id, message.guild.id, xpGain, 'message');
         });
@@ -122,16 +143,15 @@ class LevelingBot {
             const cooldownKey = `${user.id}-${reaction.message.guild.id}`;
             const now = Date.now();
             
-            // 30 second cooldown for reaction XP
+            // 30 second cooldown for reaction XP (configurable)
             if (this.reactionCooldowns.has(cooldownKey)) {
                 const cooldownEnd = this.reactionCooldowns.get(cooldownKey);
                 if (now < cooldownEnd) return;
             }
             
-            this.reactionCooldowns.set(cooldownKey, now + 30000);
+            this.reactionCooldowns.set(cooldownKey, now + this.config.reactionCooldown);
             
-            const settings = await this.getGuildSettings(reaction.message.guild.id);
-            await this.addXP(user.id, reaction.message.guild.id, settings.reaction_xp, 'reaction');
+            await this.addXP(user.id, reaction.message.guild.id, this.config.reactionXP, 'reaction');
         });
 
         // Voice XP tracking
@@ -179,6 +199,9 @@ class LevelingBot {
                     case 'settings':
                         await this.handleSettingsCommand(interaction);
                         break;
+                    case 'reload':
+                        await this.handleReloadCommand(interaction);
+                        break;
                 }
             } catch (error) {
                 console.error('Command error:', error);
@@ -197,8 +220,7 @@ class LevelingBot {
             
             // Only give XP if there are 2+ human members (excluding bots)
             if (humanMembers >= 2) {
-                const settings = await this.getGuildSettings(guildId);
-                const voiceXP = Math.floor(duration / 60) * settings.voice_xp_rate; // XP per minute
+                const voiceXP = Math.floor(duration / 60) * this.config.voiceXPPerMinute; // XP per minute from config
                 
                 if (voiceXP > 0) {
                     await this.addXP(userId, guildId, voiceXP, 'voice');
@@ -217,8 +239,7 @@ class LevelingBot {
 
     async addXP(userId, guildId, xpAmount, type) {
         try {
-            const settings = await this.getGuildSettings(guildId);
-            const finalXP = Math.floor(xpAmount * settings.xp_multiplier);
+            const finalXP = Math.floor(xpAmount * this.config.xpMultiplier);
             
             const result = await this.db.query(`
                 INSERT INTO user_levels (user_id, guild_id, total_xp, ${type === 'message' ? 'messages' : type === 'reaction' ? 'reactions' : 'voice_time'})
@@ -230,7 +251,7 @@ class LevelingBot {
                       type === 'reaction' ? 'reactions = user_levels.reactions + 1' : 
                       'voice_time = user_levels.voice_time + $4'}
                 RETURNING total_xp, level
-            `, [userId, guildId, finalXP, type === 'voice' ? Math.floor(xpAmount / settings.voice_xp_rate) : 1]);
+            `, [userId, guildId, finalXP, type === 'voice' ? Math.floor(xpAmount / this.config.voiceXPPerMinute) : 1]);
             
             const newTotalXP = result.rows[0].total_xp;
             const currentLevel = result.rows[0].level;
@@ -267,41 +288,53 @@ class LevelingBot {
             const user = await guild.members.fetch(userId);
             if (!user) return;
             
-            const settings = await this.getGuildSettings(guildId);
-            
-            // Check for role rewards
-            if (settings.level_roles && settings.level_roles[newLevel]) {
-                const roleId = settings.level_roles[newLevel];
+            // Check for role rewards from environment variables
+            if (this.levelRoles[newLevel]) {
+                const roleId = this.levelRoles[newLevel];
                 const role = guild.roles.cache.get(roleId);
                 if (role && !user.roles.cache.has(roleId)) {
                     await user.roles.add(role);
+                    console.log(`Added role ${role.name} to ${user.user.username} for reaching level ${newLevel}`);
                 }
             }
             
-            // Send level up message
-            if (settings.level_up_channel) {
-                const channel = guild.channels.cache.get(settings.level_up_channel);
-                if (channel) {
-                    const embed = new EmbedBuilder()
-                        .setColor('#00ff00')
-                        .setTitle('🎉 Level Up!')
-                        .setDescription(`Congratulations ${user}! You've reached **Level ${newLevel}**!`)
-                        .addFields(
-                            { name: 'Previous Level', value: oldLevel.toString(), inline: true },
-                            { name: 'New Level', value: newLevel.toString(), inline: true }
-                        )
-                        .setThumbnail(user.user.displayAvatarURL())
-                        .setTimestamp();
-                    
-                    if (settings.level_roles && settings.level_roles[newLevel]) {
-                        const role = guild.roles.cache.get(settings.level_roles[newLevel]);
-                        if (role) {
-                            embed.addFields({ name: 'Role Reward', value: role.name, inline: true });
-                        }
+            // Send level up message to any channel (or configure via LEVEL_UP_CHANNEL env var)
+            const levelUpChannelId = process.env.LEVEL_UP_CHANNEL;
+            let channel = null;
+            
+            if (levelUpChannelId) {
+                channel = guild.channels.cache.get(levelUpChannelId);
+            }
+            
+            // If no specific channel set, try to find a general channel
+            if (!channel) {
+                channel = guild.channels.cache.find(ch => 
+                    ch.type === 0 && // Text channel
+                    ch.permissionsFor(guild.members.me).has(['SendMessages', 'EmbedLinks']) &&
+                    (ch.name.includes('general') || ch.name.includes('chat') || ch.name.includes('level'))
+                );
+            }
+            
+            if (channel) {
+                const embed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('🎉 Level Up!')
+                    .setDescription(`Congratulations ${user}! You've reached **Level ${newLevel}**!`)
+                    .addFields(
+                        { name: 'Previous Level', value: oldLevel.toString(), inline: true },
+                        { name: 'New Level', value: newLevel.toString(), inline: true }
+                    )
+                    .setThumbnail(user.user.displayAvatarURL())
+                    .setTimestamp();
+                
+                if (this.levelRoles[newLevel]) {
+                    const role = guild.roles.cache.get(this.levelRoles[newLevel]);
+                    if (role) {
+                        embed.addFields({ name: 'Role Reward', value: role.name, inline: true });
                     }
-                    
-                    await channel.send({ embeds: [embed] });
                 }
+                
+                await channel.send({ embeds: [embed] });
             }
         } catch (error) {
             console.error('Level up handling error:', error);
@@ -440,39 +473,57 @@ class LevelingBot {
     }
 
     async handleLevelRolesCommand(interaction) {
-        const settings = await this.getGuildSettings(interaction.guild.id);
-        
         const embed = new EmbedBuilder()
             .setColor('#0099ff')
             .setTitle('Level Roles Configuration')
             .setTimestamp();
         
         let description = '';
-        for (const [level, roleId] of Object.entries(settings.level_roles)) {
+        for (const [level, roleId] of Object.entries(this.levelRoles)) {
             const role = roleId ? interaction.guild.roles.cache.get(roleId) : null;
             const roleName = role ? role.name : 'Not Set';
             description += `Level ${level}: ${roleName}\n`;
         }
         
-        embed.setDescription(description || 'No level roles configured');
+        embed.setDescription(description || 'No level roles configured via environment variables');
+        embed.setFooter({ text: 'Configure roles using Railway environment variables (LEVEL_X_ROLE)' });
+        
         await interaction.reply({ embeds: [embed] });
     }
 
-    async handleSettingsCommand(interaction) {
-        const settings = await this.getGuildSettings(interaction.guild.id);
+    async handleReloadCommand(interaction) {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+            return await interaction.reply({ content: 'You need the "Manage Server" permission to use this command.', ephemeral: true });
+        }
         
-        const embed = new EmbedBuilder()
-            .setColor('#0099ff')
-            .setTitle('Server Settings')
-            .addFields(
-                { name: 'XP Multiplier', value: settings.xp_multiplier.toString(), inline: true },
-                { name: 'Voice XP Rate', value: `${settings.voice_xp_rate}/min`, inline: true },
-                { name: 'Message XP Range', value: `${settings.message_xp_min}-${settings.message_xp_max}`, inline: true },
-                { name: 'Reaction XP', value: settings.reaction_xp.toString(), inline: true }
-            )
-            .setTimestamp();
+        // Reload configuration from environment variables
+        this.config = {
+            messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 15,
+            messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 25,
+            reactionXP: parseInt(process.env.REACTION_XP) || 5,
+            voiceXPPerMinute: parseInt(process.env.VOICE_XP_PER_MINUTE) || 1,
+            messageCooldown: parseInt(process.env.MESSAGE_COOLDOWN) || 60000,
+            reactionCooldown: parseInt(process.env.REACTION_COOLDOWN) || 30000,
+            xpMultiplier: parseFloat(process.env.XP_MULTIPLIER) || 1.0
+        };
+
+        this.levelRoles = {
+            5: process.env.LEVEL_5_ROLE || null,
+            10: process.env.LEVEL_10_ROLE || null,
+            15: process.env.LEVEL_15_ROLE || null,
+            20: process.env.LEVEL_20_ROLE || null,
+            25: process.env.LEVEL_25_ROLE || null,
+            30: process.env.LEVEL_30_ROLE || null,
+            35: process.env.LEVEL_35_ROLE || null,
+            40: process.env.LEVEL_40_ROLE || null,
+            45: process.env.LEVEL_45_ROLE || null,
+            50: process.env.LEVEL_50_ROLE || null
+        };
         
-        await interaction.reply({ embeds: [embed] });
+        console.log('Configuration reloaded:', this.config);
+        console.log('Level roles reloaded:', this.levelRoles);
+        
+        await interaction.reply({ content: '✅ Configuration reloaded from environment variables!', ephemeral: true });
     }
 
     setupCommands() {
@@ -523,7 +574,12 @@ class LevelingBot {
             
             new SlashCommandBuilder()
                 .setName('settings')
-                .setDescription('View server leveling settings')
+                .setDescription('View server leveling settings'),
+            
+            new SlashCommandBuilder()
+                .setName('reload')
+                .setDescription('Reload configuration from environment variables')
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         ];
 
         this.client.once('ready', async () => {
