@@ -1,11 +1,11 @@
 # Railway Environment Variables Configuration
 
-This guide shows you how to configure all XP values and role rewards through Railway environment variables without redeploying.
+This guide shows you how to configure all XP values, formulas, voice settings, and role rewards through Railway environment variables to match your dashboard settings.
 
 ## 🚀 **Quick Setup in Railway**
 
 1. Go to your Railway project dashboard
-2. Click on your bot service
+2. Click on your bot service  
 3. Go to **"Variables"** tab
 4. Add all the variables below
 
@@ -17,30 +17,57 @@ DISCORD_TOKEN=your_discord_bot_token_here
 NODE_ENV=production
 ```
 
-### XP Configuration
+## 📊 **XP Configuration (Matching Your Dashboard)**
+
+### Message XP
 ```bash
-# Message XP (random between min and max)
-MESSAGE_XP_MIN=15
-MESSAGE_XP_MAX=25
+# Random XP range for messages (matches your 25-35)
+MESSAGE_XP_MIN=25
+MESSAGE_XP_MAX=35
+MESSAGE_COOLDOWN=60000  # 60 seconds (matches your 60s)
+```
 
-# Reaction XP (fixed amount)
-REACTION_XP=5
+### Voice XP  
+```bash
+# Random XP range per minute in voice (matches your 45-55)
+VOICE_XP_MIN=45
+VOICE_XP_MAX=55
+VOICE_COOLDOWN=180000   # 180 seconds (matches your 180s)
 
-# Voice XP (per minute in voice chat)
-VOICE_XP_PER_MINUTE=1
+# Voice requirements (matches your settings)
+VOICE_MIN_MEMBERS=2     # Minimum 2 members (matches your dashboard)
+VOICE_ANTI_AFK=true     # Anti-AFK detection enabled
+```
 
-# Global XP multiplier (1.0 = normal, 2.0 = double XP)
+### Reaction XP
+```bash
+# Random XP range for reactions (matches your 25-35)
+REACTION_XP_MIN=25
+REACTION_XP_MAX=35
+REACTION_COOLDOWN=300000  # 300 seconds (matches your 300s)
+```
+
+## 🧮 **Formula Configuration (New!)**
+
+### Level Curve Settings
+```bash
+# Formula curve type (matches your "Exponential")
+FORMULA_CURVE=exponential
+
+# Multiplier (matches your 1.75)
+FORMULA_MULTIPLIER=1.75
+
+# Maximum level (matches your 50)
+MAX_LEVEL=50
+
+# Global XP multiplier
 XP_MULTIPLIER=1.0
 ```
 
-### Cooldown Configuration
-```bash
-# Message cooldown in milliseconds (60000 = 60 seconds)
-MESSAGE_COOLDOWN=60000
-
-# Reaction cooldown in milliseconds (30000 = 30 seconds)  
-REACTION_COOLDOWN=30000
-```
+### Available Formula Types:
+- `exponential` - Matches your dashboard (default)
+- `linear` - Steady progression
+- `logarithmic` - Fast early levels, slow later
 
 ## 🏆 **Level Role Rewards**
 
@@ -67,74 +94,137 @@ LEVEL_45_ROLE=123456789012345686
 LEVEL_50_ROLE=123456789012345687
 ```
 
-### Optional: Level Up Channel
+## 🎉 **Level Up Message Configuration (New!)**
+
+### Customize Level Up Messages
 ```bash
-# Channel where level up messages are sent (optional)
-LEVEL_UP_CHANNEL=123456789012345688
+# Enable/disable level up messages
+LEVELUP_ENABLED=true
+
+# Specific channel for level up messages (optional)
+LEVELUP_CHANNEL=123456789012345688
+
+# Custom level up message
+LEVELUP_MESSAGE=Congratulations {user}! You've reached **Level {level}**!
+
+# Show additional info
+LEVELUP_SHOW_XP=true
+LEVELUP_SHOW_PROGRESS=true  
+LEVELUP_SHOW_ROLE=true
+LEVELUP_PING_USER=false
 ```
+
+### Level Up Message Variables:
+- `{user}` - User mention or username
+- `{level}` - New level achieved
+- `{oldlevel}` - Previous level
 
 ## 🔧 **Configuration Examples**
 
+### Your Current Dashboard Settings
+```bash
+# Matches your exact dashboard configuration
+MESSAGE_XP_MIN=25
+MESSAGE_XP_MAX=35
+MESSAGE_COOLDOWN=60000
+
+VOICE_XP_MIN=45
+VOICE_XP_MAX=55
+VOICE_COOLDOWN=180000
+VOICE_MIN_MEMBERS=2
+VOICE_ANTI_AFK=true
+
+REACTION_XP_MIN=25
+REACTION_XP_MAX=35
+REACTION_COOLDOWN=300000
+
+FORMULA_CURVE=exponential
+FORMULA_MULTIPLIER=1.75
+MAX_LEVEL=50
+XP_MULTIPLIER=1.0
+```
+
 ### Slow Progression Server
 ```bash
-MESSAGE_XP_MIN=5
-MESSAGE_XP_MAX=10
-REACTION_XP=2
-VOICE_XP_PER_MINUTE=1
+MESSAGE_XP_MIN=15
+MESSAGE_XP_MAX=20
+VOICE_XP_MIN=30
+VOICE_XP_MAX=40
+REACTION_XP_MIN=15
+REACTION_XP_MAX=20
 XP_MULTIPLIER=0.5
+FORMULA_MULTIPLIER=0.8
 ```
 
 ### Fast Progression Server
 ```bash
-MESSAGE_XP_MIN=25
-MESSAGE_XP_MAX=50
-REACTION_XP=15
-VOICE_XP_PER_MINUTE=5
+MESSAGE_XP_MIN=40
+MESSAGE_XP_MAX=60
+VOICE_XP_MIN=80
+VOICE_XP_MAX=100
+REACTION_XP_MIN=40
+REACTION_XP_MAX=60
 XP_MULTIPLIER=2.0
+FORMULA_MULTIPLIER=2.5
 ```
 
-### High Activity Server (Longer Cooldowns)
+### Voice-Focused Community
+```bash
+MESSAGE_XP_MIN=20
+MESSAGE_XP_MAX=25
+VOICE_XP_MIN=60
+VOICE_XP_MAX=80
+REACTION_XP_MIN=15
+REACTION_XP_MAX=20
+VOICE_MIN_MEMBERS=3
+```
+
+### Anti-Spam Protection (Higher Cooldowns)
 ```bash
 MESSAGE_COOLDOWN=120000  # 2 minutes
-REACTION_COOLDOWN=60000  # 1 minute
+REACTION_COOLDOWN=600000 # 10 minutes
+VOICE_COOLDOWN=300000    # 5 minutes
 ```
 
-### Gaming Community (Voice Focus)
+## 📈 **Advanced Voice Features**
+
+### Voice Anti-AFK System
 ```bash
-MESSAGE_XP_MIN=10
-MESSAGE_XP_MAX=15
-REACTION_XP=3
-VOICE_XP_PER_MINUTE=3    # Higher voice XP
-XP_MULTIPLIER=1.0
+# Enable AFK detection (default: true)
+VOICE_ANTI_AFK=true
+
+# Minimum members required for XP (default: 2)
+VOICE_MIN_MEMBERS=2
+
+# Voice XP cooldown (prevents spam joining/leaving)
+VOICE_COOLDOWN=180000  # 3 minutes
 ```
 
-## 📊 **XP Calculation Examples**
-
-### With Default Settings:
-- **Message**: 15-25 XP every 60 seconds
-- **Reaction**: 5 XP every 30 seconds  
-- **Voice**: 1 XP per minute (with 2+ people)
-- **Multiplier**: 1.0x (no change)
-
-### With 2x Multiplier:
-- **Message**: 30-50 XP every 60 seconds
-- **Reaction**: 10 XP every 30 seconds
-- **Voice**: 2 XP per minute
-
-## 🔄 **Updating Configuration**
-
-### Method 1: Railway Dashboard (Recommended)
-1. Go to Railway dashboard
-2. Select your bot service
-3. Click "Variables" tab
-4. Modify any values
-5. Bot automatically restarts with new settings
-
-### Method 2: Using /reload Command
-1. Update variables in Railway dashboard
-2. Use `/reload` command in Discord (Admin only)
-3. Bot reloads configuration without restart
+**How Anti-AFK Works:**
+- Tracks user mute/deafen status
+- Reduces XP if user is inactive for 10+ minutes
+- Updates activity when user unmutes/undeafens
 
 ## 🎭 **Role Management Tips**
+
+### Role Hierarchy
+- Bot's role must be **above** all level reward roles
+- Bot needs "Manage Roles" permission
+- Users need appropriate permissions to use commands
+
+### Creating Level Roles
+**Suggested Role Names:**
+```
+Level 5:  🌱 Sprout
+Level 10: 🌿 Growing  
+Level 15: 🌳 Rooted
+Level 20: 🎯 Focused
+Level 25: ⭐ Rising Star
+Level 30: 🔥 Veteran
+Level 35: 💎 Elite
+Level 40: 👑 Champion
+Level 45: 🚀 Legendary
+Level 50: 🌟 Mythic
+```
 
 ###
