@@ -10,92 +10,102 @@ class XPTracker {
     constructor(client, db) {
         this.client = client;
         this.db = db;
-        // Map for voice XP tracking: userId => { joinTimestamp }
-        this.voiceSessions = new Map();
+        this.voiceSessions = new Map(); // userId => { joinTimestamp, guildId }
+        this.messageCooldowns = new Map(); // For message XP cooldowns
+        this.reactionCooldowns = new Map(); // For reaction XP cooldowns
     }
 
-    // --- XP Award and Level Logic ---
-
+    // === MESSAGE XP ===
     async handleMessageXP(message) {
-        // Ignore bots and system messages
         if (!message.guild || message.author.bot) return;
-        const userId = message.author.id;
-        const guildId = message.guild.id;
-        const xp = getMessageXP(message);
 
+        // Message XP cooldown per user
+        const cooldown = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
+        const key = `${message.guild.id}:${message.author.id}`;
+        const now = Date.now();
+        if (this.messageCooldowns.has(key) && now - this.messageCooldowns.get(key) < cooldown) return;
+        this.messageCooldowns.set(key, now);
+
+        const xp = getMessageXP(message);
         if (xp > 0) {
-            await this.addXP(userId, guildId, xp, { messages: 1 });
+            await this.addXP(message.author.id, message.guild.id, xp, { messages: 1 });
             await sendXPLog(this.client, {
                 type: 'message',
-                userId,
-                guildId,
+                userId: message.author.id,
+                guildId: message.guild.id,
                 amount: xp,
                 reason: 'Message sent'
             });
         }
     }
 
+    // === REACTION XP ===
     async handleReactionXP(reaction, user) {
         if (!reaction.message.guild || user.bot) return;
-        const userId = user.id;
-        const guildId = reaction.message.guild.id;
-        const xp = getReactionXP(reaction, user);
 
+        // Reaction XP cooldown per user
+        const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
+        const key = `${reaction.message.guild.id}:${user.id}`;
+        const now = Date.now();
+        if (this.reactionCooldowns.has(key) && now - this.reactionCooldowns.get(key) < cooldown) return;
+        this.reactionCooldowns.set(key, now);
+
+        const xp = getReactionXP(reaction, user);
         if (xp > 0) {
-            await this.addXP(userId, guildId, xp, { reactions: 1 });
+            await this.addXP(user.id, reaction.message.guild.id, xp, { reactions: 1 });
             await sendXPLog(this.client, {
                 type: 'reaction',
-                userId,
-                guildId,
+                userId: user.id,
+                guildId: reaction.message.guild.id,
                 amount: xp,
                 reason: 'Reaction added'
             });
         }
     }
 
+    // === VOICE XP ===
     async handleVoiceStateUpdate(oldState, newState) {
-        // Track when users join/leave voice channels
         const userId = newState.id;
         const guildId = newState.guild.id;
-        if (newState.channelId && !oldState.channelId) {
-            // Joined a voice channel
+        // Joined voice
+        if (!oldState.channelId && newState.channelId) {
             this.voiceSessions.set(userId, { joinTimestamp: Date.now(), guildId });
-        } else if (!newState.channelId && oldState.channelId) {
-            // Left a voice channel
-            await this._endVoiceSession(userId);
+        }
+        // Left voice
+        else if (oldState.channelId && !newState.channelId) {
+            if (this.voiceSessions.has(userId)) {
+                const session = this.voiceSessions.get(userId);
+                const duration = Math.floor((Date.now() - session.joinTimestamp) / 1000); // seconds
+                if (duration >= 60) {
+                    // Award for every full minute in VC
+                    const minutes = Math.floor(duration / 60);
+                    for (let i = 0; i < minutes; i++) {
+                        const xpGain = getVoiceXP();
+                        await this.addXP(userId, guildId, xpGain, { voice_time: 60 });
+                    }
+                }
+                this.voiceSessions.delete(userId);
+            }
         }
     }
 
+    // This runs every 60s to give active users their voice XP while in VC
     async processVoiceXP() {
-        // Grant XP to all users still in voice every minute
         const now = Date.now();
         for (const [userId, session] of this.voiceSessions.entries()) {
-            const voiceXP = getVoiceXP(session);
-            if (voiceXP > 0) {
-                await this.addXP(userId, session.guildId, voiceXP, { voice_time: 60 });
-                await sendXPLog(this.client, {
-                    type: 'voice',
-                    userId,
-                    guildId: session.guildId,
-                    amount: voiceXP,
-                    reason: 'Voice session active'
-                });
+            const duration = Math.floor((now - session.joinTimestamp) / 1000);
+            if (duration >= 60) {
+                const xpGain = getVoiceXP();
+                await this.addXP(userId, session.guildId, xpGain, { voice_time: 60 });
+                // Reset their join time for next interval
+                this.voiceSessions.set(userId, { ...session, joinTimestamp: now });
             }
-            // Update session time
-            this.voiceSessions.set(userId, { ...session, joinTimestamp: now });
         }
     }
 
-    async _endVoiceSession(userId) {
-        if (!this.voiceSessions.has(userId)) return;
-        // Optional: do final XP tick on leaving
-        this.voiceSessions.delete(userId);
-    }
-
-    // --- XP Database Methods ---
+    // === XP & LEVELING DATABASE OPS ===
 
     async addXP(userId, guildId, amount, stats = {}) {
-        // Upsert user record
         try {
             const res = await this.db.query(
                 `INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
@@ -121,12 +131,11 @@ class XPTracker {
             const user = res.rows[0];
             const newLevel = this.calculateLevel(user.total_xp);
             if (newLevel > user.level) {
-                // Level up!
                 await this.db.query(
                     `UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3`,
                     [newLevel, userId, guildId]
                 );
-                // Optionally send level-up message here
+                // Level up announcement
                 this._sendLevelUp(userId, guildId, newLevel);
             }
         } catch (err) {
@@ -161,11 +170,10 @@ class XPTracker {
     }
 
     calculateLevel(xp) {
-        // Example curve: each level needs 500 + 250*(level-1) more XP than previous
         let level = 0;
         let xpNeeded = 500;
         let remaining = xp;
-        while (remaining >= xpNeeded && level < 50) { // 50 = max level, change as needed
+        while (remaining >= xpNeeded && level < 50) {
             remaining -= xpNeeded;
             level += 1;
             xpNeeded += 250;
@@ -174,13 +182,11 @@ class XPTracker {
     }
 
     async _sendLevelUp(userId, guildId, level) {
-        // Fetch the user and send a level up message to the channel if desired
         try {
             const guild = this.client.guilds.cache.get(guildId);
             if (!guild) return;
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return;
-            // Send to the main channel or a specific channel (adjust as needed)
             const channelId = process.env.LEVELUP_CHANNEL;
             if (!channelId) return;
             const channel = guild.channels.cache.get(channelId);
@@ -192,9 +198,7 @@ class XPTracker {
             await channel.send(
                 `:sparkles: <@${userId}> has reached **Level ${level}**!\n:money_with_wings: New Bounty: **฿${bounty.toLocaleString()}**\n${flavor}`
             );
-        } catch (err) {
-            // It's okay for this to fail silently
-        }
+        } catch (err) {}
     }
 }
 
