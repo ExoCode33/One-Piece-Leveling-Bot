@@ -58,12 +58,10 @@ module.exports = {
                 const king = members.find(m =>
                     m.roles &&
                     m.roles.cache &&
-                    m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE) &&
-                    ((m.user && m.user.id) || m.id)
+                    m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE)
                 );
                 if (king) {
-                    if (king.user && king.user.id) kingId = king.user.id;
-                    else if (king.id) kingId = king.id;
+                    kingId = (king.user && king.user.id) ? king.user.id : king.id;
                 }
 
                 if (kingId) {
