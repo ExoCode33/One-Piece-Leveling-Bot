@@ -347,3 +347,282 @@ class XPTracker {
                 try {
                     await this.db.query(`
                         INSERT INTO voice_sessions (user_id, guild_id, channel_id, start_time, end_time, duration)
+                        VALUES ($1, $2, $3, to_timestamp($4/1000), NOW(), $5)
+                    `, [userId, guildId, session.channelId, session.startTime, duration]);
+                } catch (error) {
+                    await this.logger.logError(error, 'Recording voice session');
+                }
+                
+                // Log voice session end
+                await this.logger.logVoiceSession('end', member.user, {
+                    duration,
+                    xpGained: Math.floor(duration * ((parseInt(process.env.VOICE_XP_MIN) + parseInt(process.env.VOICE_XP_MAX)) / 2))
+                });
+                
+                await this.logger.debugLog(`Voice session ended: ${member.user.tag} left after ${duration} minutes`);
+            }
+        }
+        
+        // User switched channels
+        else if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId) {
+            const session = this.voiceSessions.get(sessionKey);
+            if (session) {
+                session.channelId = newState.channelId;
+                await this.logger.debugLog(`Voice session moved: ${member.user.tag} moved to ${newState.channel.name}`);
+            }
+        }
+    }
+
+    // Process voice XP for all active sessions
+    async processVoiceXP() {
+        for (const [sessionKey, session] of this.voiceSessions.entries()) {
+            try {
+                const [userId, guildId] = sessionKey.split('-');
+                const guild = this.client.guilds.cache.get(guildId);
+                if (!guild) continue;
+                
+                const channel = guild.channels.cache.get(session.channelId);
+                if (!channel) continue;
+                
+                // Check minimum members requirement
+                const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
+                const humanMembers = channel.members.filter(m => !m.user.bot);
+                if (humanMembers.size < minMembers) continue;
+                
+                // Check anti-AFK if enabled
+                if (process.env.VOICE_ANTI_AFK === 'true') {
+                    const member = humanMembers.get(userId);
+                    if (member && (member.voice.mute || member.voice.deaf)) {
+                        continue;
+                    }
+                }
+                
+                // Check voice cooldown
+                const cooldownTime = parseInt(process.env.VOICE_COOLDOWN) || 60000;
+                if (Date.now() - session.lastXPTime < cooldownTime) continue;
+                
+                // Award XP
+                const minXP = parseInt(process.env.VOICE_XP_MIN) || 45;
+                const maxXP = parseInt(process.env.VOICE_XP_MAX) || 55;
+                const xpAmount = this.getRandomXP(minXP, maxXP);
+                
+                const sessionDuration = Math.floor((Date.now() - session.startTime) / 60000);
+                
+                await this.updateUserLevel(userId, guildId, xpAmount, 'voice', {
+                    channelName: channel.name,
+                    memberCount: humanMembers.size,
+                    sessionDuration: sessionDuration
+                });
+                
+                session.lastXPTime = Date.now();
+                
+            } catch (error) {
+                await this.logger.logError(error, 'Voice XP processing');
+            }
+        }
+    }
+
+    // Get user statistics
+    async getUserStats(userId, guildId) {
+        try {
+            const query = `
+                SELECT total_xp, level, messages, reactions, voice_time, last_updated
+                FROM user_levels
+                WHERE user_id = $1 AND guild_id = $2
+            `;
+            const result = await this.db.query(query, [userId, guildId]);
+            
+            if (result.rows.length === 0) {
+                return null;
+            }
+            
+            const stats = result.rows[0];
+            const currentLevelXP = this.calculateXPForLevel(stats.level);
+            const nextLevelXP = this.calculateXPForLevel(stats.level + 1);
+            const progressXP = stats.total_xp - currentLevelXP;
+            const neededXP = nextLevelXP - currentLevelXP;
+            
+            return {
+                ...stats,
+                currentLevelXP,
+                nextLevelXP,
+                progressXP,
+                neededXP,
+                progressPercentage: Math.floor((progressXP / neededXP) * 100)
+            };
+        } catch (error) {
+            await this.logger.logError(error, 'Getting user stats');
+            return null;
+        }
+    }
+
+    // Get server leaderboard
+    async getLeaderboard(guildId, type = 'xp', page = 1, limit = 10) {
+        try {
+            const offset = (page - 1) * limit;
+            
+            // Determine sort field
+            let sortField;
+            switch (type) {
+                case 'level':
+                    sortField = 'level';
+                    break;
+                case 'messages':
+                    sortField = 'messages';
+                    break;
+                case 'reactions':
+                    sortField = 'reactions';
+                    break;
+                case 'voice':
+                    sortField = 'voice_time';
+                    break;
+                case 'xp':
+                default:
+                    sortField = 'total_xp';
+                    break;
+            }
+            
+            // Get total count
+            const countQuery = `
+                SELECT COUNT(*) as total
+                FROM user_levels
+                WHERE guild_id = $1 AND ${sortField} > 0
+            `;
+            const countResult = await this.db.query(countQuery, [guildId]);
+            const totalUsers = parseInt(countResult.rows[0].total);
+            
+            // Get leaderboard data
+            const query = `
+                SELECT user_id, total_xp, level, messages, reactions, voice_time
+                FROM user_levels
+                WHERE guild_id = $1 AND ${sortField} > 0
+                ORDER BY ${sortField} DESC, total_xp DESC
+                LIMIT $2 OFFSET $3
+            `;
+            const result = await this.db.query(query, [guildId, limit, offset]);
+            
+            return {
+                users: result.rows,
+                totalUsers,
+                totalPages: Math.ceil(totalUsers / limit),
+                currentPage: page,
+                type
+            };
+        } catch (error) {
+            await this.logger.logError(error, 'Getting leaderboard');
+            return null;
+        }
+    }
+
+    // Get server statistics
+    async getServerStats(guildId) {
+        try {
+            const query = `
+                SELECT 
+                    COUNT(*) as total_users,
+                    SUM(total_xp) as total_xp,
+                    SUM(messages) as total_messages,
+                    SUM(reactions) as total_reactions,
+                    SUM(voice_time) as total_voice_time,
+                    MAX(total_xp) as highest_xp,
+                    MAX(level) as highest_level,
+                    AVG(total_xp) as avg_xp,
+                    AVG(level) as avg_level
+                FROM user_levels 
+                WHERE guild_id = $1
+            `;
+            const result = await this.db.query(query, [guildId]);
+            
+            // Get level distribution
+            const levelDistQuery = `
+                SELECT level, COUNT(*) as count
+                FROM user_levels 
+                WHERE guild_id = $1
+                GROUP BY level
+                ORDER BY level
+            `;
+            const levelDistResult = await this.db.query(levelDistQuery, [guildId]);
+            
+            return {
+                ...result.rows[0],
+                levelDistribution: levelDistResult.rows
+            };
+        } catch (error) {
+            await this.logger.logError(error, 'Getting server stats');
+            return null;
+        }
+    }
+
+    // Manual XP adjustment
+    async adjustUserXP(userId, guildId, xpChange, reason = 'Manual adjustment') {
+        try {
+            const userQuery = `
+                SELECT total_xp, level FROM user_levels 
+                WHERE user_id = $1 AND guild_id = $2
+            `;
+            let userResult = await this.db.query(userQuery, [userId, guildId]);
+            
+            let currentXP = 0;
+            let currentLevel = 0;
+            
+            if (userResult.rows.length > 0) {
+                currentXP = userResult.rows[0].total_xp;
+                currentLevel = userResult.rows[0].level;
+            }
+            
+            const newTotalXP = Math.max(0, currentXP + xpChange);
+            const newLevel = this.calculateLevel(newTotalXP);
+            
+            const upsertQuery = `
+                INSERT INTO user_levels (user_id, guild_id, total_xp, level, last_updated)
+                VALUES ($1, $2, $3, $4, NOW())
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET 
+                    total_xp = $3,
+                    level = $4,
+                    last_updated = NOW()
+            `;
+            
+            await this.db.query(upsertQuery, [userId, guildId, newTotalXP, newLevel]);
+            
+            // Log the manual adjustment
+            await this.logger.debugLog(`Manual XP adjustment: User ${userId}, Change: ${xpChange}, Reason: ${reason}, New Total: ${newTotalXP}`);
+            
+            // Check for level changes
+            if (newLevel > currentLevel) {
+                await this.handleLevelUp(userId, guildId, newLevel, currentLevel, newTotalXP);
+            }
+            
+            return {
+                oldXP: currentXP,
+                newXP: newTotalXP,
+                oldLevel: currentLevel,
+                newLevel: newLevel,
+                change: xpChange
+            };
+        } catch (error) {
+            await this.logger.logError(error, 'Manual XP adjustment');
+            return null;
+        }
+    }
+
+    // Reset user progress
+    async resetUser(userId, guildId) {
+        try {
+            const deleteQuery = `
+                DELETE FROM user_levels 
+                WHERE user_id = $1 AND guild_id = $2
+            `;
+            const result = await this.db.query(deleteQuery, [userId, guildId]);
+            
+            await this.logger.debugLog(`User reset: ${userId} in guild ${guildId}`);
+            
+            return result.rowCount > 0;
+        } catch (error) {
+            await this.logger.logError(error, 'Resetting user');
+            return false;
+        }
+    }
+}
+
+module.exports = XPTracker;
