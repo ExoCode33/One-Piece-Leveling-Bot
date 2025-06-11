@@ -28,7 +28,10 @@ module.exports = {
 
     async execute(interaction, client) {
         try {
-            await interaction.deferReply();
+            // Only defer if not already deferred (for button interactions)
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply();
+            }
 
             const page = Math.max(1, interaction.options.getInteger('page') || 1);
             const type = interaction.options.getString('type') || 'xp';
@@ -81,7 +84,8 @@ module.exports = {
             const totalPages = Math.ceil(totalUsers / usersPerPage);
 
             if (page > totalPages && totalPages > 0) {
-                return await interaction.editReply(`❌ Page ${page} doesn't exist. There are only ${totalPages} pages.`);
+                const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+                return await interaction[responseMethod](`❌ Page ${page} doesn't exist. There are only ${totalPages} pages.`);
             }
 
             // Fetch leaderboard data
@@ -100,7 +104,8 @@ module.exports = {
                     .setDescription('No users found on the leaderboard. Start chatting to appear here!')
                     .setColor(0xFFD700);
                 
-                return await interaction.editReply({ embeds: [embed] });
+                const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+                return await interaction[responseMethod]({ embeds: [embed] });
             }
 
             // Build leaderboard string
@@ -241,7 +246,8 @@ module.exports = {
 
             components.push(typeButtons);
 
-            await interaction.editReply({ 
+            const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+            await interaction[responseMethod]({ 
                 embeds: [embed], 
                 components: components,
                 allowedMentions: { users: [] } 
@@ -250,7 +256,8 @@ module.exports = {
         } catch (error) {
             console.error('Error in leaderboard command:', error);
             try {
-                await interaction.editReply('❌ An error occurred while fetching the leaderboard.');
+                const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+                await interaction[responseMethod]('❌ An error occurred while fetching the leaderboard.');
             } catch {}
         }
     }
