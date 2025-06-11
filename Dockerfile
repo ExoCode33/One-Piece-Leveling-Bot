@@ -1,32 +1,33 @@
-# Dockerfile
+# Use official Node.js runtime as base image
 FROM node:18-alpine
 
-# Create app directory
-WORKDIR /usr/src/app
+# Set working directory in container
+WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package.json first (for better Docker layer caching)
+COPY package.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+# Use npm install instead of npm ci since we don't have package-lock.json
+RUN npm install --only=production && npm cache clean --force
 
-# Copy source code
+# Copy application code
 COPY . .
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S discord -u 1001
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S discordbot -u 1001
 
-# Change ownership of the app directory
-RUN chown -R discord:nodejs /usr/src/app
-USER discord
+# Change ownership of app directory
+RUN chown -R discordbot:nodejs /app
+USER discordbot
 
-# Expose port (optional, for health checks)
+# Expose port (Railway will override this)
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD node -e "console.log('Bot is running')" || exit 1
+# Health check (optional but recommended)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "console.log('Bot is running')" || exit 1
 
 # Start the application
 CMD ["npm", "start"]
