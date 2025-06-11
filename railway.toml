@@ -1,4 +1,5 @@
 # railway.toml
+
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
@@ -7,8 +8,6 @@ dockerfilePath = "Dockerfile"
 startCommand = "npm start"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-healthcheckPath = "/"
-healthcheckTimeout = 100
 
 [environments.production]
 variables = { NODE_ENV = "production" }
@@ -18,4 +17,46 @@ name = "discord-leveling-bot"
 
 [services.variables]
 NODE_ENV = "production"
-# Add your environment variables here or in Railway dashboard
+DISCORD_TOKEN = "your_discord_token_here"
+DATABASE_URL = "your_postgres_url_here"
+
+# XP and Leveling Configuration
+MESSAGE_XP_MIN = 25
+MESSAGE_XP_MAX = 35
+MESSAGE_COOLDOWN = 60000
+
+VOICE_XP_MIN = 45
+VOICE_XP_MAX = 55
+VOICE_COOLDOWN = 180000
+VOICE_MIN_MEMBERS = 2
+VOICE_ANTI_AFK = true
+
+REACTION_XP_MIN = 25
+REACTION_XP_MAX = 35
+REACTION_COOLDOWN = 300000
+
+FORMULA_CURVE = "exponential"
+FORMULA_MULTIPLIER = 1.75
+MAX_LEVEL = 50
+XP_MULTIPLIER = 1.0
+
+# Level Role Rewards (replace with your role IDs)
+LEVEL_5_ROLE = "role_id_5"
+LEVEL_10_ROLE = "role_id_10"
+LEVEL_15_ROLE = "role_id_15"
+LEVEL_20_ROLE = "role_id_20"
+LEVEL_25_ROLE = "role_id_25"
+LEVEL_30_ROLE = "role_id_30"
+LEVEL_35_ROLE = "role_id_35"
+LEVEL_40_ROLE = "role_id_40"
+LEVEL_45_ROLE = "role_id_45"
+LEVEL_50_ROLE = "role_id_50"
+
+# Level Up Message (customize as desired)
+LEVELUP_ENABLED = true
+LEVELUP_CHANNEL = "your_levelup_channel_id"
+LEVELUP_MESSAGE = "Congratulations {user}! You've reached **Level {level}**!"
+LEVELUP_SHOW_XP = true
+LEVELUP_SHOW_PROGRESS = true
+LEVELUP_SHOW_ROLE = true
+LEVELUP_PING_USER = false
