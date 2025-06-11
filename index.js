@@ -1,11 +1,15 @@
-// index.js - Discord Leveling Bot with Clean Modular Structure
+// index.js - Discord Leveling Bot with Modular Structure
 
 const { Client, GatewayIntentBits, Partials, Collection, REST, Routes } = require('discord.js');
 require('dotenv').config();
 
-// Import our modules
 const XPTracker = require('./src/utils/xpTracker');
 const { sendXPLog } = require('./src/utils/xpLogger');
+
+// Modular XP handlers
+const { handleMessageXP } = require('./src/utils/messageXP');
+const { handleReactionXP } = require('./src/utils/reactionXP');
+const { handleVoiceStateUpdate, processVoiceXP } = require('./src/utils/voiceXP');
 
 // Import commands
 const levelCommand = require('./src/commands/level');
@@ -56,11 +60,12 @@ async function initializeDatabase() {
                 messages INTEGER DEFAULT 0,
                 reactions INTEGER DEFAULT 0,
                 voice_time INTEGER DEFAULT 0,
+                rep INTEGER DEFAULT 0,
                 last_updated TIMESTAMP DEFAULT NOW(),
                 PRIMARY KEY (user_id, guild_id)
             )
         `);
-        
+
         // Create voice_sessions table
         await db.query(`
             CREATE TABLE IF NOT EXISTS voice_sessions (
@@ -74,7 +79,7 @@ async function initializeDatabase() {
                 xp_awarded INTEGER DEFAULT 0
             )
         `);
-        
+
         // Create guild_settings table
         await db.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
@@ -83,9 +88,9 @@ async function initializeDatabase() {
                 settings JSONB DEFAULT '{}'
             )
         `);
-        
+
         console.log('[INFO] Database tables initialized successfully');
-        
+
         if (process.env.DEBUG_DATABASE === 'true') {
             const userCount = await db.query('SELECT COUNT(*) FROM user_levels');
             console.log(`[DEBUG] Database has ${userCount.rows[0].count} user records`);
@@ -97,31 +102,30 @@ async function initializeDatabase() {
 
 // === Event Handlers ===
 
-// Slash Command Handler
 client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand() && !interaction.isButton()) return;
-    
+
     try {
         if (interaction.isCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (!command) return;
-            
+
             await command.execute(interaction, client, xpTracker);
         }
-        
-        // Handle button interactions for leaderboard pagination
+
+        // Handle button interactions for leaderboard (update if you use leaderboard pagination)
         if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
             const parts = interaction.customId.split('_');
             const view = parts[1]; // 'short' or 'long'
             const page = parseInt(parts[2]) || 1;
             const type = parts[3] || 'xp';
-            
+
             await interaction.deferUpdate();
-            
-            // Create a proper mock interaction for the leaderboard command
+
+            // Create a mock interaction for leaderboard command
             const mockInteraction = {
                 ...interaction,
-                deferReply: async () => {}, // Mock function - already deferred
+                deferReply: async () => {},
                 editReply: async (options) => await interaction.editReply(options),
                 reply: async (options) => await interaction.editReply(options),
                 options: {
@@ -133,22 +137,21 @@ client.on('interactionCreate', async interaction => {
                     getInteger: (name) => name === 'page' ? page : null
                 }
             };
-            
-            // Execute leaderboard command
+
             const leaderboardCommand = client.commands.get('leaderboard');
             if (leaderboardCommand) {
                 await leaderboardCommand.execute(mockInteraction, client, xpTracker);
             }
         }
 
-        // Handle refresh button
+        // Handle refresh button (if using)
         if (interaction.isButton() && interaction.customId.startsWith('bounty_refresh_')) {
             const parts = interaction.customId.split('_');
-            const view = parts[2]; // 'short' or 'long'
+            const view = parts[2];
             const type = parts[3] || 'xp';
-            
+
             await interaction.deferUpdate();
-            
+
             const mockInteraction = {
                 ...interaction,
                 deferReply: async () => {},
@@ -163,7 +166,7 @@ client.on('interactionCreate', async interaction => {
                     getInteger: (name) => name === 'page' ? 1 : null
                 }
             };
-            
+
             const leaderboardCommand = client.commands.get('leaderboard');
             if (leaderboardCommand) {
                 await leaderboardCommand.execute(mockInteraction, client, xpTracker);
@@ -184,60 +187,56 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Message XP Handler
+// Modular XP Handlers
 client.on('messageCreate', async message => {
-    await xpTracker.handleMessageXP(message);
+    await handleMessageXP(xpTracker, message);
 });
 
-// Reaction XP Handler
 client.on('messageReactionAdd', async (reaction, user) => {
-    await xpTracker.handleReactionXP(reaction, user);
+    await handleReactionXP(xpTracker, reaction, user);
 });
 
-// Voice State Handler
 client.on('voiceStateUpdate', async (oldState, newState) => {
-    await xpTracker.handleVoiceStateUpdate(oldState, newState);
+    await handleVoiceStateUpdate(xpTracker, oldState, newState);
 });
 
 // Voice XP Award Loop (every minute)
 setInterval(async () => {
-    await xpTracker.processVoiceXP();
+    await processVoiceXP(xpTracker);
 }, 60000);
 
 // === Bot Ready Event ===
 client.once('ready', async () => {
     console.log(`[INFO] Bot logged in as ${client.user.tag}`);
-    
-    // Initialize database
+
     await initializeDatabase();
-    
+
     // Register slash commands
     try {
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-        
+
         const commands = [
             levelCommand.data,
             leaderboardCommand.data,
             adminCommand.data
         ];
-        
+
         if (process.env.DEBUG_COMMANDS === 'true') {
             console.log('[DEBUG] Registering slash commands...');
         }
-        
+
         await rest.put(
             Routes.applicationCommands(client.user.id),
             { body: commands }
         );
-        
+
         console.log('[INFO] Slash commands registered successfully');
     } catch (error) {
         console.error('Error registering slash commands:', error);
     }
-    
-    // Set bot status
+
     client.user.setActivity('for XP gains!', { type: 'WATCHING' });
-    
+
     console.log('[INFO] Discord Leveling Bot is fully operational!');
 });
 
