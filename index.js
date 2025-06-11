@@ -405,19 +405,19 @@ class LevelingBot {
 
     getFlavorTextForLevel(level) {
         const flavorTexts = {
-            0: "*A new face has appeared. No bounty issued yet. Keep watching...*",
-            5: "*A rookie pirate causing trouble in the East Blue. Standard bounty issued.*",
-            10: "*This pirate has defeated several Marine lieutenants. Increase surveillance.*",
-            15: "*ALERT: Pirate has entered the Grand Line. Logia Devil Fruit user reported.*",
-            20: "*Baroque Works level threat. Has defeated a Shichibukai subordinate.*",
-            25: "*SUPERNOVA: One of the Worst Generation. Threat to Marine operations.*",
-            30: "*Post-timeskip level threat. Haki user confirmed. Deploy Vice Admiral.*",
-            35: "*Sweet Commander level threat. Can command territories and fleets.*",
-            40: "*RIGHT HAND OF YONKO level. Extreme caution advised. Fleet Admiral consultation required.*",
-            45: "*GEAR 5 AWAKENING: Reality-bending powers confirmed. Joyboy candidate.*",
-            50: "*YONKO LEVEL: Controls territories. One of the Four Emperors of the Sea.*",
-            55: "*BEYOND YONKO: Power rivals the late Pirate King Gol D. Roger.*",
-            60: "*PIRATE KING CANDIDATE: The World Government's highest priority target.*"
+            0: "*New individual detected. No criminal activity reported. Continue monitoring.*",
+            5: "*Criminal activity confirmed in East Blue region. Initial bounty authorized.*",
+            10: "*Multiple incidents involving Marine personnel. Elevated threat status.*",
+            15: "*Subject has crossed into Grand Line territory. Enhanced surveillance required.*",
+            20: "*Dangerous individual. Multiple Marine casualties reported. Caution advised.*",
+            25: "*HIGH PRIORITY TARGET: Classified as extremely dangerous. Deploy specialized units.*",
+            30: "*ADVANCED COMBATANT: Confirmed use of advanced fighting techniques. Vice Admiral response.*",
+            35: "*TERRITORIAL THREAT: Capable of commanding large operations. Fleet mobilization recommended.*",
+            40: "*ELITE LEVEL THREAT: Extreme danger to Marine operations. Admiral consultation required.*",
+            45: "*EXTRAORDINARY ABILITIES: Unprecedented power levels detected. Maximum security protocols.*",
+            50: "*EMPEROR CLASS THREAT: Controls vast territories. Considered one of the most dangerous pirates.*",
+            55: "*LEGENDARY THREAT LEVEL: Power exceeds known classifications. Ultimate priority target.*",
+            60: "*WORLD-LEVEL THREAT: Potential to challenge global balance. All resources authorized.*"
         };
         
         return flavorTexts[level] || null;
