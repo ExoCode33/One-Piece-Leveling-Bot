@@ -1,4 +1,598 @@
-const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, PermissionFlagsBits, ActivityType } = require('discord.js');
+calculateLevel(totalXP) {
+        switch (this.config.formulaCurve) {
+            case 'linear':
+                return Math.floor(totalXP / (1000 * this.config.formulaMultiplier));
+            case 'exponential':
+                return Math.floor(Math.pow(totalXP / (100 * this.config.formulaMultiplier), 0.5));
+            case 'logarithmic':
+                return Math.floor(Math.log(totalXP / 100 + 1) * this.config.formulaMultiplier * 10);
+            default:
+                // Default exponential curve matching your calculator
+                return Math.floor(Math.pow(totalXP / (100 * this.config.formulaMultiplier), 0.5));
+        }
+    }
+
+    calculateXPForLevel(level) {
+        switch (this.config.formulaCurve) {
+            case 'linear':
+                return level * 1000 * this.config.formulaMultiplier;
+            case 'exponential':
+                return Math.floor(Math.pow(level, 2) * 100 * this.config.formulaMultiplier);
+            case 'logarithmic':
+                return Math.floor((Math.exp(level / (this.config.formulaMultiplier * 10)) - 1) * 100);
+            default:
+                // Default exponential curve
+                return Math.floor(Math.pow(level, 2) * 100 * this.config.formulaMultiplier);
+        }
+    }
+
+    async handleLevelUp(userId, guildId, newLevel, oldLevel) {
+        try {
+            this.debugXPLog(`🎉 Processing level up for user ${userId}: ${oldLevel} → ${newLevel}`);
+            
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+            
+            const user = await guild.members.fetch(userId);
+            if (!user) return;
+            
+            // Check for role rewards from environment variables
+            if (this.levelRoles[newLevel]) {
+                const roleId = this.levelRoles[newLevel];
+                const role = guild.roles.cache.get(roleId);
+                if (role && !user.roles.cache.has(roleId)) {
+                    await user.roles.add(role);
+                    this.debugXPLog(`🏆 Added Level ${newLevel} role "${role.name}" to ${user.user.username}`);
+                }
+            }
+            
+            // Send level up message with One Piece theme
+            if (this.levelUpConfig.enabled) {
+                let channel = null;
+                
+                // Try to find channel by ID first
+                if (this.levelUpConfig.channel) {
+                    channel = guild.channels.cache.get(this.levelUpConfig.channel);
+                    this.debugXPLog(`🔍 Looking for level up channel by ID: ${this.levelUpConfig.channel}`);
+                }
+                
+                // If no ID channel found, try to find by name
+                if (!channel && this.levelUpConfig.channelName) {
+                    channel = guild.channels.cache.find(ch => 
+                        ch.type === 0 && // Text channel
+                        ch.name.toLowerCase() === this.levelUpConfig.channelName.toLowerCase() &&
+                        ch.permissionsFor(guild.members.me).has(['SendMessages', 'EmbedLinks'])
+                    );
+                    this.debugXPLog(`🔍 Looking for level up channel by name: ${this.levelUpConfig.channelName}`);
+                }
+                
+                // If still no channel, try to find a general channel
+                if (!channel) {
+                    channel = guild.channels.cache.find(ch => 
+                        ch.type === 0 && // Text channel
+                        ch.permissionsFor(guild.members.me).has(['SendMessages', 'EmbedLinks']) &&
+                        (ch.name.includes('general') || ch.name.includes('chat') || ch.name.includes('level') || ch.name.includes('bounty'))
+                    );
+                    this.debugXPLog(`🔍 Looking for fallback level up channel`);
+                }
+                
+                if (channel) {
+                    this.debugXPLog(`📢 Sending level up message to channel: ${channel.name}`);
+                    
+                    // Get bounty amount for current level
+                    const bountyAmount = this.getBountyForLevel(newLevel);
+                    const oldBountyAmount = this.getBountyForLevel(oldLevel);
+                    
+                    let message = this.levelUpConfig.message
+                        .replace('{user}', this.levelUpConfig.pingUser ? `<@${userId}>` : user.user.username)
+                        .replace('{level}', newLevel.toString())
+                        .replace('{oldlevel}', oldLevel.toString())
+                        .replace('{bounty}', `₿${bountyAmount}`)
+                        .replace('{oldbounty}', `₿${oldBountyAmount}`);
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor('#FF6B00') // Orange like One Piece
+                        .setTitle('🏴‍☠️ BOUNTY UPDATE!')
+                        .setDescription(message)
+                        .setThumbnail(user.user.displayAvatarURL())
+                        .setTimestamp()
+                        .setFooter({ text: 'World Government • Marine Headquarters' });
+                    
+                    if (this.levelUpConfig.showProgress) {
+                        embed.addFields(
+                            { name: '⚔️ Previous Bounty', value: `₿${oldBountyAmount}`, inline: true },
+                            { name: '💰 New Bounty', value: `₿${bountyAmount}`, inline: true },
+                            { name: '🏴‍☠️ Pirate Level', value: `${newLevel}`, inline: true }
+                        );
+                    }
+                    
+                    if (this.levelUpConfig.showXP) {
+                        const userData = await this.db.query(
+                            'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                            [userId, guildId]
+                        );
+                        if (userData.rows.length > 0) {
+                            embed.addFields({ name: '⭐ Total Reputation', value: userData.rows[0].total_xp.toLocaleString(), inline: true });
+                        }
+                    }
+                    
+                    if (this.levelUpConfig.showRole && this.levelRoles[newLevel]) {
+                        const role = guild.roles.cache.get(this.levelRoles[newLevel]);
+                        if (role) {
+                            embed.addFields({ name: '🎖️ New Title', value: role.name, inline: true });
+                        }
+                    }
+                    
+                    // Add One Piece flavor text based on level
+                    const flavorText = this.getFlavorTextForLevel(newLevel);
+                    if (flavorText) {
+                        embed.addFields({ name: '📰 Marine Report', value: flavorText, inline: false });
+                    }
+                    
+                    await channel.send({ embeds: [embed] });
+                    this.debugXPLog(`✅ Level up message sent successfully`);
+                } else {
+                    this.debugXPLog(`⚠️ No suitable channel found for level up message`);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Level up handling error:', error);
+            this.debugXPLog(`❌ Level up handling error:`, error);
+        }
+    }
+
+    async getGuildSettings(guildId) {
+        try {
+            this.debugDatabaseLog(`Fetching guild settings for ${guildId}`);
+            
+            const result = await this.db.query(
+                'SELECT * FROM guild_settings WHERE guild_id = $1',
+                [guildId]
+            );
+            
+            if (result.rows.length === 0) {
+                this.debugDatabaseLog(`Creating default guild settings for ${guildId}`);
+                
+                // Create default settings
+                await this.db.query(`
+                    INSERT INTO guild_settings (guild_id, level_roles, xp_multiplier, voice_xp_rate, message_xp_min, message_xp_max, reaction_xp)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `, [guildId, JSON.stringify({}), 1.0, 1, 15, 25, 5]);
+                
+                return {
+                    level_roles: {},
+                    xp_multiplier: 1.0,
+                    voice_xp_rate: 1,
+                    message_xp_min: 15,
+                    message_xp_max: 25,
+                    reaction_xp: 5,
+                    level_up_channel: null
+                };
+            }
+            
+            this.debugDatabaseLog(`Guild settings retrieved successfully`);
+            return result.rows[0];
+        } catch (error) {
+            console.error('❌ Get guild settings error:', error);
+            this.debugDatabaseLog(`❌ Get guild settings error:`, error);
+            return {
+                level_roles: {},
+                xp_multiplier: 1.0,
+                voice_xp_rate: 1,
+                message_xp_min: 15,
+                message_xp_max: 25,
+                reaction_xp: 5,
+                level_up_channel: null
+            };
+        }
+    }
+
+    async handleLevelCommand(interaction) {
+        this.debugCommandLog(`Handling /level command`);
+        
+        const targetUser = interaction.options.getUser('user') || interaction.user;
+        
+        const result = await this.db.query(
+            'SELECT * FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+            [targetUser.id, interaction.guild.id]
+        );
+        
+        if (result.rows.length === 0) {
+            return await interaction.reply({ 
+                content: `${targetUser.username} hasn't started their pirate journey yet! 🏴‍☠️`, 
+                flags: 64 // MessageFlags.Ephemeral
+            });
+        }
+        
+        const userData = result.rows[0];
+        const currentLevelXP = this.calculateXPForLevel(userData.level);
+        const nextLevelXP = this.calculateXPForLevel(userData.level + 1);
+        const progressXP = userData.total_xp - currentLevelXP;
+        const neededXP = nextLevelXP - currentLevelXP;
+        const bountyAmount = this.getBountyForLevel(userData.level);
+        
+        // Handle level 0 display
+        const bountyDisplay = userData.level === 0 ? 'No Bounty Yet' : `₿${bountyAmount}`;
+        const statusText = userData.level === 0 ? 'Rookie' : `Level ${userData.level} Pirate`;
+        
+        const embed = new EmbedBuilder()
+            .setColor(userData.level === 0 ? '#95a5a6' : '#FF6B00')
+            .setTitle(`🏴‍☠️ ${targetUser.username}'s ${userData.level === 0 ? 'Rookie Profile' : 'Bounty Poster'}`)
+            .setThumbnail(targetUser.displayAvatarURL())
+            .addFields(
+                { name: '💰 Current Bounty', value: bountyDisplay, inline: true },
+                { name: '⚔️ Status', value: statusText, inline: true },
+                { name: '⭐ Total Reputation', value: userData.total_xp.toLocaleString(), inline: true },
+                { name: '📈 Progress to Next Level', value: `${progressXP.toLocaleString()}/${neededXP.toLocaleString()} Rep`, inline: true },
+                { name: '💬 Messages Sent', value: userData.messages.toLocaleString(), inline: true },
+                { name: '👍 Reactions Given', value: userData.reactions.toLocaleString(), inline: true },
+                { name: '🎤 Voice Activity', value: `${Math.floor(userData.voice_time / 60)}h ${userData.voice_time % 60}m`, inline: true }
+            )
+            .setFooter({ text: userData.level === 0 ? 'ROOKIE • WORLD GOVERNMENT MONITORING' : 'WANTED • DEAD OR ALIVE • World Government' })
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed] });
+    }
+
+    async handleLeaderboardCommand(interaction) {
+        this.debugCommandLog(`Handling /leaderboard command`);
+        
+        try {
+            const guild = interaction.guild;
+            const excludeRoleId = this.leaderboardConfig.excludeRole;
+            
+            // Get leaderboard data - fetch more to account for excluded members
+            const result = await this.db.query(
+                'SELECT user_id, level, total_xp FROM user_levels WHERE guild_id = $1 ORDER BY total_xp DESC LIMIT 25',
+                [interaction.guild.id]
+            );
+            
+            if (result.rows.length === 0) {
+                return await interaction.reply({ 
+                    content: 'No pirates have started their journey yet! 🏴‍☠️', 
+                    flags: 64 // MessageFlags.Ephemeral
+                });
+            }
+
+            // Separate excluded (Pirate King) and regular pirates
+            let pirateEmperors = [];
+            let regularPirates = [];
+            
+            for (const userData of result.rows) {
+                try {
+                    const member = await guild.members.fetch(userData.user_id);
+                    
+                    // Check if user has excluded role (Pirate King)
+                    if (excludeRoleId && member.roles.cache.has(excludeRoleId)) {
+                        pirateEmperors.push({
+                            member,
+                            level: userData.level,
+                            totalXp: userData.total_xp
+                        });
+                    } else {
+                        regularPirates.push({
+                            member,
+                            level: userData.level,
+                            totalXp: userData.total_xp
+                        });
+                    }
+                } catch (error) {
+                    // User left server, skip
+                    continue;
+                }
+            }
+
+            // Limit regular pirates to top 10
+            regularPirates = regularPirates.slice(0, 10);
+
+            if (pirateEmperors.length === 0 && regularPirates.length === 0) {
+                return await interaction.reply({ 
+                    content: 'No eligible pirates found for the leaderboard! 🏴‍☠️', 
+                    flags: 64 // MessageFlags.Ephemeral
+                });
+            }
+
+            // Update top player role (only for regular pirates)
+            if (regularPirates.length > 0) {
+                await this.updateTopPlayerRole(guild, regularPirates[0].member);
+            }
+
+            // Create leaderboard embed with One Piece bounty theme
+            const embed = new EmbedBuilder()
+                .setColor('#D4AF37') // Gold color like bounty posters
+                .setTitle('📰 WORLD ECONOMIC NEWS PAPER 📰')
+                .setDescription('**═══════════════════════════════════**\n🚨 **EMERGENCY BOUNTY UPDATE** 🚨\n**═══════════════════════════════════**')
+                .setFooter({ 
+                    text: '⚖️ WORLD GOVERNMENT OFFICIAL PUBLICATION ⚖️ • MARINE HEADQUARTERS'
+                })
+                .setTimestamp();
+            
+            let description = '```\n╔═══════════════════════════════════╗\n║        MOST WANTED CRIMINALS      ║\n║     DEAD OR ALIVE - REWARD SET    ║\n╚═══════════════════════════════════╝\n```\n\n';
+
+            // Add Pirate Emperors section if any exist
+            if (pirateEmperors.length > 0) {
+                description += '```diff\n+ ═══════ 👑 PIRATE KING 👑 ═══════\n```\n\n';
+                
+                for (let i = 0; i < pirateEmperors.length; i++) {
+                    const userData = pirateEmperors[i];
+                    const bountyAmount = this.getBountyForLevel(userData.level);
+                    
+                    description += '```yaml\n';
+                    description += `WANTED: ${userData.member.user.username.toUpperCase()}\n`;
+                    description += `BOUNTY: ₿${bountyAmount}\n`;
+                    description += `THREAT LEVEL: EXTREME\n`;
+                    description += `STATUS: PIRATE KING\n`;
+                    description += '```\n';
+                    description += `⚔️ **Level ${userData.level}** | ⭐ **${userData.totalXp.toLocaleString()} Rep**\n\n`;
+                }
+                
+                description += '```\n═══════════════════════════════════\n```\n\n';
+            }
+
+            // Add regular competition section
+            if (regularPirates.length > 0) {
+                description += '```diff\n- ═══════ 🏆 ACTIVE BOUNTIES 🏆 ═══════\n```\n\n';
+                
+                for (let i = 0; i < regularPirates.length; i++) {
+                    const userData = regularPirates[i];
+                    const bountyAmount = this.getBountyForLevel(userData.level);
+                    
+                    let rankEmoji;
+                    let threat;
+                    if (i === 0) {
+                        rankEmoji = '🥇';
+                        threat = 'EXTREMELY DANGEROUS';
+                    } else if (i === 1) {
+                        rankEmoji = '🥈';
+                        threat = 'HIGHLY DANGEROUS';
+                    } else if (i === 2) {
+                        rankEmoji = '🥉';
+                        threat = 'VERY DANGEROUS';
+                    } else {
+                        rankEmoji = `**${i + 1}.**`;
+                        threat = 'DANGEROUS';
+                    }
+                    
+                    description += '```css\n';
+                    description += `[RANK ${i + 1}] ${userData.member.user.username.toUpperCase()}\n`;
+                    description += `BOUNTY: ₿${bountyAmount}\n`;
+                    description += `THREAT: ${threat}\n`;
+                    description += '```\n';
+                    description += `${rankEmoji} ⚔️ **Level ${userData.level}** | ⭐ **${userData.totalXp.toLocaleString()} Rep**\n\n`;
+                }
+            }
+            
+            // Add footer info about sections
+            description += '```\n╔═══════════════════════════════════╗\n║  REPORT SIGHTINGS TO YOUR LOCAL   ║\n║        MARINE BASE IMMEDIATELY    ║\n╚═══════════════════════════════════╝\n```\n';
+            
+            embed.setDescription(description);
+            
+            // Dynamic footer based on content
+            let footerText = '⚖️ WORLD GOVERNMENT OFFICIAL PUBLICATION ⚖️ • MARINE HEADQUARTERS';
+            if (pirateEmperors.length > 0) {
+                const kingText = pirateEmperors.length === 1 ? 'Pirate King reigns' : 'Pirate Kings reign';
+                footerText = `🚨 ALERT: ${kingText} supreme! 🚨 • ${footerText}`;
+            }
+            embed.setFooter({ text: footerText });
+
+            await interaction.reply({ embeds: [embed] });
+            
+        } catch (error) {
+            console.error('❌ Leaderboard command error:', error);
+            this.debugCommandLog(`❌ Leaderboard command error:`, error);
+            await interaction.reply({ 
+                content: 'An error occurred while fetching the leaderboard.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
+        }
+    }
+
+    async updateTopPlayerRole(guild, topMember) {
+        try {
+            const topRoleId = this.leaderboardConfig.topRole;
+            if (!topRoleId) return; // No top role configured
+            
+            const topRole = guild.roles.cache.get(topRoleId);
+            if (!topRole) return; // Role doesn't exist
+            
+            // Remove the role from everyone who currently has it
+            const membersWithRole = guild.members.cache.filter(member => member.roles.cache.has(topRoleId));
+            for (const [, member] of membersWithRole) {
+                if (member.id !== topMember.id) {
+                    await member.roles.remove(topRole);
+                    this.debugCommandLog(`Removed top role from ${member.user.username}`);
+                }
+            }
+            
+            // Give the role to the current #1 player
+            if (!topMember.roles.cache.has(topRoleId)) {
+                await topMember.roles.add(topRole);
+                this.debugCommandLog(`Assigned top role to ${topMember.user.username}`);
+            }
+            
+        } catch (error) {
+            console.error('❌ Error updating top player role:', error);
+            this.debugCommandLog(`❌ Error updating top player role:`, error);
+        }
+    }
+
+    async handleSetLevelRoleCommand(interaction) {
+        this.debugCommandLog(`Handling /setlevelrole command`);
+        
+        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+            return await interaction.reply({ 
+                content: 'You need the "Manage Roles" permission to use this command.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
+        }
+        
+        const level = interaction.options.getInteger('level');
+        const role = interaction.options.getRole('role');
+        
+        if (![5, 10, 15, 20, 25, 30, 35, 40, 45, 50].includes(level)) {
+            return await interaction.reply({ 
+                content: 'Level must be one of: 5, 10, 15, 20, 25, 30, 35, 40, 45, 50', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
+        }
+        
+        const settings = await this.getGuildSettings(interaction.guild.id);
+        settings.level_roles[level] = role ? role.id : null;
+        
+        await this.db.query(
+            'UPDATE guild_settings SET level_roles = $1 WHERE guild_id = $2',
+            [JSON.stringify(settings.level_roles), interaction.guild.id]
+        );
+        
+        const message = role 
+            ? `Level ${level} role set to ${role.name}`
+            : `Level ${level} role removed`;
+            
+        await interaction.reply({ 
+            content: message, 
+            flags: 64 // MessageFlags.Ephemeral
+        });
+    }
+
+    async handleLevelRolesCommand(interaction) {
+        this.debugCommandLog(`Handling /levelroles command`);
+        
+        const embed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('Level Roles Configuration')
+            .setTimestamp();
+        
+        let description = '';
+        for (const [level, roleId] of Object.entries(this.levelRoles)) {
+            const role = roleId ? interaction.guild.roles.cache.get(roleId) : null;
+            const roleName = role ? role.name : 'Not Set';
+            description += `Level ${level}: ${roleName}\n`;
+        }
+        
+        embed.setDescription(description || 'No level roles configured via environment variables');
+        embed.setFooter({ text: 'Configure roles using Railway environment variables (LEVEL_X_ROLE)' });
+        
+        await interaction.reply({ embeds: [embed] });
+    }
+
+    async handleSettingsCommand(interaction) {
+        this.debugCommandLog(`Handling /settings command`);
+        
+        const embed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('🔧 Server Leveling Settings')
+            .setTimestamp();
+        
+        // XP Settings
+        embed.addFields(
+            { name: '💬 Message XP', value: `${this.config.messageXPMin}-${this.config.messageXPMax} (${this.config.messageCooldown/1000}s cooldown)`, inline: true },
+            { name: '👍 Reaction XP', value: `${this.config.reactionXPMin}-${this.config.reactionXPMax} (${this.config.reactionCooldown/1000}s cooldown)`, inline: true },
+            { name: '🎤 Voice XP', value: `${this.config.voiceXPMin}-${this.config.voiceXPMax}/min (${this.config.voiceCooldown/1000}s cooldown)`, inline: true },
+            { name: '📊 Formula', value: `${this.config.formulaCurve} (×${this.config.formulaMultiplier})`, inline: true },
+            { name: '🎯 Max Level', value: this.config.maxLevel.toString(), inline: true },
+            { name: '✨ XP Multiplier', value: `×${this.config.xpMultiplier}`, inline: true }
+        );
+        
+        // Voice Settings
+        embed.addFields(
+            { name: '🔊 Voice Requirements', value: `Min ${this.config.voiceMinMembers} members\nAFK Detection: ${this.config.voiceAntiAFK ? '✅' : '❌'}`, inline: true }
+        );
+        
+        // Level Up Settings
+        embed.addFields(
+            { name: '🎉 Level Up Messages', value: `${this.levelUpConfig.enabled ? '✅ Enabled' : '❌ Disabled'}\nPing User: ${this.levelUpConfig.pingUser ? '✅' : '❌'}`, inline: true }
+        );
+        
+        // Debug Settings
+        embed.addFields(
+            { name: '🐛 Debug Status', value: `Main: ${this.debugMode ? '✅' : '❌'}\nVoice: ${this.debugVoice ? '✅' : '❌'}\nXP: ${this.debugXP ? '✅' : '❌'}\nDB: ${this.debugDatabase ? '✅' : '❌'}\nCmds: ${this.debugCommands ? '✅' : '❌'}`, inline: true }
+        );
+        
+        // Level Roles
+        let rolesText = '';
+        let roleCount = 0;
+        for (const [level, roleId] of Object.entries(this.levelRoles)) {
+            if (roleId) {
+                const role = interaction.guild.roles.cache.get(roleId);
+                if (role && roleCount < 5) { // Show max 5 roles
+                    rolesText += `Level ${level}: ${role.name}\n`;
+                    roleCount++;
+                }
+            }
+        }
+        
+        if (rolesText) {
+            embed.addFields({ name: '🏆 Level Roles', value: rolesText + (roleCount === 5 ? '...' : ''), inline: false });
+        }
+        
+        await interaction.reply({ embeds: [embed] });
+    }
+
+    async handleReloadCommand(interaction) {
+        this.debugCommandLog(`Handling /reload command`);
+        
+        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+            return await interaction.reply({ 
+                content: 'You need the "Manage Server" permission to use this command.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
+        }
+        
+        // Reload configuration from environment variables
+        this.debugMode = process.env.DEBUG_MODE === 'true' || false;
+        this.debugVoice = process.env.DEBUG_VOICE === 'true' || false;
+        this.debugXP = process.env.DEBUG_XP === 'true' || false;
+        this.debugDatabase = process.env.DEBUG_DATABASE === 'true' || false;
+        this.debugCommands = process.env.DEBUG_COMMANDS === 'true' || false;
+        
+        this.config = {
+            // Message XP
+            messageXPMin: parseInt(process.env.MESSAGE_XP_MIN) || 25,
+            messageXPMax: parseInt(process.env.MESSAGE_XP_MAX) || 35,
+            messageCooldown: parseInt(process.env.MESSAGE_COOLDOWN) || 60000,
+            
+            // Voice XP  
+            voiceXPMin: parseInt(process.env.VOICE_XP_MIN) || 45,
+            voiceXPMax: parseInt(process.env.VOICE_XP_MAX) || 55,
+            voiceCooldown: parseInt(process.env.VOICE_COOLDOWN) || 180000,
+            voiceMinMembers: parseInt(process.env.VOICE_MIN_MEMBERS) || 2,
+            voiceAntiAFK: process.env.VOICE_ANTI_AFK === 'true' || true,
+            
+            // Reaction XP
+            reactionXPMin: parseInt(process.env.REACTION_XP_MIN) || 25,
+            reactionXPMax: parseInt(process.env.REACTION_XP_MAX) || 35,
+            reactionCooldown: parseInt(process.env.REACTION_COOLDOWN) || 300000,
+            
+            // Formula settings
+            formulaCurve: process.env.FORMULA_CURVE || 'exponential',
+            formulaMultiplier: parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75,
+            maxLevel: parseInt(process.env.MAX_LEVEL) || 50,
+            
+            // Global settings
+            xpMultiplier: parseFloat(process.env.XP_MULTIPLIER) || 1.0
+        };
+
+        this.levelRoles = {
+            0: process.env.LEVEL_0_ROLE || null,
+            5: process.env.LEVEL_5_ROLE || null,
+            10: process.env.LEVEL_10_ROLE || null,
+            15: process.env.LEVEL_15_ROLE || null,
+            20: process.env.LEVEL_20_ROLE || null,
+            25: process.env.LEVEL_25_ROLE || null,
+            30: process.env.LEVEL_30_ROLE || null,
+            35: process.env.LEVEL_35_ROLE || null,
+            40: process.env.LEVEL_40_ROLE || null,
+            45: process.env.LEVEL_45_ROLE || null,
+            50: process.env.LEVEL_50_ROLE || null
+        };
+        
+        this.levelUpConfig = {
+            enabled: process.env.LEVELUP_ENABLED !== 'false',
+            channel: process.env.LEVELUP_CHANNEL || null,
+            channelName: process.env.LEVELUP_CHANNEL_NAME || null,
+            message: process.env.LEVELUP_MESSAGE || '⚡ **BREAKING NEWS!** ⚡\n📰 *World Economic News* reports that **{user}** has become a more notorious pirate!\n\n💰 **NEW BOUNTY:** {bounty}\n⚔️ **THREAT LEVEL:** Level {level} Pirate\n\n*The World Government has issued an updated wanted poster!*',
+            showXP: process.env.LEVELUP_SHOW_XP !== 'false',
+            showProgressconst { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, PermissionFlagsBits, ActivityType } = require('discord.js');
 const { Pool } = require('pg');
 require('dotenv').config();
 
@@ -89,6 +683,339 @@ class LevelingBot {
             showRole: process.env.LEVELUP_SHOW_ROLE !== 'false',
             pingUser: process.env.LEVELUP_PING_USER === 'true' || false
         };
+
+        this.leaderboardConfig = {
+            topRole: process.env.LEADERBOARD_TOP_ROLE || null,
+            excludeRole: process.env.LEADERBOARD_EXCLUDE_ROLE || null
+        };
+        
+        this.debugLog('🔄', 'Configuration reloaded from environment variables');
+        this.debugLog('🤖', 'Updated config:', this.config);
+        this.debugLog('🏆', 'Updated level roles:', this.levelRoles);
+        this.debugLog('🎉', 'Updated level up config:', this.levelUpConfig);
+        this.debugLog('🥇', 'Updated leaderboard config:', this.leaderboardConfig);
+        
+        await interaction.reply({ 
+            content: '✅ Configuration reloaded from environment variables!\n' +
+                     `🐛 Debug mode: ${this.debugMode ? 'ON' : 'OFF'}\n` +
+                     `🎤 Voice debug: ${this.debugVoice ? 'ON' : 'OFF'}\n` +
+                     `💫 XP debug: ${this.debugXP ? 'ON' : 'OFF'}\n` +
+                     `🗄️ Database debug: ${this.debugDatabase ? 'ON' : 'OFF'}\n` +
+                     `⚡ Commands debug: ${this.debugCommands ? 'ON' : 'OFF'}`, 
+            flags: 64 // MessageFlags.Ephemeral
+        });
+    }
+
+    async handleInitRookiesCommand(interaction) {
+        this.debugCommandLog(`Handling /initrookies command`);
+        
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return await interaction.reply({ 
+                content: 'You need the "Administrator" permission to use this command.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
+        }
+
+        await interaction.deferReply();
+
+        try {
+            const guild = interaction.guild;
+            const level0RoleId = this.levelRoles[0];
+            
+            if (!level0RoleId) {
+                return await interaction.editReply({ content: '❌ Level 0 role not configured! Set LEVEL_0_ROLE in environment variables.' });
+            }
+
+            const level0Role = guild.roles.cache.get(level0RoleId);
+            if (!level0Role) {
+                return await interaction.editReply({ content: '❌ Level 0 role not found! Check the role ID in environment variables.' });
+            }
+
+            // Get all bounty role IDs
+            const bountyRoleIds = Object.values(this.levelRoles).filter(id => id !== null);
+            
+            // Fetch all guild members
+            await guild.members.fetch();
+            
+            let processedCount = 0;
+            let assignedCount = 0;
+            let errorCount = 0;
+
+            const embed = new EmbedBuilder()
+                .setColor('#FF6B00')
+                .setTitle('🏴‍☠️ Initializing Rookie Pirates...')
+                .setDescription('Processing server members...')
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [embed] });
+
+            for (const [userId, member] of guild.members.cache) {
+                processedCount++;
+                
+                // Skip bots
+                if (member.user.bot) {
+                    this.debugCommandLog(`Skipping bot: ${member.user.username}`);
+                    continue;
+                }
+
+                // Check if user already has any bounty role
+                const hasBountyRole = member.roles.cache.some(role => bountyRoleIds.includes(role.id));
+                
+                // If they don't have any bounty role, give them Level 0
+                if (!hasBountyRole) {
+                    try {
+                        await member.roles.add(level0Role);
+                        assignedCount++;
+                        this.debugCommandLog(`Assigned Level 0 role to ${member.user.username}`);
+                    } catch (error) {
+                        errorCount++;
+                        console.error(`Failed to assign role to ${member.user.username}:`, error);
+                        this.debugCommandLog(`Failed to assign role to ${member.user.username}:`, error.message);
+                    }
+                } else {
+                    this.debugCommandLog(`${member.user.username} already has a bounty role`);
+                }
+
+                // Update progress every 50 members
+                if (processedCount % 50 === 0) {
+                    const progressEmbed = new EmbedBuilder()
+                        .setColor('#FF6B00')
+                        .setTitle('🏴‍☠️ Initializing Rookie Pirates...')
+                        .setDescription(`Processed: ${processedCount} members\nAssigned: ${assignedCount} rookies`)
+                        .setTimestamp();
+                    
+                    await interaction.editReply({ embeds: [progressEmbed] });
+                }
+            }
+
+            // Final result
+            const resultEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('✅ Rookie Initialization Complete!')
+                .addFields(
+                    { name: '👥 Total Members Processed', value: processedCount.toString(), inline: true },
+                    { name: '🆕 New Rookies Assigned', value: assignedCount.toString(), inline: true },
+                    { name: '❌ Errors', value: errorCount.toString(), inline: true },
+                    { name: '🏴‍☠️ Role Assigned', value: level0Role.name, inline: false }
+                )
+                .setFooter({ text: 'All eligible members now have bounty roles!' })
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [resultEmbed] });
+
+        } catch (error) {
+            console.error('❌ Init rookies command error:', error);
+            this.debugCommandLog(`❌ Init rookies command error:`, error);
+            await interaction.editReply({ content: '❌ An error occurred while initializing rookies. Check console for details.' });
+        }
+    }
+
+    async handleDebugCommand(interaction) {
+        this.debugCommandLog(`Handling /debug command`);
+        
+        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+            return await interaction.reply({ 
+                content: 'You need the "Manage Server" permission to use this command.', 
+                flags: 64 // MessageFlags.Ephemeral
+            });
+        }
+
+        const subcommand = interaction.options.getSubcommand();
+        const enabled = interaction.options.getBoolean('enabled');
+
+        switch (subcommand) {
+            case 'all':
+                this.debugMode = enabled;
+                this.debugVoice = enabled;
+                this.debugXP = enabled;
+                this.debugDatabase = enabled;
+                this.debugCommands = enabled;
+                break;
+            case 'voice':
+                this.debugVoice = enabled;
+                break;
+            case 'xp':
+                this.debugXP = enabled;
+                break;
+            case 'database':
+                this.debugDatabase = enabled;
+                break;
+            case 'commands':
+                this.debugCommands = enabled;
+                break;
+            case 'status':
+                const embed = new EmbedBuilder()
+                    .setColor('#0099ff')
+                    .setTitle('🐛 Debug Status')
+                    .addFields(
+                        { name: '🤖 Main Debug', value: this.debugMode ? '✅ ON' : '❌ OFF', inline: true },
+                        { name: '🎤 Voice Debug', value: this.debugVoice ? '✅ ON' : '❌ OFF', inline: true },
+                        { name: '💫 XP Debug', value: this.debugXP ? '✅ ON' : '❌ OFF', inline: true },
+                        { name: '🗄️ Database Debug', value: this.debugDatabase ? '✅ ON' : '❌ OFF', inline: true },
+                        { name: '⚡ Commands Debug', value: this.debugCommands ? '✅ ON' : '❌ OFF', inline: true }
+                    )
+                    .setFooter({ text: 'Use /debug <category> <true/false> to toggle debugging' })
+                    .setTimestamp();
+                
+                return await interaction.reply({ embeds: [embed], flags: 64 });
+        }
+
+        const statusText = enabled ? 'enabled' : 'disabled';
+        const emoji = enabled ? '✅' : '❌';
+        
+        await interaction.reply({ 
+            content: `${emoji} Debug ${subcommand} ${statusText}!`, 
+            flags: 64 // MessageFlags.Ephemeral
+        });
+    }
+
+    setupCommands() {
+        const commands = [
+            new SlashCommandBuilder()
+                .setName('level')
+                .setDescription('Check your or someone else\'s level')
+                .addUserOption(option => 
+                    option.setName('user')
+                        .setDescription('The user to check')
+                        .setRequired(false)
+                ),
+            
+            new SlashCommandBuilder()
+                .setName('leaderboard')
+                .setDescription('View the server leaderboard'),
+            
+            new SlashCommandBuilder()
+                .setName('setlevelrole')
+                .setDescription('Set a role reward for a specific level')
+                .addIntegerOption(option =>
+                    option.setName('level')
+                        .setDescription('The level (5, 10, 15, 20, 25, 30, 35, 40, 45, 50)')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: '5', value: 5 },
+                            { name: '10', value: 10 },
+                            { name: '15', value: 15 },
+                            { name: '20', value: 20 },
+                            { name: '25', value: 25 },
+                            { name: '30', value: 30 },
+                            { name: '35', value: 35 },
+                            { name: '40', value: 40 },
+                            { name: '45', value: 45 },
+                            { name: '50', value: 50 }
+                        )
+                )
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('The role to give (leave empty to remove)')
+                        .setRequired(false)
+                )
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+            
+            new SlashCommandBuilder()
+                .setName('levelroles')
+                .setDescription('View all configured level roles'),
+            
+            new SlashCommandBuilder()
+                .setName('settings')
+                .setDescription('View server leveling settings'),
+            
+            new SlashCommandBuilder()
+                .setName('reload')
+                .setDescription('Reload configuration from environment variables')
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+            new SlashCommandBuilder()
+                .setName('initrookies')
+                .setDescription('Assign Level 0 role to all members without bounty roles')
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+            new SlashCommandBuilder()
+                .setName('debug')
+                .setDescription('Toggle debug logging for different components')
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('all')
+                        .setDescription('Toggle all debug categories')
+                        .addBooleanOption(option =>
+                            option.setName('enabled')
+                                .setDescription('Enable or disable all debugging')
+                                .setRequired(true)
+                        )
+                )
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('voice')
+                        .setDescription('Toggle voice XP debugging')
+                        .addBooleanOption(option =>
+                            option.setName('enabled')
+                                .setDescription('Enable or disable voice debugging')
+                                .setRequired(true)
+                        )
+                )
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('xp')
+                        .setDescription('Toggle XP debugging')
+                        .addBooleanOption(option =>
+                            option.setName('enabled')
+                                .setDescription('Enable or disable XP debugging')
+                                .setRequired(true)
+                        )
+                )
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('database')
+                        .setDescription('Toggle database debugging')
+                        .addBooleanOption(option =>
+                            option.setName('enabled')
+                                .setDescription('Enable or disable database debugging')
+                                .setRequired(true)
+                        )
+                )
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('commands')
+                        .setDescription('Toggle commands debugging')
+                        .addBooleanOption(option =>
+                            option.setName('enabled')
+                                .setDescription('Enable or disable commands debugging')
+                                .setRequired(true)
+                        )
+                )
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('status')
+                        .setDescription('Show current debug status')
+                )
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        ];
+
+        this.client.once('ready', async () => {
+            try {
+                this.debugLog('⚡', 'Registering slash commands...');
+                await this.client.application.commands.set(commands);
+                this.debugLog('✅', 'Slash commands registered successfully');
+            } catch (error) {
+                console.error('❌ Error registering commands:', error);
+                this.debugLog('❌', 'Error registering commands:', error);
+            }
+        });
+    }
+
+    async start() {
+        try {
+            this.debugLog('🚀', 'Starting bot...');
+            await this.client.login(process.env.DISCORD_TOKEN);
+        } catch (error) {
+            console.error('❌ Failed to start bot:', error);
+            this.debugLog('❌', 'Failed to start bot:', error);
+        }
+    }
+}
+
+// Start the bot
+const bot = new LevelingBot();
+bot.start();
 
         // Leaderboard configuration
         this.leaderboardConfig = {
@@ -257,8 +1184,6 @@ class LevelingBot {
             this.debugVoiceLog(`Voice State Update: ${newState.member.user.username}`);
             this.debugVoiceLog(`   Old Channel: ${oldState.channelId || 'None'}`);
             this.debugVoiceLog(`   New Channel: ${newState.channelId || 'None'}`);
-            this.debugVoiceLog(`   Old State: Muted=${oldState.mute}, Deafened=${oldState.deaf}, SelfMuted=${oldState.selfMute}, SelfDeafened=${oldState.selfDeaf}`);
-            this.debugVoiceLog(`   New State: Muted=${newState.mute}, Deafened=${newState.deaf}, SelfMuted=${newState.selfMute}, SelfDeafened=${newState.selfDeaf}`);
             
             // User joined a voice channel
             if (!oldState.channelId && newState.channelId) {
@@ -475,14 +1400,7 @@ class LevelingBot {
             
             this.debugVoiceLog(`   Channel name: ${channel.name}`);
             
-            // Count non-bot members in voice channel AT THE TIME OF LEAVING
-            // Note: This might show 0 if everyone left at the same time
-            const allMembers = channel.members.size;
-            const humanMembers = channel.members.filter(member => !member.user.bot).size;
-            this.debugVoiceLog(`   Total members: ${allMembers}, Human members: ${humanMembers}`);
-            this.debugVoiceLog(`   Required minimum: ${this.config.voiceMinMembers}`);
-            
-            // IMPROVED LOGIC: Check if duration was long enough (simplified for testing)
+            // Check if duration was long enough
             if (duration >= 60) { // At least 1 minute
                 this.debugVoiceLog(`✅ Duration requirement met (${duration}s >= 60s)`);
                 
@@ -571,4 +1489,22 @@ class LevelingBot {
             const currentLevel = result.rows[0].level;
             const newLevel = this.calculateLevel(newTotalXP);
             
-            this
+            this.debugXPLog(`   New total XP: ${newTotalXP}, Current level: ${currentLevel}, Calculated level: ${newLevel}`);
+            
+            if (newLevel > currentLevel) {
+                await this.db.query(
+                    'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
+                    [newLevel, userId, guildId]
+                );
+                
+                this.debugXPLog(`🎉 Level up! ${currentLevel} → ${newLevel}`);
+                await this.handleLevelUp(userId, guildId, newLevel, currentLevel);
+            }
+        } catch (error) {
+            console.error('❌ Add XP error:', error);
+            this.debugXPLog(`❌ Add XP error:`, error);
+        }
+    }
+
+    calculateLevel(totalXP) {
+        switch (this.config.formul
