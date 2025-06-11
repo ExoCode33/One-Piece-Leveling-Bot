@@ -58,7 +58,7 @@ module.exports = {
             const guildId = interaction.guildId;
             
             const query = `
-                SELECT total_xp, level, messages, reactions, voice_time, last_updated
+                SELECT total_xp, level, messages, reactions, voice_time
                 FROM user_levels
                 WHERE user_id = $1 AND guild_id = $2
             `;
@@ -116,9 +116,9 @@ module.exports = {
                 console.error('Error getting rank:', error);
             }
 
-            // Add timestamp
-            const lastActive = new Date(row.last_updated);
-            embed.setFooter({ text: `Last active: ${lastActive.toLocaleDateString()}` });
+            // Add timestamp (remove since last_updated might not exist)
+            // const lastActive = new Date(row.last_updated);
+            // embed.setFooter({ text: `Last active: ${lastActive.toLocaleDateString()}` });
 
             await interaction.editReply({ embeds: [embed] });
         } catch (err) {
