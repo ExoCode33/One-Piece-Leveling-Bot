@@ -84,7 +84,7 @@ async function debugLog(message) {
     }
 }
 
-// === Professional XP Logging Function ===
+// === One Piece Themed Professional XP Logging Function ===
 async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
     const logChannelId = process.env.XP_LOG_CHANNEL;
     if (!logChannelId || process.env.XP_LOG_ENABLED !== 'true') return;
@@ -103,108 +103,164 @@ async function sendXPLog(type, user, xpGain, additionalInfo = {}) {
         const channel = await client.channels.fetch(logChannelId);
         if (!channel || !channel.isTextBased()) return;
 
-        // Create professional embed based on type
+        // Create One Piece themed embed based on type
         const embed = new EmbedBuilder()
             .setTimestamp()
             .setFooter({ 
-                text: 'XP Tracking System', 
+                text: '⚓ Marine Bounty Tracking System', 
                 iconURL: client.user.displayAvatarURL() 
             });
 
         switch (type) {
             case 'message':
                 embed
-                    .setTitle('💬 Message XP Awarded')
-                    .setColor(0x5865F2) // Discord Blurple
+                    .setTitle('📜 Pirate\'s Message Bounty')
+                    .setColor(0x1E3A8A) // Navy Blue
+                    .setDescription('*A pirate\'s words carry weight on the Grand Line...*')
                     .addFields(
-                        { name: 'User', value: `${user.username}`, inline: true },
-                        { name: 'XP Gained', value: `+${xpGain}`, inline: true },
-                        { name: 'Channel', value: `<#${additionalInfo.channelId}>`, inline: true }
+                        { name: '🏴‍☠️ Pirate', value: `**${user.username}**`, inline: true },
+                        { name: '💰 Bounty Earned', value: `**+${xpGain}** ⚡`, inline: true },
+                        { name: '🗺️ Location', value: `<#${additionalInfo.channelId}>`, inline: true }
                     );
                 
                 if (additionalInfo.totalXP) {
-                    embed.addFields({ name: 'Total XP', value: additionalInfo.totalXP.toLocaleString(), inline: true });
+                    embed.addFields({ 
+                        name: '💎 Total Bounty', 
+                        value: `**${additionalInfo.totalXP.toLocaleString()}** ⚡`, 
+                        inline: true 
+                    });
                 }
                 if (additionalInfo.level) {
-                    embed.addFields({ name: 'Current Level', value: additionalInfo.level.toString(), inline: true });
+                    embed.addFields({ 
+                        name: '⭐ Pirate Rank', 
+                        value: `**Level ${additionalInfo.level}**`, 
+                        inline: true 
+                    });
                 }
-                if (additionalInfo.messageLength) {
-                    embed.addFields({ name: 'Message Length', value: `${additionalInfo.messageLength} chars`, inline: true });
-                }
+                embed.setAuthor({ 
+                    name: 'Marine Intelligence Report', 
+                    iconURL: interaction?.guild?.iconURL() || null
+                });
                 break;
 
             case 'reaction':
                 embed
-                    .setTitle('👍 Reaction XP Awarded')
-                    .setColor(0xFEE75C) // Yellow
+                    .setTitle('😄 Crew Member\'s Reaction')
+                    .setColor(0xF59E0B) // Amber/Gold
+                    .setDescription('*Even a simple reaction shows the bond between crew members!*')
                     .addFields(
-                        { name: 'User', value: `${user.username}`, inline: true },
-                        { name: 'XP Gained', value: `+${xpGain}`, inline: true },
-                        { name: 'Channel', value: `<#${additionalInfo.channelId}>`, inline: true }
+                        { name: '🏴‍☠️ Pirate', value: `**${user.username}**`, inline: true },
+                        { name: '💰 Bounty Earned', value: `**+${xpGain}** ⚡`, inline: true },
+                        { name: '🗺️ Location', value: `<#${additionalInfo.channelId}>`, inline: true }
                     );
 
                 if (additionalInfo.emoji) {
-                    embed.addFields({ name: 'Reaction', value: additionalInfo.emoji, inline: true });
+                    embed.addFields({ 
+                        name: '⚓ Reaction', 
+                        value: additionalInfo.emoji, 
+                        inline: true 
+                    });
                 }
                 if (additionalInfo.totalXP) {
-                    embed.addFields({ name: 'Total XP', value: additionalInfo.totalXP.toLocaleString(), inline: true });
+                    embed.addFields({ 
+                        name: '💎 Total Bounty', 
+                        value: `**${additionalInfo.totalXP.toLocaleString()}** ⚡`, 
+                        inline: true 
+                    });
                 }
                 if (additionalInfo.level) {
-                    embed.addFields({ name: 'Current Level', value: additionalInfo.level.toString(), inline: true });
+                    embed.addFields({ 
+                        name: '⭐ Pirate Rank', 
+                        value: `**Level ${additionalInfo.level}**`, 
+                        inline: true 
+                    });
                 }
+                embed.setAuthor({ 
+                    name: 'Crew Bond Strengthened'
+                });
                 break;
 
             case 'voice':
                 embed
-                    .setTitle('🔊 Voice XP Awarded')
-                    .setColor(0x57F287) // Green
+                    .setTitle('🎙️ Crew Assembly Bounty')
+                    .setColor(0x10B981) // Emerald Green
+                    .setDescription('*Gathering with fellow pirates strengthens the crew!*')
                     .addFields(
-                        { name: 'User', value: `${user.username}`, inline: true },
-                        { name: 'XP Gained', value: `+${xpGain}`, inline: true },
-                        { name: 'Voice Channel', value: additionalInfo.channelName || 'Unknown', inline: true }
+                        { name: '🏴‍☠️ Pirate', value: `**${user.username}**`, inline: true },
+                        { name: '💰 Bounty Earned', value: `**+${xpGain}** ⚡`, inline: true },
+                        { name: '🚢 Ship Deck', value: additionalInfo.channelName || 'Unknown Waters', inline: true }
                     );
 
                 if (additionalInfo.memberCount) {
-                    embed.addFields({ name: 'Members in Voice', value: additionalInfo.memberCount.toString(), inline: true });
+                    embed.addFields({ 
+                        name: '👥 Crew Members', 
+                        value: `${additionalInfo.memberCount} pirates`, 
+                        inline: true 
+                    });
                 }
                 if (additionalInfo.sessionDuration) {
-                    embed.addFields({ name: 'Session Duration', value: `${additionalInfo.sessionDuration} min`, inline: true });
+                    embed.addFields({ 
+                        name: '⏰ Time on Deck', 
+                        value: `${additionalInfo.sessionDuration} minutes`, 
+                        inline: true 
+                    });
                 }
                 if (additionalInfo.totalXP) {
-                    embed.addFields({ name: 'Total XP', value: additionalInfo.totalXP.toLocaleString(), inline: true });
+                    embed.addFields({ 
+                        name: '💎 Total Bounty', 
+                        value: `**${additionalInfo.totalXP.toLocaleString()}** ⚡`, 
+                        inline: true 
+                    });
                 }
+                embed.setAuthor({ 
+                    name: 'Ship Assembly Log'
+                });
                 break;
 
             case 'levelup':
                 embed
-                    .setTitle('🎉 Level Up Achievement!')
-                    .setColor(0xED4245) // Red
-                    .setDescription(`**${user.username}** has leveled up!`)
+                    .setTitle('🌟 BOUNTY INCREASE! 🌟')
+                    .setColor(0xDC2626) // Red
+                    .setDescription(`**${user.username}** has reached a new level of infamy!\n*The Marines have increased their bounty!*`)
                     .addFields(
-                        { name: 'Previous Level', value: additionalInfo.oldLevel.toString(), inline: true },
-                        { name: 'New Level', value: `**${additionalInfo.newLevel}**`, inline: true },
-                        { name: 'Total XP', value: additionalInfo.totalXP.toLocaleString(), inline: true }
+                        { name: '📰 Previous Bounty Level', value: `**Level ${additionalInfo.oldLevel}**`, inline: true },
+                        { name: '🔥 NEW BOUNTY LEVEL', value: `**Level ${additionalInfo.newLevel}**`, inline: true },
+                        { name: '💎 Total Bounty', value: `**${additionalInfo.totalXP.toLocaleString()}** ⚡`, inline: true }
                     );
 
                 if (additionalInfo.roleReward && additionalInfo.roleReward !== 'your_role_id_here') {
                     embed.addFields({ 
-                        name: '🏆 Role Unlocked', 
+                        name: '🏆 New Title Earned', 
                         value: `<@&${additionalInfo.roleReward}>`, 
                         inline: false 
                     });
                     embed.setColor(0xFFD700); // Gold for role rewards
+                    embed.setDescription(`**${user.username}** has gained a new title!\n*🎉 The World Government recognizes their growing threat! 🎉*`);
                 }
+
+                // Add special level milestone messages
+                if (additionalInfo.newLevel === 50) {
+                    embed.setDescription(`**${user.username}** has reached the legendary Level 50!\n*🏴‍☠️ They're ready to challenge the Yonko! 🏴‍☠️*`);
+                } else if (additionalInfo.newLevel === 25) {
+                    embed.setDescription(`**${user.username}** has reached Level 25!\n*⚡ Their name echoes across the Grand Line! ⚡*`);
+                } else if (additionalInfo.newLevel === 10) {
+                    embed.setDescription(`**${user.username}** has reached Level 10!\n*🌊 They've proven themselves on the seas! 🌊*`);
+                }
+                
+                embed.setAuthor({ 
+                    name: 'WORLD GOVERNMENT BOUNTY UPDATE'
+                });
                 break;
         }
 
-        // Add user avatar as thumbnail
+        // Add user avatar as thumbnail with One Piece frame effect
         if (user.displayAvatarURL) {
-            embed.setThumbnail(user.displayAvatarURL({ size: 64 }));
+            embed.setThumbnail(user.displayAvatarURL({ size: 128 }));
         }
 
         await channel.send({ embeds: [embed] });
     } catch (err) {
-        console.error('[XP LOG] Failed to send professional log:', err);
+        console.error('[BOUNTY LOG] Failed to send professional log:', err);
     }
 }
 
@@ -463,31 +519,62 @@ client.on('interactionCreate', async interaction => {
             await command.execute(interaction, client);
         }
         
-        // Handle button interactions for leaderboard pagination
+        // Handle button interactions for leaderboard pagination and view switching
         if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
-            const [, type, pageStr] = interaction.customId.split('_');
-            const page = parseInt(pageStr);
+            const parts = interaction.customId.split('_');
+            const view = parts[1]; // 'short' or 'long'
+            const page = parseInt(parts[2]) || 1;
+            const type = parts[3] || 'xp';
             
-            if (!isNaN(page)) {
-                await interaction.deferUpdate();
-                
-                // Create a proper mock interaction for the leaderboard command
-                const mockInteraction = {
-                    ...interaction,
-                    deferReply: async () => {}, // Mock function - already deferred with deferUpdate
-                    editReply: async (options) => await interaction.editReply(options),
-                    reply: async (options) => await interaction.editReply(options),
-                    options: {
-                        getInteger: (name) => name === 'page' ? page : null,
-                        getString: (name) => name === 'type' ? type : null
-                    }
-                };
-                
-                // Get the leaderboard command and execute it
-                const leaderboardCommand = client.commands.get('leaderboard');
-                if (leaderboardCommand) {
-                    await leaderboardCommand.execute(mockInteraction, client);
+            await interaction.deferUpdate();
+            
+            // Create a proper mock interaction for the leaderboard command
+            const mockInteraction = {
+                ...interaction,
+                deferReply: async () => {}, // Mock function - already deferred with deferUpdate
+                editReply: async (options) => await interaction.editReply(options),
+                reply: async (options) => await interaction.editReply(options),
+                options: {
+                    getString: (name) => {
+                        if (name === 'view') return view;
+                        if (name === 'type') return type;
+                        return null;
+                    },
+                    getInteger: (name) => name === 'page' ? page : null
                 }
+            };
+            
+            // Get the leaderboard command and execute it
+            const leaderboardCommand = client.commands.get('leaderboard');
+            if (leaderboardCommand) {
+                await leaderboardCommand.execute(mockInteraction, client);
+            }
+        }
+
+        // Handle refresh button
+        if (interaction.isButton() && interaction.customId.startsWith('bounty_refresh_')) {
+            const type = interaction.customId.split('_')[2] || 'xp';
+            
+            await interaction.deferUpdate();
+            
+            const mockInteraction = {
+                ...interaction,
+                deferReply: async () => {},
+                editReply: async (options) => await interaction.editReply(options),
+                reply: async (options) => await interaction.editReply(options),
+                options: {
+                    getString: (name) => {
+                        if (name === 'view') return 'short';
+                        if (name === 'type') return type;
+                        return null;
+                    },
+                    getInteger: (name) => name === 'page' ? 1 : null
+                }
+            };
+            
+            const leaderboardCommand = client.commands.get('leaderboard');
+            if (leaderboardCommand) {
+                await leaderboardCommand.execute(mockInteraction, client);
             }
         }
     } catch (error) {
