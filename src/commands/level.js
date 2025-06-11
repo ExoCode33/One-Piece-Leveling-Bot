@@ -1,4 +1,4 @@
-// src/commands/level.js - Enhanced Level Command
+// src/commands/level.js - Fixed Level Command
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
@@ -129,33 +129,7 @@ module.exports = {
         }
     },
 
-    // Helper functions for other files to use
-    giveXP: async function(message, client) {
-        const userId = message.author.id;
-        const guildId = message.guildId;
-        const minXP = parseInt(process.env.MESSAGE_XP_MIN) || 25;
-        const maxXP = parseInt(process.env.MESSAGE_XP_MAX) || 35;
-        
-        const xpAmount = Math.floor(Math.random() * (maxXP - minXP + 1)) + minXP;
-        
-        // This would call the updateUserLevel function from main index.js
-        // For now, return the XP amount
-        return xpAmount;
-    },
-
-    giveReactionXP: async function(reaction, user, client) {
-        const userId = user.id;
-        const guildId = reaction.message.guildId;
-        const minXP = parseInt(process.env.REACTION_XP_MIN) || 25;
-        const maxXP = parseInt(process.env.REACTION_XP_MAX) || 35;
-        
-        const xpAmount = Math.floor(Math.random() * (maxXP - minXP + 1)) + minXP;
-        
-        // This would call the updateUserLevel function from main index.js
-        // For now, return the XP amount
-        return xpAmount;
-    },
-
+    // Export helper functions for use in main bot
     calculateLevel,
     calculateXPForLevel
 };
