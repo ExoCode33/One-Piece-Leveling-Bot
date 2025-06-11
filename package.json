@@ -1,12 +1,16 @@
 {
   "name": "discord-leveling-bot",
-  "version": "2.0.0",
-  "description": "A comprehensive Discord leveling bot with voice, message, and reaction tracking",
+  "version": "2.1.0",
+  "description": "A comprehensive Discord leveling bot with voice, message, and reaction tracking, configurable via environment variables",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "echo \"No tests specified\" && exit 0",
+    "deploy": "railway up",
+    "setup-db": "node scripts/setup-database.js",
+    "migrate": "node scripts/migrate.js",
+    "backup": "node scripts/backup.js"
   },
   "keywords": [
     "discord",
@@ -15,7 +19,10 @@
     "xp",
     "voice",
     "postgresql",
-    "railway"
+    "railway",
+    "slash-commands",
+    "leaderboard",
+    "roles"
   ],
   "author": "Your Name",
   "license": "MIT",
@@ -28,7 +35,7 @@
     "nodemon": "^3.0.2"
   },
   "engines": {
-    "node": ">=16.0.0",
+    "node": ">=18.0.0",
     "npm": ">=8.0.0"
   },
   "repository": {
@@ -38,5 +45,15 @@
   "bugs": {
     "url": "your-repository-url/issues"
   },
-  "homepage": "your-repository-url#readme"
+  "homepage": "your-repository-url#readme",
+  "optionalDependencies": {},
+  "peerDependencies": {},
+  "private": false,
+  "config": {
+    "bot": {
+      "name": "Discord Leveling Bot",
+      "version": "2.1.0",
+      "description": "Advanced Discord leveling system with comprehensive features"
+    }
+  }
 }
