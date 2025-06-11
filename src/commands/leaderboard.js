@@ -1,4 +1,4 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard (Fixed Modular)
+// src/commands/leaderboard.js - One Piece Themed Leaderboard (Fixed Duplicate IDs)
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -160,51 +160,54 @@ module.exports = {
                 });
             }
 
-            // Add view switching buttons
-            const buttons = new ActionRowBuilder()
+            // Generate unique timestamp for button IDs
+            const timestamp = Date.now();
+
+            // Add view switching buttons (ROW 1)
+            const viewButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_short_1_${type}`)
+                        .setCustomId(`lb_short_${timestamp}_${type}`)
                         .setLabel('📋 Short View')
                         .setStyle(ButtonStyle.Success)
                         .setEmoji('🏴‍☠️'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_1_${type}`)
+                        .setCustomId(`lb_long_${timestamp}_${type}`)
                         .setLabel('📜 Full Board')
                         .setStyle(ButtonStyle.Primary)
                         .setEmoji('📜'),
                     new ButtonBuilder()
-                        .setCustomId(`bounty_refresh_short_${type}`)
+                        .setCustomId(`lb_refresh_short_${timestamp}`)
                         .setLabel('🔄 Refresh')
                         .setStyle(ButtonStyle.Secondary)
                         .setEmoji('⚓')
                 );
 
-            // Add type selection buttons
+            // Add type selection buttons (ROW 2)
             const typeButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_short_1_xp`)
+                        .setCustomId(`lb_type_short_xp_${timestamp}`)
                         .setLabel('Bounty')
                         .setStyle(type === 'xp' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('💰'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_short_1_level`)
+                        .setCustomId(`lb_type_short_level_${timestamp}`)
                         .setLabel('Level')
                         .setStyle(type === 'level' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('⭐'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_short_1_messages`)
+                        .setCustomId(`lb_type_short_messages_${timestamp}`)
                         .setLabel('Messages')
                         .setStyle(type === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('💬'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_short_1_reactions`)
+                        .setCustomId(`lb_type_short_reactions_${timestamp}`)
                         .setLabel('Reactions')
                         .setStyle(type === 'reactions' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('👍'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_short_1_voice`)
+                        .setCustomId(`lb_type_short_voice_${timestamp}`)
                         .setLabel('Voice')
                         .setStyle(type === 'voice' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('🎙️')
@@ -218,7 +221,7 @@ module.exports = {
             const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
             await interaction[responseMethod]({ 
                 embeds: [embed], 
-                components: [buttons, typeButtons],
+                components: [viewButtons, typeButtons],
                 allowedMentions: { users: [] } 
             });
 
@@ -307,8 +310,11 @@ module.exports = {
                 });
             }
 
-            // Create navigation buttons
+            // Generate unique timestamp for button IDs
+            const timestamp = Date.now();
             const components = [];
+
+            // Create navigation buttons (ROW 1) - only if multiple pages
             if (leaderboardData.totalPages > 1) {
                 const navButtons = new ActionRowBuilder();
 
@@ -316,7 +322,7 @@ module.exports = {
                 if (page > 1) {
                     navButtons.addComponents(
                         new ButtonBuilder()
-                            .setCustomId(`leaderboard_long_${page - 1}_${type}`)
+                            .setCustomId(`lb_nav_prev_${page - 1}_${type}_${timestamp}`)
                             .setLabel('◀ Previous')
                             .setStyle(ButtonStyle.Primary)
                             .setEmoji('📜')
@@ -326,7 +332,7 @@ module.exports = {
                 // Page info
                 navButtons.addComponents(
                     new ButtonBuilder()
-                        .setCustomId('page_info')
+                        .setCustomId(`lb_page_info_${timestamp}`)
                         .setLabel(`${page}/${leaderboardData.totalPages}`)
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(true)
@@ -336,7 +342,7 @@ module.exports = {
                 if (page < leaderboardData.totalPages) {
                     navButtons.addComponents(
                         new ButtonBuilder()
-                            .setCustomId(`leaderboard_long_${page + 1}_${type}`)
+                            .setCustomId(`lb_nav_next_${page + 1}_${type}_${timestamp}`)
                             .setLabel('Next ▶')
                             .setStyle(ButtonStyle.Primary)
                             .setEmoji('📜')
@@ -346,51 +352,51 @@ module.exports = {
                 components.push(navButtons);
             }
 
-            // View switching buttons
+            // View switching buttons (ROW 2)
             const viewButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_short_1_${type}`)
+                        .setCustomId(`lb_view_short_${timestamp}_${type}`)
                         .setLabel('📋 Short View')
                         .setStyle(ButtonStyle.Secondary)
                         .setEmoji('🏴‍☠️'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page}_${type}`)
+                        .setCustomId(`lb_view_long_${page}_${type}_${timestamp}`)
                         .setLabel('📜 Long View')
                         .setStyle(ButtonStyle.Success)
                         .setEmoji('📜'),
                     new ButtonBuilder()
-                        .setCustomId(`bounty_refresh_long_${type}`)
+                        .setCustomId(`lb_refresh_long_${timestamp}`)
                         .setLabel('🔄 Refresh')
                         .setStyle(ButtonStyle.Secondary)
                         .setEmoji('⚓')
                 );
 
-            // Type selection buttons
+            // Type selection buttons (ROW 3)
             const typeButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page}_xp`)
+                        .setCustomId(`lb_type_long_xp_${page}_${timestamp}`)
                         .setLabel('Bounty')
                         .setStyle(type === 'xp' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('💰'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page}_level`)
+                        .setCustomId(`lb_type_long_level_${page}_${timestamp}`)
                         .setLabel('Level')
                         .setStyle(type === 'level' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('⭐'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page}_messages`)
+                        .setCustomId(`lb_type_long_messages_${page}_${timestamp}`)
                         .setLabel('Messages')
                         .setStyle(type === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('💬'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page}_reactions`)
+                        .setCustomId(`lb_type_long_reactions_${page}_${timestamp}`)
                         .setLabel('Reactions')
                         .setStyle(type === 'reactions' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('👍'),
                     new ButtonBuilder()
-                        .setCustomId(`leaderboard_long_${page}_voice`)
+                        .setCustomId(`lb_type_long_voice_${page}_${timestamp}`)
                         .setLabel('Voice')
                         .setStyle(type === 'voice' ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setEmoji('🎙️')
