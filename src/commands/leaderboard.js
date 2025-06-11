@@ -125,20 +125,13 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             console.log('Font approach 2 failed');
         }
 
-        // Try Canvas measureText to see if fonts are working at all
+        // Try Canvas measureText to verify fonts are working
         try {
             const testText = 'TEST';
             const metrics = ctx.measureText(testText);
             console.log('Canvas text metrics working:', metrics.width > 0);
-            
-            if (metrics.width > 0) {
-                // If measureText works, fonts should work
-                ctx.fillStyle = '#00FF00'; // Bright green for testing
-                ctx.font = '20px sans-serif';
-                ctx.fillText('TEXT WORKS', 150, 100);
-            }
         } catch (e) {
-            console.log('Canvas text completely broken');
+            console.log('Canvas text metrics failed');
         }
 
         // Decorative line under header
