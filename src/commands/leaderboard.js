@@ -92,25 +92,32 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.lineWidth = 2;
         ctx.strokeRect(9, 9, 232, 302);
 
-        // Load font and render text - simplified approach
-        // "WANTED" header
+        // Test if text rendering works at all
+        ctx.save();
         ctx.fillStyle = '#FF0000';
-        ctx.font = '28px sans-serif';
+        ctx.font = '20px Arial';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.fillText('WANTED', 125, 45);
-        
-        // "DEAD OR ALIVE" subtitle
+        ctx.fillRect(50, 30, 150, 30); // Red background for text
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '10px sans-serif';
-        ctx.fillText('DEAD OR ALIVE', 125, 60);
+        ctx.fillText('WANTED', 125, 50);
+        ctx.restore();
+
+        // Smaller subtitle
+        ctx.save();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillRect(75, 55, 100, 15); // White background
+        ctx.fillStyle = '#000000';
+        ctx.fillText('DEAD OR ALIVE', 125, 67);
+        ctx.restore();
 
         // Decorative line under header
         ctx.strokeStyle = '#8B0000';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(30, 70);
-        ctx.lineTo(220, 70);
+        ctx.moveTo(30, 80);
+        ctx.lineTo(220, 80);
         ctx.stroke();
 
         // Get user avatar and create photo frame
@@ -123,7 +130,7 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
 
         // Photo frame (larger, polaroid style)
         const frameX = 75;
-        const frameY = 80;
+        const frameY = 90;
         const frameWidth = 100;
         const frameHeight = 120;
         
@@ -170,7 +177,7 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
             ctx.fillStyle = '#DDD';
             ctx.fillRect(frameX, frameY, frameWidth, frameHeight - 25);
             ctx.fillStyle = '#666';
-            ctx.font = '12px monospace';
+            ctx.font = '12px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('NO PHOTO', frameX + frameWidth/2, frameY + (frameHeight - 25)/2);
         }
@@ -181,50 +188,68 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
 
         // Pirate name on black zone with white text
         const displayName = member ? member.displayName : `User ${user.userId}`;
+        ctx.save();
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '9px sans-serif';
+        ctx.font = '10px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 10);
+        ctx.fillText(displayName.toUpperCase().substring(0, 12), frameX + frameWidth/2, frameY + frameHeight - 8);
+        ctx.restore();
 
-        // Bounty amount (larger)
-        ctx.fillStyle = '#FF0000';
-        ctx.font = '18px sans-serif';
+        // Bounty amount with background
+        ctx.save();
+        ctx.fillStyle = '#8B0000';
+        ctx.fillRect(50, 215, 150, 25);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '16px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`B${bounty.toLocaleString()}`, 125, 230);
+        ctx.fillText(`B${bounty.toLocaleString()}`, 125, 232);
+        ctx.restore();
 
         // Berry symbol decoration
+        ctx.save();
         ctx.fillStyle = '#FFD700';
-        ctx.font = '12px sans-serif';
-        ctx.fillText('BERRY', 125, 245);
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('BERRY', 125, 250);
+        ctx.restore();
 
-        // Threat level box (larger)
-        const threatBoxY = 255;
+        // Threat level box with white background for text
+        const threatBoxY = 260;
         ctx.fillStyle = 'rgba(139, 0, 0, 0.2)';
         ctx.fillRect(25, threatBoxY, 200, 35);
         ctx.strokeStyle = '#8B0000';
         ctx.lineWidth = 1;
         ctx.strokeRect(25, threatBoxY, 200, 35);
 
+        // White background for threat text
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '7px sans-serif';
+        ctx.fillRect(30, threatBoxY + 2, 190, 31);
+
+        ctx.fillStyle = '#000000';
+        ctx.font = '8px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('THREAT ASSESSMENT', 125, threatBoxY + 10);
+        ctx.fillText('THREAT ASSESSMENT', 125, threatBoxY + 12);
         
         // Split threat text into lines
-        ctx.font = '6px sans-serif';
+        ctx.font = '7px Arial';
         const words = threatLevel.split(' ');
-        const maxWordsPerLine = 6;
+        const maxWordsPerLine = 4;
         const line1 = words.slice(0, maxWordsPerLine).join(' ');
         const line2 = words.slice(maxWordsPerLine).join(' ');
-        ctx.fillText(line1, 125, threatBoxY + 20);
-        if (line2) ctx.fillText(line2, 125, threatBoxY + 28);
+        ctx.fillText(line1, 125, threatBoxY + 22);
+        if (line2) ctx.fillText(line2, 125, threatBoxY + 30);
 
-        // Level and XP info (larger)
+        // Level and XP info with background
+        ctx.save();
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '8px sans-serif';
-        ctx.fillText(`Level ${user.level} - ${user.xp.toLocaleString()} XP`, 125, 305);
+        ctx.fillRect(50, 300, 150, 15);
+        ctx.fillStyle = '#000000';
+        ctx.font = '9px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Level ${user.level} - ${user.xp.toLocaleString()} XP`, 125, 310);
+        ctx.restore();
 
-        // Rank badge in corner (larger)
+        // Rank badge in corner
         const badgeX = 220;
         const badgeY = 35;
         
@@ -241,22 +266,17 @@ async function createWantedPoster(user, rank, bounty, threatLevel, guild) {
         ctx.arc(badgeX, badgeY, 15, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Rank number or crown
+        // Rank text with background
+        ctx.save();
         ctx.fillStyle = '#8B0000';
-        ctx.font = '10px sans-serif';
+        ctx.font = '8px Arial';
         ctx.textAlign = 'center';
         if (rank === 'KING') {
             ctx.fillText('KING', badgeX, badgeY + 3);
         } else {
             ctx.fillText(`#${rank}`, badgeX, badgeY + 3);
         }
-
-        // Date stamp (smaller)
-        ctx.fillStyle = '#999999';
-        ctx.font = '6px sans-serif';
-        ctx.textAlign = 'center';
-        const currentDate = new Date().toLocaleDateString();
-        ctx.fillText(`Issued: ${currentDate}`, 125, 315);
+        ctx.restore();
 
         return canvas.toBuffer();
     } catch (error) {
