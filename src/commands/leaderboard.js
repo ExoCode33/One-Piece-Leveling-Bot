@@ -1,4 +1,4 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard (Fixed Syntax)
+// src/commands/leaderboard.js - One Piece Themed Leaderboard (Fixed Modular)
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -11,8 +11,8 @@ module.exports = {
                 .setDescription('Bounty board view type')
                 .setRequired(false)
                 .addChoices(
-                    { name: '📋 Short View (Pirate King + Top 3)', value: 'short' },
-                    { name: '📜 Long View (Full Bounty Board)', value: 'long' }
+                    { name: '📋 Short View (Top 3)', value: 'short' },
+                    { name: '📜 Long View (Full Board)', value: 'long' }
                 )
         )
         .addIntegerOption(option =>
@@ -35,7 +35,7 @@ module.exports = {
                 )
         ),
 
-    async execute(interaction, client) {
+    async execute(interaction, client, xpTracker) {
         try {
             // IMMEDIATELY defer the interaction to prevent timeout
             if (!interaction.deferred && !interaction.replied) {
@@ -62,18 +62,12 @@ module.exports = {
                     const role = interaction.guild.roles.cache.get(pirateKingRoleId);
                     if (role && role.members.size > 0) {
                         const pirateKingMember = role.members.first();
-                        const pirateKingQuery = `
-                            SELECT total_xp, level, messages, reactions, voice_time
-                            FROM user_levels
-                            WHERE user_id = $1 AND guild_id = $2
-                            LIMIT 1
-                        `;
-                        const pirateKingResult = await client.db.query(pirateKingQuery, [pirateKingMember.id, guildId]);
+                        const pirateKingStats = await xpTracker.getUserStats(pirateKingMember.id, guildId);
                         
-                        if (pirateKingResult.rows.length > 0) {
+                        if (pirateKingStats) {
                             pirateKing = {
                                 member: pirateKingMember,
-                                data: pirateKingResult.rows[0]
+                                data: pirateKingStats
                             };
                         }
                     }
@@ -84,9 +78,9 @@ module.exports = {
             }
 
             if (view === 'short') {
-                return await this.handleShortView(interaction, client, pirateKing, type);
+                return await this.handleShortView(interaction, client, xpTracker, pirateKing, type);
             } else {
-                return await this.handleLongView(interaction, client, pirateKing, page, type);
+                return await this.handleLongView(interaction, client, xpTracker, pirateKing, page, type);
             }
 
         } catch (error) {
@@ -100,25 +94,17 @@ module.exports = {
         }
     },
 
-    async handleShortView(interaction, client, pirateKing, type) {
+    async handleShortView(interaction, client, xpTracker, pirateKing, type) {
         const guildId = interaction.guildId;
         
         try {
-            // Determine sort field and display format
-            const { sortField, formatValue } = this.getSortConfig(type);
-
-            // Get top 3 (excluding Pirate King) - optimized query
-            const excludeCondition = pirateKing ? `AND user_id != $2` : '';
-            const queryParams = pirateKing ? [guildId, pirateKing.member.id] : [guildId];
+            // Get leaderboard data using XP Tracker
+            const leaderboardData = await xpTracker.getLeaderboard(guildId, type, 1, 3);
             
-            const query = `
-                SELECT user_id, total_xp, level, messages, reactions, voice_time
-                FROM user_levels
-                WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
-                ORDER BY ${sortField} DESC, total_xp DESC
-                LIMIT 3
-            `;
-            const result = await client.db.query(query, queryParams);
+            if (!leaderboardData) {
+                const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+                return await interaction[responseMethod]('❌ Could not fetch leaderboard data.');
+            }
 
             // Create One Piece themed embed
             const embed = new EmbedBuilder()
@@ -132,7 +118,7 @@ module.exports = {
 
             // Add Pirate King section
             if (pirateKing) {
-                const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
+                const pirateKingValue = this.formatBountyValue(type, pirateKing.data);
                 const pirateKingTitle = pirateKing.data.level >= 50 ? 'Yonko' : this.getPirateTitle(pirateKing.data.level);
                 embed.addFields({
                     name: '👑 THE PIRATE KING 👑',
@@ -142,20 +128,20 @@ module.exports = {
             }
 
             // Build top 3 display with error handling
-            if (result.rows.length > 0) {
+            if (leaderboardData.users.length > 0) {
                 let top3Text = '';
                 const emojis = ['🥇', '🥈', '🥉'];
 
-                for (let i = 0; i < result.rows.length; i++) {
-                    const row = result.rows[i];
+                for (let i = 0; i < leaderboardData.users.length; i++) {
+                    const row = leaderboardData.users[i];
                     try {
                         const member = await interaction.guild.members.fetch(row.user_id);
-                        const bountyValue = this.formatBountyValue(type, row, formatValue);
+                        const bountyValue = this.formatBountyValue(type, row);
                         const pirateTitle = this.getPirateTitle(row.level);
                         top3Text += `${emojis[i]} **${member.displayName}** - *${pirateTitle}*\n${bountyValue}\n\n`;
                     } catch (error) {
                         // User left server - handle gracefully
-                        const bountyValue = this.formatBountyValue(type, row, formatValue);
+                        const bountyValue = this.formatBountyValue(type, row);
                         const pirateTitle = this.getPirateTitle(row.level);
                         top3Text += `${emojis[i]} **User Left** - *${pirateTitle}*\n${bountyValue}\n\n`;
                     }
@@ -243,46 +229,26 @@ module.exports = {
         }
     },
 
-    async handleLongView(interaction, client, pirateKing, page, type) {
+    async handleLongView(interaction, client, xpTracker, pirateKing, page, type) {
         const guildId = interaction.guildId;
         const usersPerPage = 10;
-        const offset = (page - 1) * usersPerPage;
 
         try {
-            // Determine sort field and display format
-            const { sortField, displayName, formatValue } = this.getSortConfig(type);
-
-            // Optimize queries with proper parameterization
-            const excludeCondition = pirateKing ? `AND user_id != $2` : '';
-            const baseParams = pirateKing ? [guildId, pirateKing.member.id] : [guildId];
-
-            // Get total count (excluding Pirate King)
-            const countQuery = `
-                SELECT COUNT(*) as total
-                FROM user_levels
-                WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
-            `;
-            const countResult = await client.db.query(countQuery, baseParams);
-            const totalUsers = parseInt(countResult.rows[0].total);
-            const totalPages = Math.ceil(totalUsers / usersPerPage);
-
-            if (page > totalPages && totalPages > 0) {
+            // Get leaderboard data using XP Tracker
+            const leaderboardData = await xpTracker.getLeaderboard(guildId, type, page, usersPerPage);
+            
+            if (!leaderboardData) {
                 const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
-                return await interaction[responseMethod](`❌ Page ${page} doesn't exist. There are only ${totalPages} pages in this bounty ledger.`);
+                return await interaction[responseMethod]('❌ Could not fetch leaderboard data.');
             }
 
-            // Fetch leaderboard data (excluding Pirate King)
-            const query = `
-                SELECT user_id, total_xp, level, messages, reactions, voice_time
-                FROM user_levels
-                WHERE guild_id = $1 AND ${sortField} > 0 ${excludeCondition}
-                ORDER BY ${sortField} DESC, total_xp DESC
-                LIMIT $${baseParams.length + 1} OFFSET $${baseParams.length + 2}
-            `;
-            const queryParams = [...baseParams, usersPerPage, offset];
-            const result = await client.db.query(query, queryParams);
+            if (page > leaderboardData.totalPages && leaderboardData.totalPages > 0) {
+                const responseMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+                return await interaction[responseMethod](`❌ Page ${page} doesn't exist. There are only ${leaderboardData.totalPages} pages in this bounty ledger.`);
+            }
 
             // Create One Piece themed embed
+            const { displayName } = this.getSortConfig(type);
             const embed = new EmbedBuilder()
                 .setTitle(`🏴‍☠️ WANTED PIRATES LEDGER - ${displayName.toUpperCase()} 🏴‍☠️`)
                 .setColor(0x8B5A00) // Brown/Gold
@@ -294,7 +260,7 @@ module.exports = {
 
             // Add Pirate King section (always at top of long view)
             if (pirateKing) {
-                const pirateKingValue = this.formatBountyValue(type, pirateKing.data, formatValue);
+                const pirateKingValue = this.formatBountyValue(type, pirateKing.data);
                 const pirateKingTitle = pirateKing.data.level >= 50 ? 'Yonko' : this.getPirateTitle(pirateKing.data.level);
                 embed.addFields({
                     name: '👑 THE PIRATE KING 👑',
@@ -304,11 +270,11 @@ module.exports = {
             }
 
             // Build bounty list
-            if (result.rows.length > 0) {
+            if (leaderboardData.users.length > 0) {
                 let bountyList = '';
-                for (let i = 0; i < result.rows.length; i++) {
-                    const row = result.rows[i];
-                    const rank = offset + i + 1;
+                for (let i = 0; i < leaderboardData.users.length; i++) {
+                    const row = leaderboardData.users[i];
+                    const rank = ((page - 1) * usersPerPage) + i + 1;
 
                     // Get rank emoji/icon
                     let rankIcon = '';
@@ -320,10 +286,10 @@ module.exports = {
 
                     try {
                         const member = await interaction.guild.members.fetch(row.user_id);
-                        const bountyValue = this.formatBountyValue(type, row, formatValue);
+                        const bountyValue = this.formatBountyValue(type, row);
                         bountyList += `${rankIcon} **#${rank}** ${member.displayName}\n${bountyValue}\n\n`;
                     } catch (error) {
-                        const bountyValue = this.formatBountyValue(type, row, formatValue);
+                        const bountyValue = this.formatBountyValue(type, row);
                         bountyList += `${rankIcon} **#${rank}** *Pirate Fled*\n${bountyValue}\n\n`;
                     }
                 }
@@ -343,7 +309,7 @@ module.exports = {
 
             // Create navigation buttons
             const components = [];
-            if (totalPages > 1) {
+            if (leaderboardData.totalPages > 1) {
                 const navButtons = new ActionRowBuilder();
 
                 // Previous page
@@ -361,13 +327,13 @@ module.exports = {
                 navButtons.addComponents(
                     new ButtonBuilder()
                         .setCustomId('page_info')
-                        .setLabel(`${page}/${totalPages}`)
+                        .setLabel(`${page}/${leaderboardData.totalPages}`)
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(true)
                 );
 
                 // Next page
-                if (page < totalPages) {
+                if (page < leaderboardData.totalPages) {
                     navButtons.addComponents(
                         new ButtonBuilder()
                             .setCustomId(`leaderboard_long_${page + 1}_${type}`)
@@ -433,7 +399,7 @@ module.exports = {
             components.push(viewButtons, typeButtons);
 
             embed.setFooter({ 
-                text: `⚓ Marine Intelligence • Page ${page}/${totalPages} • ${totalUsers} total bounties`, 
+                text: `⚓ Marine Intelligence • Page ${page}/${leaderboardData.totalPages} • ${leaderboardData.totalUsers} total bounties`, 
                 iconURL: client.user.displayAvatarURL() 
             });
 
@@ -487,7 +453,8 @@ module.exports = {
         }
     },
 
-    formatBountyValue(type, row, formatValue) {
+    formatBountyValue(type, row) {
+        const { formatValue } = this.getSortConfig(type);
         if (type === 'xp') {
             return formatValue(row.total_xp, row.level);
         } else {
