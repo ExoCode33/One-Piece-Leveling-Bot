@@ -13,11 +13,11 @@ module.exports = {
             if (!interaction.member.permissions.has('Administrator')) {
                 return await interaction.reply({ 
                     content: '❌ You need Administrator permissions to use this command.', 
-                    ephemeral: true 
+                    flags: 64 // Ephemeral flag
                 });
             }
 
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 }); // Ephemeral flag
 
             const embed = new EmbedBuilder()
                 .setTitle('🔧 Bot Configuration Settings')
