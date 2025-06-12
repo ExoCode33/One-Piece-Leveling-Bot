@@ -158,11 +158,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 18, Horiz 21, Vert 22
+    // Bounty Numbers - Size 18, Horiz 22, Vert 22
     // Font used: Cinzel Bold (Georgia serif as fallback)
     const bountyStr = bounty.toLocaleString();
     ctx.font = '54px Cinzel, Georgia, serif'; // Size 18/100 * 300 = 54px - CINZEL BOLD FONT
-    const bountyX = (21/100) * width; // Horiz 21: moved closer to berry
+    const bountyX = (22/100) * width; // Horiz 22: positioned closer to berry
     const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
     
     ctx.textAlign = 'left';
