@@ -37,23 +37,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - POSITIONED BETWEEN RED LINES WITH WIDER TEXT
+    // WANTED header - POSITIONED BELOW TOP RED LINE
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
-    // Use CSS transform to make text WIDER (not taller)
-    ctx.save();
-    ctx.scale(1.3, 1); // WIDER text - 30% wider but same height
     ctx.font = ctxFont('bold', 70);
-    const wantedY = 60; // POSITIONED BETWEEN THE RED BORDER LINES
-    ctx.fillText('WANTED', width / 2 / 1.3, wantedY); // Adjust X for scaling
-    ctx.restore();
+    const wantedY = 80; // MOVED DOWN - now properly below the top red border line
+    ctx.fillText('WANTED', width / 2, wantedY);
 
-    // Profile picture - OPTIMIZED FOR BALANCED LAYOUT
+    // Profile picture - ADJUSTED FOR NEW WANTED POSITION
     const photoW = 300, photoH = 300;
     const photoX = (width - photoW) / 2;
-    const photoY = 110; // CLOSE TO HEADER
+    const photoY = 130; // ADJUSTED for new WANTED position
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
@@ -84,18 +79,13 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - INCREASED SIZE TO MATCH SHANKS WIDTH
+    // DEAD OR ALIVE - INCREASED SIZE WITHOUT SCALING
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    
-    // Use scaling for wider text to match SHANKS width
-    ctx.save();
-    ctx.scale(1.2, 1); // WIDER text to match pirate name width
-    ctx.font = ctxFont('bold', 45); // INCREASED from 38 to 45
+    ctx.font = ctxFont('bold', 45); // INCREASED size without scaling
     const deadOrAliveY = photoY + photoH + 25; // BALANCED SPACING
-    ctx.fillText('DEAD OR ALIVE', width / 2 / 1.2, deadOrAliveY); // Adjust X for scaling
-    ctx.restore();
+    ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
     // Pirate name - OPTIMIZED SIZE
     ctx.font = ctxFont('bold', 48); // KEPT AT 48 for good proportion
@@ -134,26 +124,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
     // PERFECT LEFT-ALIGNED bounty with INCREASED SIZE
     const berryHeight = 45, berryWidth = 45; // INCREASED from 40 to 45 for better proportion
     const bountyStr = bounty.toLocaleString();
-    
-    // Use scaling for wider bounty text
-    ctx.save();
-    ctx.scale(1.1, 1); // SLIGHTLY WIDER bounty text
     ctx.font = ctxFont('bold', 58); // INCREASED from 52 to 58 - BIGGER BOUNTY
     const gap = 12; // GOOD SPACING
     const bountyStartX = 120; // PERFECT LEFT ALIGNMENT
     
     // Draw berry icon first at perfect left position
-    ctx.restore(); // Reset scaling for berry icon
     ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
     
-    // Apply scaling for bounty text
-    ctx.save();
-    ctx.scale(1.1, 1); // WIDER bounty text
+    // Draw bounty text with increased size
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
-    ctx.fillText(bountyStr, (bountyStartX + berryWidth + gap) / 1.1, bountyY); // Adjust X for scaling
-    ctx.restore();
+    ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
 
     // MARINE text - positioned at bottom with clear margin
     ctx.textAlign = 'right';
