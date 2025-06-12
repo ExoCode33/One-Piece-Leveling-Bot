@@ -11,7 +11,7 @@ const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png
 // Register custom fonts
 try {
     Canvas.registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
-    Canvas.registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Regular.otf'), { family: 'Cinzel' });
+    Canvas.registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' }); // Changed to Bold
     Canvas.registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
     console.log('[DEBUG] Successfully registered custom fonts for wanted posters');
 } catch (error) {
@@ -48,16 +48,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
     }
     
     // All borders and elements go on top of the texture
-    // Only essential borders - outer border now black instead of red
-    ctx.strokeStyle = '#000000'; // Changed from blood red to black
+    // All borders now black for consistency
+    ctx.strokeStyle = '#000000'; // Outer border - black
     ctx.lineWidth = 8;
     ctx.strokeRect(0, 0, width, height);
     
-    ctx.strokeStyle = '#CD853F';
+    ctx.strokeStyle = '#000000'; // Middle border - black
     ctx.lineWidth = 2;
     ctx.strokeRect(10, 10, width - 20, height - 20);
     
-    ctx.strokeStyle = '#8B0000';
+    ctx.strokeStyle = '#000000'; // Inner border - black
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
@@ -70,14 +70,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
 
-    // Image Box - Size 95, Horiz 50, Vert 65
+    // Image Box - Size 95, Horiz 50, Vert 65 with smaller border to eliminate gap
     const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
     const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
     const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
     
-    // Single thin black border only
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2;
+    // Thinner black border to eliminate gap
+    ctx.strokeStyle = '#000000'; // Ensure black border
+    ctx.lineWidth = 1; // Reduced from 2 to eliminate gap
     ctx.strokeRect(photoX, photoY, photoSize, photoSize);
     
     // No white background - image goes directly on texture
@@ -87,7 +87,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
     
-    const avatarArea = { x: photoX + 2, y: photoY + 2, width: photoSize - 4, height: photoSize - 4 };
+    const avatarArea = { x: photoX + 1, y: photoY + 1, width: photoSize - 2, height: photoSize - 2 }; // Adjusted for thinner border
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
