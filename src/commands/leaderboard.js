@@ -1,15 +1,12 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard with Canvas Poster
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
-const Canvas = require('canvas');
+const { createCanvas, loadImage, registerFont } = require('canvas');
+const fs = require('fs');
 const path = require('path');
 
-const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Pirate King Role ID
-const berryPath = path.join(__dirname, '../../assets/berry.png'); // Make sure your berry.png is here
+const berryPath = path.join(__dirname, 'berry.png'); // Make sure your berry.png is here
 
 // Register custom font if available
 try {
-    Canvas.registerFont(path.join(__dirname, '../../assets/fonts/pirate.ttf'), { family: 'PirateFont' });
+    registerFont(path.join(__dirname, './assets/fonts/pirate.ttf'), { family: 'PirateFont' });
 } catch {
     // fallback to system font
 }
@@ -22,10 +19,10 @@ function pirateRankEmoji(rank) {
 }
 
 // Utility: draw wanted poster, fully centered and clean, using berry icon
-async function createWantedPoster(user, rank, bounty, guild) {
+async function createWantedPoster(user, rank, bounty, guild = null) {
     const width = 600, height = 900;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
-    const canvas = Canvas.createCanvas(width, height);
+    const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
     // BG + border
@@ -61,7 +58,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
-            const avatar = await Canvas.loadImage(avatarURL);
+            const avatar = await loadImage(avatarURL);
             ctx.save();
             ctx.beginPath();
             ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
@@ -73,8 +70,20 @@ async function createWantedPoster(user, rank, bounty, guild) {
             ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
         }
     } else {
-        ctx.fillStyle = '#ddd';
-        ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+        // For standalone use without Discord guild - try to load local avatar
+        try {
+            const avatarPath = user.avatarPath || path.join(__dirname, 'avatar.png');
+            const avatar = await loadImage(avatarPath);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            ctx.clip();
+            ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            ctx.restore();
+        } catch {
+            ctx.fillStyle = '#ddd';
+            ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+        }
     }
 
     // DEAD OR ALIVE
@@ -89,11 +98,27 @@ async function createWantedPoster(user, rank, bounty, guild) {
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
+    else if (user.name) displayName = user.name.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     ctx.fillText(displayName, width / 2, photoY + photoH + 95);
 
     // Bounty (berry image + number)
     const bountyY = photoY + photoH + 200;
-    const berryImg = await Canvas.loadImage(berryPath);
+    let berryImg;
+    try {
+        berryImg = await loadImage(berryPath);
+    } catch {
+        console.log('Berry icon not found, creating placeholder...');
+        // Create a simple ฿ symbol as fallback
+        const berryCanvas = createCanvas(50, 50);
+        const berryCtx = berryCanvas.getContext('2d');
+        berryCtx.fillStyle = '#111';
+        berryCtx.font = 'bold 40px serif';
+        berryCtx.textAlign = 'center';
+        berryCtx.textBaseline = 'middle';
+        berryCtx.fillText('฿', 25, 25);
+        berryImg = berryCanvas;
+    }
+    
     const berryHeight = 50, berryWidth = 50;
     const bountyStr = bounty.toLocaleString();
     ctx.font = ctxFont('bold', 82);
@@ -116,172 +141,195 @@ async function createWantedPoster(user, rank, bounty, guild) {
     return canvas.toBuffer('image/png');
 }
 
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('leaderboard')
-        .setDescription('View the most notorious pirates!')
-        .addStringOption(option =>
-            option.setName('view')
-                .setDescription('Leaderboard type')
-                .setRequired(false)
-                .addChoices(
-                    { name: 'Top 3 Wanted Posters', value: 'posters' },
-                    { name: 'Top 10 List', value: 'long' },
-                    { name: 'Full Leaderboard', value: 'full' }
-                )
-        ),
-    async execute(interaction, client, xpTracker) {
-        let guild = interaction.guild;
-        let guildId = interaction.guildId;
-        if (!guild && guildId) {
+// Mock bounty system for standalone use
+const getBountyForLevel = (level) => {
+    if (level <= 0) return 0;
+    if (level <= 5) return level * 10000;
+    if (level <= 10) return level * 50000;
+    if (level <= 20) return level * 100000;
+    if (level <= 30) return level * 500000;
+    if (level <= 40) return level * 1000000;
+    if (level <= 50) return level * 5000000;
+    return level * 10000000;
+};
+
+const PIRATE_KING_BOUNTY = 5564800000;
+
+// Sample leaderboard data for standalone testing
+const sampleLeaderboard = [
+    { userId: '1234567890', name: 'SHANKS', level: 45, xp: 125000, avatarPath: 'avatar.png' },
+    { userId: '0987654321', name: 'LUFFY', level: 42, xp: 110000, avatarPath: 'avatar2.png' },
+    { userId: '1122334455', name: 'ZORO', level: 40, xp: 95000, avatarPath: 'avatar3.png' },
+    { userId: '5544332211', name: 'SANJI', level: 38, xp: 85000, avatarPath: 'avatar4.png' },
+    { userId: '9988776655', name: 'NAMI', level: 35, xp: 75000, avatarPath: 'avatar5.png' }
+];
+
+// Main function to generate leaderboard posters
+async function generateLeaderboardPosters(leaderboard = sampleLeaderboard, options = {}) {
+    const {
+        outputDir = './posters',
+        view = 'posters', // 'posters', 'long', 'full'
+        pirateKingLevel = 50,
+        maxPosters = 4
+    } = options;
+
+    // Create output directory if it doesn't exist
+    if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Sort leaderboard by XP
+    leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number');
+    leaderboard.sort((a, b) => b.xp - a.xp);
+
+    // Pirate King detection
+    let pirateKingUser = null;
+    if (leaderboard.length > 0 && leaderboard[0].level >= pirateKingLevel) {
+        pirateKingUser = leaderboard[0];
+        leaderboard = leaderboard.slice(1);
+    }
+
+    if (view === 'posters') {
+        // Top 3 posters (Pirate King + 3 best)
+        const topThree = leaderboard.slice(0, 3);
+        const allPirates = [];
+        if (pirateKingUser) allPirates.push({ user: pirateKingUser, rank: 'KING', isPirateKing: true });
+        for (let i = 0; i < topThree.length; i++) {
+            allPirates.push({ user: topThree[i], rank: i + 1, isPirateKing: false });
+        }
+
+        console.log('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️');
+        console.log('The World Government has issued these bounties for the most dangerous criminals on the Grand Line.\n');
+
+        // Generate posters
+        for (let i = 0; i < Math.min(allPirates.length, maxPosters); i++) {
+            const pirate = allPirates[i];
+            const user = pirate.user;
+            const rank = pirate.rank;
+            const bounty = pirate.isPirateKing ? PIRATE_KING_BOUNTY : getBountyForLevel(user.level);
+            
             try {
-                guild = await client.guilds.fetch(guildId);
-            } catch (err) {
-                return interaction.reply({ content: "Could not resolve server info.", ephemeral: true });
-            }
-        }
-        if (!guild || !guildId) {
-            return interaction.reply({ content: "This command can only be used in a server, not in DMs.", ephemeral: true });
-        }
-
-        const view = interaction.options.getString('view') || 'posters';
-
-        let leaderboard;
-        try {
-            leaderboard = await xpTracker.getLeaderboard(guildId);
-        } catch (err) {
-            return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true });
-        }
-        if (!leaderboard || !Array.isArray(leaderboard)) {
-            return interaction.reply({ content: "No leaderboard data available.", ephemeral: true });
-        }
-
-        // Pirate King detection
-        let pirateKingUser = null;
-        if (LEADERBOARD_EXCLUDE_ROLE) {
-            try {
-                const members = await guild.members.fetch();
-                const king = members.find(m => m.roles.cache.has(LEADERBOARD_EXCLUDE_ROLE));
-                if (king) {
-                    pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
-                    if (pirateKingUser) {
-                        leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
-                    }
+                const posterBuffer = await createWantedPoster(user, rank, bounty, null);
+                if (posterBuffer) {
+                    const filename = `wanted_poster_${i + 1}_${user.name || user.userId}.png`;
+                    const filepath = path.join(outputDir, filename);
+                    fs.writeFileSync(filepath, posterBuffer);
+                    
+                    console.log(`${pirate.isPirateKing ? '👑 PIRATE KING' : `${pirateRankEmoji(rank)} RANK ${rank}`}`);
+                    console.log(`🏴‍☠️ Pirate: ${user.name || user.userId}`);
+                    console.log(`💰 Bounty: ${bounty.toLocaleString()}`);
+                    console.log(`⚔️ Level: ${user.level}`);
+                    console.log(`💎 Total XP: ${user.xp.toLocaleString()}`);
+                    console.log(`📁 Saved: ${filepath}`);
+                    console.log('---');
                 }
-            } catch { pirateKingUser = null; }
+            } catch (e) {
+                console.error(`Error creating poster for ${user.name || user.userId}:`, e.message);
+            }
         }
-        if (!pirateKingUser && leaderboard.length > 0 && leaderboard[0].level >= 50) {
-            pirateKingUser = leaderboard[0];
-            leaderboard = leaderboard.slice(1);
+        return;
+    } else if (view === 'full') {
+        // Full text list
+        let text = '🏴‍☠️ **COMPLETE PIRATE REGISTRY** 🏴‍☠️\n\n';
+        let rank = 1;
+        if (pirateKingUser) {
+            text += `👑 **PIRATE KING**: ${pirateKingUser.name || pirateKingUser.userId} - Level ${pirateKingUser.level} - ₿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
         }
-
-        leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number');
-        leaderboard.sort((a, b) => b.xp - a.xp);
-
-        // Create navigation buttons
-        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('leaderboard_posters_1_xp')
-                .setLabel('🎯 Top 3 Posters')
-                .setStyle(view === 'posters' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId('leaderboard_long_1_xp')
-                .setLabel('📋 Top 10 List')
-                .setStyle(view === 'long' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId('leaderboard_full_1_xp')
-                .setLabel('📜 Full Board')
-                .setStyle(view === 'full' ? ButtonStyle.Primary : ButtonStyle.Secondary)
-        );
-
-        if (view === 'posters') {
-            // Top 3 posters (Pirate King + 3 best)
-            const topThree = leaderboard.slice(0, 3);
-            const allPirates = [];
-            if (pirateKingUser) allPirates.push({ user: pirateKingUser, rank: 'KING', isPirateKing: true });
-            for (let i = 0; i < topThree.length; i++) {
-                allPirates.push({ user: topThree[i], rank: i + 1, isPirateKing: false });
-            }
-            // Header
-            const headerEmbed = new EmbedBuilder()
-                .setColor(0x8B0000)
-                .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
-                .setDescription('The World Government has issued these bounties for the most dangerous criminals on the Grand Line.\n\u200B')
-                .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
-                .setTimestamp();
-            await interaction.reply({ embeds: [headerEmbed], components: [row] });
-
-            // Posters
-            for (let i = 0; i < Math.min(allPirates.length, 4); i++) {
-                const pirate = allPirates[i];
-                const user = pirate.user;
-                const rank = pirate.rank;
-                const bounty = pirate.isPirateKing ? PIRATE_KING_BOUNTY : getBountyForLevel(user.level);
-                try {
-                    const posterBuffer = await createWantedPoster(user, rank, bounty, guild);
-                    if (posterBuffer) {
-                        const attachment = new AttachmentBuilder(posterBuffer, { name: `wanted_poster_${i + 1}.png` });
-                        const posterEmbed = new EmbedBuilder()
-                            .setColor(pirate.isPirateKing ? 0xFFD700 : 0x8B0000)
-                            .setTitle(pirate.isPirateKing ? '👑 PIRATE KING' : `${pirateRankEmoji(rank)} RANK ${rank}`)
-                            .addFields(
-                                { name: '🏴‍☠️ Pirate', value: `<@${user.userId}>`, inline: true },
-                                { name: '💰 Bounty', value: `${bounty.toLocaleString()}`, inline: true },
-                                { name: '⚔️ Level', value: `${user.level}`, inline: true },
-                                { name: '💎 Total XP', value: `${user.xp.toLocaleString()}`, inline: true },
-                                { name: '📍 Status', value: pirate.isPirateKing ? 'Ruler of the Grand Line' :
-                                    rank === 1 ? 'Most Dangerous Pirate' : 
-                                    rank === 2 ? 'Rising Star' : 'Notorious Criminal', inline: true }
-                            )
-                            .setImage(`attachment://wanted_poster_${i + 1}.png`)
-                            .setFooter({ text: `Marine Intelligence • Report any sightings immediately • Bounty #${String(i + 1).padStart(3, '0')}` });
-                        await interaction.followUp({ embeds: [posterEmbed], files: [attachment] });
-                    }
-                } catch (e) { }
-            }
-            return;
-        } else if (view === 'full') {
-            // Full text list
-            let text = '🏴‍☠️ **COMPLETE PIRATE REGISTRY** 🏴‍☠️\n\n';
-            let rank = 1;
-            if (pirateKingUser) {
-                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - Level ${pirateKingUser.level} - ₿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
-            }
-            for (const user of leaderboard) {
-                const bounty = getBountyForLevel(user.level);
-                text += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}> — Level **${user.level}** — ₿**${bounty.toLocaleString()}**\n`;
-                rank++;
-            }
-            if (leaderboard.length === 0) {
-                text += "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
-            }
-            const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
-            return interaction.reply({ content: finalText, components: [row], embeds: [] });
-        } else {
-            // Top 10 embed
-            const embed = new EmbedBuilder()
-                .setColor(0x8B0000)
-                .setTitle('🏴‍☠️ Top 10 Most Wanted Pirates')
-                .setDescription('The most notorious criminals on the Grand Line!')
-                .setFooter({ text: 'Marine Intelligence • World Government Bounty Board' })
-                .setTimestamp();
-            let description = '';
-            if (pirateKingUser) {
-                description += `👑 **PIRATE KING**: <@${pirateKingUser.userId}>\nLevel ${pirateKingUser.level} • ₿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
-            }
-            const topTen = leaderboard.slice(0, 10);
-            for (let i = 0; i < topTen.length; i++) {
-                const user = topTen[i];
-                const rank = i + 1;
-                const bounty = getBountyForLevel(user.level);
-                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ₿${bounty.toLocaleString()}\n\n`;
-            }
-            if (topTen.length === 0) {
-                description = "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
-            }
-            embed.setDescription(description);
-            return interaction.reply({ embeds: [embed], components: [row] });
+        for (const user of leaderboard) {
+            const bounty = getBountyForLevel(user.level);
+            text += `${pirateRankEmoji(rank)} **${rank}.** ${user.name || user.userId} — Level **${user.level}** — ₿**${bounty.toLocaleString()}**\n`;
+            rank++;
         }
-    },
+        if (leaderboard.length === 0) {
+            text += "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
+        }
+        console.log(text);
+        return text;
+    } else {
+        // Top 10 list
+        console.log('🏴‍☠️ Top 10 Most Wanted Pirates');
+        console.log('The most notorious criminals on the Grand Line!\n');
+        
+        if (pirateKingUser) {
+            console.log(`👑 **PIRATE KING**: ${pirateKingUser.name || pirateKingUser.userId}`);
+            console.log(`Level ${pirateKingUser.level} • ₿${PIRATE_KING_BOUNTY.toLocaleString()}\n`);
+        }
+        const topTen = leaderboard.slice(0, 10);
+        for (let i = 0; i < topTen.length; i++) {
+            const user = topTen[i];
+            const rank = i + 1;
+            const bounty = getBountyForLevel(user.level);
+            console.log(`${pirateRankEmoji(rank)} **${rank}.** ${user.name || user.userId}`);
+            console.log(`Level ${user.level} • ₿${bounty.toLocaleString()}\n`);
+        }
+        if (topTen.length === 0) {
+            console.log("No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!");
+        }
+    }
+}
+
+// Single poster generation function
+async function createSinglePoster(userData = {}, outputPath = 'single_poster.png') {
+    const defaultUser = {
+        userId: '1234567890',
+        name: 'SHANKS',
+        level: 45,
+        xp: 125000,
+        avatarPath: 'avatar.png'
+    };
+    
+    const user = { ...defaultUser, ...userData };
+    const bounty = getBountyForLevel(user.level);
+    
+    try {
+        const posterBuffer = await createWantedPoster(user, 1, bounty, null);
+        if (posterBuffer) {
+            fs.writeFileSync(outputPath, posterBuffer);
+            console.log(`Single poster created: ${outputPath}`);
+            console.log(`Character: ${user.name}`);
+            console.log(`Level: ${user.level}`);
+            console.log(`Bounty: ${bounty.toLocaleString()} berries`);
+            return true;
+        }
+    } catch (error) {
+        console.error('Error creating single poster:', error);
+    }
+    return false;
+}
+
+// Main execution
+async function main() {
+    console.log('🏴‍☠️ One Piece Wanted Poster Generator 🏴‍☠️\n');
+    
+    // Generate single poster (like your original request)
+    await createSinglePoster({
+        name: 'SHANKS',
+        level: 45,
+        xp: 125000,
+        avatarPath: 'avatar.png'
+    }, 'shanks_poster.png');
+    
+    console.log('\n' + '='.repeat(50) + '\n');
+    
+    // Generate leaderboard posters
+    await generateLeaderboardPosters(sampleLeaderboard, {
+        view: 'posters',
+        outputDir: './leaderboard_posters'
+    });
+}
+
+// Run if this file is executed directly
+if (require.main === module) {
+    main().catch(console.error);
+}
+
+// Export functions for use as module
+module.exports = {
+    createWantedPoster,
+    generateLeaderboardPosters,
+    createSinglePoster,
+    getBountyForLevel,
+    PIRATE_KING_BOUNTY,
+    pirateRankEmoji,
+    main
 };
