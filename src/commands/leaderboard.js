@@ -21,7 +21,7 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-// Utility: draw wanted poster with perfect text spacing - FIXED POSITIONING
+// Utility: draw wanted poster with perfect text spacing - NO OVERLAPS
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
@@ -37,26 +37,20 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - with red shadow effect
-    ctx.font = ctxFont('bold', 90); // Even bigger font
+    // WANTED header - LOWERED POSITION
+    ctx.font = ctxFont('bold', 70); // Original size
+    ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    const wantedY = 30;
-    
-    // Draw red shadow first
-    ctx.fillStyle = '#DC143C'; // Crimson red
-    ctx.fillText('WANTED', width / 2 + 3, wantedY + 3);
-    
-    // Draw black text on top
-    ctx.fillStyle = '#000';
+    ctx.textBaseline = 'middle';
+    const wantedY = 85; // LOWERED from 70
     ctx.fillText('WANTED', width / 2, wantedY);
 
-    // Profile picture - adjusted position
-    const photoW = 360, photoH = 360; // Bigger photo
+    // Profile picture - ADJUSTED FOR LOWERED WANTED
+    const photoW = 300, photoH = 300; // Original size
     const photoX = (width - photoW) / 2;
-    const photoY = 140; // Adjusted for new WANTED position
+    const photoY = 130; // LOWERED from 110
     ctx.strokeStyle = '#8B0000';
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
     ctx.fillStyle = '#fff';
     ctx.fillRect(photoX, photoY, photoW, photoH);
@@ -65,7 +59,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     try {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
-    const avatarArea = { x: photoX + 8, y: photoY + 8, width: photoW - 16, height: photoH - 16 };
+    const avatarArea = { x: photoX + 7, y: photoY + 7, width: photoW - 14, height: photoH - 14 };
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -85,106 +79,71 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - with red shadow effect
-    ctx.font = ctxFont('bold', 40); // Slightly bigger
+    // DEAD OR ALIVE - LOWERED POSITION
+    ctx.font = ctxFont('bold', 38);
+    ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const deadOrAliveY = photoY + photoH + 15; // Reduced gap
-    
-    // Draw red shadow first
-    ctx.fillStyle = '#DC143C';
-    ctx.fillText('DEAD OR ALIVE', width / 2 + 2, deadOrAliveY + 2);
-    
-    // Draw black text on top
-    ctx.fillStyle = '#000';
+    const deadOrAliveY = photoY + photoH + 35; // LOWERED from 25
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - with red shadow effect
-    ctx.font = ctxFont('bold', 65); // Consistent size
+    // Pirate name - LOWERED POSITION
+    ctx.font = ctxFont('bold', 60); // Original size
     let displayName = 'UNKNOWN PIRATE';
-    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 18);
+    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
     
     // Check if name is too long and adjust font size
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
     const nameWidth = ctx.measureText(displayName).width;
-    if (nameWidth > width - 100) {
-        ctx.font = ctxFont('bold', 55); // Smaller if name is long
-        const newWidth = ctx.measureText(displayName).width;
-        if (newWidth > width - 100) {
-            ctx.font = ctxFont('bold', 45); // Even smaller
-        }
+    if (nameWidth > width - 80) {
+        ctx.font = ctxFont('bold', 50); // Smaller if name is long
     }
     
-    const nameY = deadOrAliveY + 55; // Reduced gap
-    
-    // Draw red shadow first
-    ctx.fillStyle = '#DC143C';
-    ctx.fillText(displayName, width / 2 + 2, nameY + 2);
-    
-    // Draw black text on top
-    ctx.fillStyle = '#000';
+    const nameY = deadOrAliveY + 85; // LOWERED from 70
+    ctx.fillStyle = '#111';
     ctx.fillText(displayName, width / 2, nameY);
 
-    // Bounty section - with red shadow effect
-    const bountyY = nameY + 100; // More space for bounty
+    // Bounty section - LOWERED POSITION
+    const bountyY = nameY + 95; // LOWERED from 80
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
     } catch {
-        console.log('Berry icon not found, using text symbol...');
-        berryImg = null;
+        console.log('Berry icon not found, creating placeholder...');
+        const berryCanvas = Canvas.createCanvas(50, 50);
+        const berryCtx = berryCanvas.getContext('2d');
+        berryCtx.fillStyle = '#111';
+        berryCtx.font = 'bold 40px serif';
+        berryCtx.textAlign = 'center';
+        berryCtx.textBaseline = 'middle';
+        berryCtx.fillText('฿', 25, 25);
+        berryImg = berryCanvas;
     }
-    
-    // Remove the decorative dashes - they're causing the weird symbols
     
     // Perfect bounty layout - berry and text properly aligned
+    const berryHeight = 55, berryWidth = 55; 
     const bountyStr = bounty.toLocaleString();
+    ctx.font = ctxFont('bold', 65); // Original size
+    const bountyWidth = ctx.measureText(bountyStr).width;
+    const gap = 12; 
+    const totalWidth = berryWidth + gap + bountyWidth;
+    const bountyStartX = (width - totalWidth) / 2;
     
-    // Use just the text without berry image if it's not available
-    if (berryImg) {
-        const berryHeight = 65, berryWidth = 65; 
-        ctx.font = ctxFont('bold', 75); // Bigger bounty text
-        const bountyTextWidth = ctx.measureText(bountyStr).width;
-        const gap = 15; 
-        const totalWidth = berryWidth + gap + bountyTextWidth;
-        const bountyStartX = (width - totalWidth) / 2;
-        
-        // Draw berry icon (no shadow for icon)
-        ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
-        
-        // Draw bounty text with shadow
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        
-        // Red shadow
-        ctx.fillStyle = '#DC143C';
-        ctx.fillText(bountyStr, bountyStartX + berryWidth + gap + 3, bountyY + 3);
-        
-        // Black text
-        ctx.fillStyle = '#000';
-        ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
-    } else {
-        // Fallback: just use text with ฿ symbol
-        ctx.font = ctxFont('bold', 75);
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        // Red shadow
-        ctx.fillStyle = '#DC143C';
-        ctx.fillText(`฿ ${bountyStr}`, width / 2 + 3, bountyY + 3);
-        
-        // Black text
-        ctx.fillStyle = '#000';
-        ctx.fillText(`฿ ${bountyStr}`, width / 2, bountyY);
-    }
+    // Draw bounty text first with middle baseline
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#111';
+    ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
+    
+    // Draw berry icon perfectly centered with text
+    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
 
-    // MARINE text - positioned at bottom right
+    // MARINE text - positioned at bottom with clear margin
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = ctxFont('bold', 35);
-    ctx.fillText('MARINE', width - 45, height - 45);
+    ctx.font = ctxFont('bold', 30);
+    ctx.fillText('MARINE', width - 40, height - 40); // Clear margin from edges
 
     return canvas.toBuffer('image/png');
 }
