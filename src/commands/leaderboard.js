@@ -49,11 +49,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // WANTED title - Size 29, Horiz 50, Vert 92
+    // WANTED title - Size 28, Horiz 50, Vert 92
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '87px CaptainKiddNF, Arial, sans-serif'; // Size 29/100 * 300 = 87px
+    ctx.font = '84px CaptainKiddNF, Arial, sans-serif'; // Size 28/100 * 300 = 84px
     const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
@@ -103,17 +103,17 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // "DEAD OR ALIVE" - Size 18, Horiz 50, Vert 38
+    // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 39
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '54px CaptainKiddNF, Arial, sans-serif'; // Size 18/100 * 300 = 54px
-    const deadOrAliveY = height * (1 - 38/100); // Vert 38: 38% from bottom
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+    const deadOrAliveY = height * (1 - 39/100); // Vert 39: 39% from bottom
     const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Name ("SHANKS") - Size 18, Horiz 50, Vert 34
-    ctx.font = '54px CaptainKiddNF, Arial, sans-serif'; // Size 18/100 * 300 = 54px
+    // Name ("SHANKS") - Size 19, Horiz 50, Vert 33
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -122,10 +122,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     let nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 60) {
-        ctx.font = '42px CaptainKiddNF, Arial, sans-serif';
+        ctx.font = '45px CaptainKiddNF, Arial, sans-serif';
     }
     
-    const nameY = height * (1 - 34/100); // Vert 34: 34% from bottom
+    const nameY = height * (1 - 33/100); // Vert 33: 33% from bottom
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
@@ -151,10 +151,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 20, Horiz 28, Vert 28
+    // Bounty Numbers - Size 20, Horiz 26, Vert 28
     const bountyStr = bounty.toLocaleString();
     ctx.font = '60px Cinzel, Georgia, serif'; // Size 20/100 * 300 = 60px
-    const bountyX = (28/100) * width; // Horiz 28: closer to berry
+    const bountyX = (26/100) * width; // Horiz 26: even closer to berry
     const bountyY = height * (1 - 28/100); // Vert 28: 28% from bottom (same as berry)
     
     ctx.textAlign = 'left';
