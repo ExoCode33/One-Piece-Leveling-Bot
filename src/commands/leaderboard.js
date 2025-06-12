@@ -49,12 +49,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // WANTED title - Size 30, Horiz 50, Vert 91
+    // WANTED title - Size 30, Horiz 50, Vert 93
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '90px CaptainKiddNF, Arial, sans-serif'; // Size 30/100 * 300 = 90px
-    const wantedY = height * (1 - 91/100); // Vert 91: 91% from bottom = 9% from top
+    const wantedY = height * (1 - 93/100); // Vert 93: 93% from bottom = 7% from top
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
 
@@ -103,17 +103,17 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 40
+    // "DEAD OR ALIVE" - Size 18, Horiz 50, Vert 36
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
-    const deadOrAliveY = height * (1 - 40/100); // Vert 40: 40% from bottom
+    ctx.font = '54px CaptainKiddNF, Arial, sans-serif'; // Size 18/100 * 300 = 54px
+    const deadOrAliveY = height * (1 - 36/100); // Vert 36: 36% from bottom
     const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Name ("SHANKS") - Size 19, Horiz 50, Vert 35
-    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+    // Name ("SHANKS") - Size 18, Horiz 50, Vert 30
+    ctx.font = '54px CaptainKiddNF, Arial, sans-serif'; // Size 18/100 * 300 = 54px
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -122,15 +122,15 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     let nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 60) {
-        ctx.font = '45px CaptainKiddNF, Arial, sans-serif';
+        ctx.font = '42px CaptainKiddNF, Arial, sans-serif';
     }
     
-    const nameY = height * (1 - 35/100); // Vert 35: 35% from bottom
+    const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 24, Horiz 20, Vert 32
-    const berrySize = (24/100) * 150; // Size 24/100 * reasonable max = 36px
+    // Berry Symbol - Size 28, Horiz 20, Vert 32
+    const berrySize = (28/100) * 150; // Size 28/100 * reasonable max = 42px
     const berryX = ((20/100) * width) - (berrySize/2); // Horiz 20: left side
     const berryY = height * (1 - 32/100) - (berrySize/2); // Vert 32: 32% from bottom
     
@@ -151,21 +151,21 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 18, Horiz 30, Vert 32
+    // Bounty Numbers - Size 20, Horiz 30, Vert 28
     const bountyStr = bounty.toLocaleString();
-    ctx.font = '54px Cinzel, Georgia, serif'; // Size 18/100 * 300 = 54px
+    ctx.font = '60px Cinzel, Georgia, serif'; // Size 20/100 * 300 = 60px
     const bountyX = (30/100) * width; // Horiz 30: right of berry
-    const bountyY = height * (1 - 32/100); // Vert 32: 32% from bottom (same as berry)
+    const bountyY = height * (1 - 28/100); // Vert 28: 28% from bottom
     
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyX, bountyY);
 
-    // One Piece logo - Size 16, Horiz 50, Vert 4
+    // One Piece logo - Size 22, Horiz 50, Vert 4
     try {
         const onePieceLogo = await Canvas.loadImage(onePieceLogoPath);
-        const logoSize = (16/100) * 200; // Size 16/100 * reasonable max = 32px
+        const logoSize = (22/100) * 200; // Size 22/100 * reasonable max = 44px
         const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
         const logoY = height * (1 - 4/100) - (logoSize/2); // Vert 4: 4% from bottom
         
@@ -178,14 +178,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
         console.log('One Piece logo not found at assets/one-piece-symbol.png');
     }
 
-    // "MARINE" - Size 8, Horiz 95, Vert 2
+    // "MARINE" - Size 8, Horiz 96, Vert 2
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
     ctx.fillStyle = '#111';
     
     const marineText = 'M A R I N E';
-    const marineX = (95/100) * width; // Horiz 95: far right
+    const marineX = (96/100) * width; // Horiz 96: very far right
     const marineY = height * (1 - 2/100); // Vert 2: 2% from bottom
     ctx.fillText(marineText, marineX, marineY);
 
