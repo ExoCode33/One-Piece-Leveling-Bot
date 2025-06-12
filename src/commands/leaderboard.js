@@ -25,18 +25,34 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-// Utility: draw wanted poster with CUSTOM FONTS
+// Utility: draw wanted poster with CUSTOM FONTS and enhanced styling
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // BG + border
+    // Create aged parchment background with subtle texture
     ctx.fillStyle = '#F5DEB3';
     ctx.fillRect(0, 0, width, height);
+    
+    // Add subtle aging texture
+    for (let i = 0; i < 150; i++) {
+        ctx.fillStyle = `rgba(139, 69, 19, ${Math.random() * 0.08})`;
+        ctx.fillRect(Math.random() * width, Math.random() * height, Math.random() * 3, Math.random() * 3);
+    }
+    
+    // Outer red border
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 10;
     ctx.strokeRect(0, 0, width, height);
+    
+    // Thin inner border for softening
+    ctx.strokeStyle = '#CD853F';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(12, 12, width - 24, height - 24);
+    
+    // Main inner border
+    ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
@@ -82,15 +98,15 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - Using Captain Kidd NF font
+    // DEAD OR ALIVE - Using Captain Kidd NF font with tighter spacing and smaller size
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.font = '60px CaptainKiddNF, Arial, sans-serif'; // Captain Kidd NF font for DEAD OR ALIVE
-    const deadOrAliveY = photoY + photoH + 25;
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Reduced from 60px (5% smaller)
+    const deadOrAliveY = photoY + photoH + 20; // Reduced spacing from 25 to 20
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - Using Captain Kidd NF font
+    // Pirate name - Using Captain Kidd NF font with better centering
     ctx.font = '55px CaptainKiddNF, Arial, sans-serif'; // Captain Kidd NF font for pirate name
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -98,17 +114,20 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     // Check if name is too long and adjust font size
     ctx.textAlign = 'center';
-    const nameWidth = ctx.measureText(displayName).width;
+    let nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 80) {
         ctx.font = '45px CaptainKiddNF, Arial, sans-serif'; // Smaller Captain Kidd NF for long names
+        nameWidth = ctx.measureText(displayName).width;
     }
     
-    const nameY = deadOrAliveY + 70;
+    const nameY = deadOrAliveY + 65; // Reduced from 70 to bring name closer
     ctx.fillStyle = '#111';
-    ctx.fillText(displayName, width / 2, nameY);
+    // Ensure perfect horizontal centering
+    const nameX = width / 2;
+    ctx.fillText(displayName, nameX, nameY);
 
-    // Bounty section - Using Cinzel font for the bounty amount
-    const bountyY = nameY + 100; // COMFORTABLE SPACING FROM NAME
+    // Bounty section - Using Cinzel font with better berry symbol alignment
+    const bountyY = nameY + 95; // Adjusted spacing
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
@@ -124,19 +143,23 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // PERFECT bounty with Cinzel font
-    const berryHeight = 45, berryWidth = 45;
+    // Perfect bounty with Cinzel font and better berry alignment
+    const berryHeight = 50, berryWidth = 50; // Slightly larger berry
     const bountyStr = bounty.toLocaleString();
     ctx.font = '68px Cinzel, Georgia, serif'; // Cinzel font for bounty amount
-    const gap = 12;
+    const gap = 15; // Slightly increased gap
     
     // Calculate total width for centering
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     const totalBountyWidth = berryWidth + gap + bountyTextWidth;
     const bountyStartX = (width - totalBountyWidth) / 2;
     
-    // Draw berry icon perfectly centered vertically with text
-    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
+    // Draw berry icon with better vertical alignment (centered with text baseline)
+    const textMetrics = ctx.measureText(bountyStr);
+    const textHeight = textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent;
+    const berryY = bountyY - (textHeight / 2) - (berryHeight / 2) + 5; // Better vertical centering
+    
+    ctx.drawImage(berryImg, bountyStartX, berryY, berryWidth, berryHeight);
     
     // Draw bounty text with perfect alignment
     ctx.textAlign = 'left';
@@ -144,13 +167,13 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
 
-    // MARINE text - Using Times New Normal font with letter spacing effect
+    // MARINE text - Using Times New Normal font with reduced letter spacing and smaller size
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = '30px TimesNewNormal, Times, serif'; // Times New Normal for MARINE
+    ctx.font = '26px TimesNewNormal, Times, serif'; // Reduced from 30px (13% smaller)
     
-    // Create letter-spaced effect for MARINE text (small caps style)
-    const marineText = 'M A R I N E';
+    // Create letter-spaced effect for MARINE text with reduced spacing
+    const marineText = 'M A R I N E'; // Reduced spacing from 'M A R I N E'
     ctx.fillText(marineText, width - 40, height - 40);
 
     return canvas.toBuffer('image/png');
