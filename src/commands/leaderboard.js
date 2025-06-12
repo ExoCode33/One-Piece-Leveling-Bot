@@ -37,12 +37,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - positioned higher and bigger
+    // WANTED header - with red shadow effect
     ctx.font = ctxFont('bold', 90); // Even bigger font
-    ctx.fillStyle = '#000'; // Pure black for contrast
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'top'; // Changed to top for better control
-    const wantedY = 30; // Closer to top
+    ctx.textBaseline = 'top';
+    const wantedY = 30;
+    
+    // Draw red shadow first
+    ctx.fillStyle = '#DC143C'; // Crimson red
+    ctx.fillText('WANTED', width / 2 + 3, wantedY + 3);
+    
+    // Draw black text on top
+    ctx.fillStyle = '#000';
     ctx.fillText('WANTED', width / 2, wantedY);
 
     // Profile picture - adjusted position
@@ -79,15 +85,21 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - tighter spacing from photo
+    // DEAD OR ALIVE - with red shadow effect
     ctx.font = ctxFont('bold', 40); // Slightly bigger
-    ctx.fillStyle = '#000';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     const deadOrAliveY = photoY + photoH + 15; // Reduced gap
+    
+    // Draw red shadow first
+    ctx.fillStyle = '#DC143C';
+    ctx.fillText('DEAD OR ALIVE', width / 2 + 2, deadOrAliveY + 2);
+    
+    // Draw black text on top
+    ctx.fillStyle = '#000';
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - better spacing
+    // Pirate name - with red shadow effect
     ctx.font = ctxFont('bold', 65); // Consistent size
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 18);
@@ -106,9 +118,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
     }
     
     const nameY = deadOrAliveY + 55; // Reduced gap
+    
+    // Draw red shadow first
+    ctx.fillStyle = '#DC143C';
+    ctx.fillText(displayName, width / 2 + 2, nameY + 2);
+    
+    // Draw black text on top
+    ctx.fillStyle = '#000';
     ctx.fillText(displayName, width / 2, nameY);
 
-    // Bounty section - the focal point
+    // Bounty section - with red shadow effect
     const bountyY = nameY + 100; // More space for bounty
     let berryImg;
     try {
@@ -132,12 +151,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
         const totalWidth = berryWidth + gap + bountyTextWidth;
         const bountyStartX = (width - totalWidth) / 2;
         
-        // Draw berry icon
+        // Draw berry icon (no shadow for icon)
         ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
         
-        // Draw bounty text
+        // Draw bounty text with shadow
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
+        
+        // Red shadow
+        ctx.fillStyle = '#DC143C';
+        ctx.fillText(bountyStr, bountyStartX + berryWidth + gap + 3, bountyY + 3);
+        
+        // Black text
         ctx.fillStyle = '#000';
         ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
     } else {
@@ -145,6 +170,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.font = ctxFont('bold', 75);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        
+        // Red shadow
+        ctx.fillStyle = '#DC143C';
+        ctx.fillText(`฿ ${bountyStr}`, width / 2 + 3, bountyY + 3);
+        
+        // Black text
         ctx.fillStyle = '#000';
         ctx.fillText(`฿ ${bountyStr}`, width / 2, bountyY);
     }
