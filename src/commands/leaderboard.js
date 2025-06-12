@@ -157,8 +157,8 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const nameX = width / 2;
     ctx.fillText(displayName, nameX, nameY);
 
-    // Bounty section - Left-aligned with name, reduced size, better berry alignment
-    const bountyY = nameY + 75;
+    // Bounty section - Properly positioned on separate line, centered
+    const bountyY = nameY + 80; // Proper spacing below the name
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
@@ -174,27 +174,26 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // Bounty with Cinzel font, reduced size and left-aligned with name
+    // Bounty with Cinzel font, properly centered
     const berryHeight = 45, berryWidth = 45;
     const bountyStr = bounty.toLocaleString();
-    ctx.font = '63px Cinzel, Georgia, serif'; // Reduced to 92% of 68px
-    ctx.letterSpacing = '0px'; // Reset letter spacing
+    ctx.font = '63px Cinzel, Georgia, serif'; // Reduced size as requested
+    ctx.letterSpacing = '0px';
     const gap = 12;
     
-    // Left-align with the name instead of centering across poster
+    // Center the entire bounty line (berry + number)
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     const totalBountyWidth = berryWidth + gap + bountyTextWidth;
-    const nameTextWidth = ctx.measureText(displayName).width;
-    const bountyStartX = (width / 2) - (nameTextWidth / 2); // Align with left edge of name
+    const bountyStartX = (width - totalBountyWidth) / 2;
     
-    // Draw berry icon with better vertical alignment
+    // Draw berry icon with proper vertical alignment
     const textMetrics = ctx.measureText(bountyStr);
     const textHeight = textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent;
-    const berryY = bountyY - (textHeight / 2) - (berryHeight / 2) + 8; // Raised slightly for mid-height alignment
+    const berryY = bountyY - (textHeight / 2) - (berryHeight / 2) + 8;
     
     ctx.drawImage(berryImg, bountyStartX, berryY, berryWidth, berryHeight);
     
-    // Draw bounty text left-aligned
+    // Draw bounty text properly aligned
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
