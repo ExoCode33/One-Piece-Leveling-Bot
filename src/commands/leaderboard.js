@@ -21,7 +21,7 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-// Utility: draw wanted poster with perfect text spacing - NO OVERLAPS
+// Utility: draw wanted poster with perfect text spacing - FIXED POSITIONING
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
@@ -37,19 +37,20 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - AWAY FROM BORDER with proper spacing
-    ctx.font = ctxFont('bold', 70); // Slightly smaller to fit better
-    ctx.fillStyle = '#111';
+    // WANTED header - positioned higher and bigger
+    ctx.font = ctxFont('bold', 80); // Bigger font
+    ctx.fillStyle = '#000'; // Pure black for contrast
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const wantedY = 70; // Clear space from top border
+    ctx.textBaseline = 'top'; // Changed to top for better control
+    const wantedY = 35; // Closer to top
     ctx.fillText('WANTED', width / 2, wantedY);
 
-    // Profile picture - clear gap after WANTED
-    const photoW = 300, photoH = 300; // Slightly smaller for better proportions
-    const photoX = (width - photoW) / 2, photoY = 110; // Clear gap from WANTED
+    // Profile picture - adjusted position
+    const photoW = 340, photoH = 340; // Bigger photo
+    const photoX = (width - photoW) / 2;
+    const photoY = 130; // Adjusted for new WANTED position
     ctx.strokeStyle = '#8B0000';
-    ctx.lineWidth = 7;
+    ctx.lineWidth = 8;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
     ctx.fillStyle = '#fff';
     ctx.fillRect(photoX, photoY, photoW, photoH);
@@ -58,7 +59,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     try {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
-    const avatarArea = { x: photoX + 7, y: photoY + 7, width: photoW - 14, height: photoH - 14 };
+    const avatarArea = { x: photoX + 8, y: photoY + 8, width: photoW - 16, height: photoH - 16 };
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -78,70 +79,83 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - clear spacing from photo
-    ctx.font = ctxFont('bold', 38);
-    ctx.fillStyle = '#111';
+    // DEAD OR ALIVE - tighter spacing from photo
+    ctx.font = ctxFont('bold', 40); // Slightly bigger
+    ctx.fillStyle = '#000';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const deadOrAliveY = photoY + photoH + 25; // Clear gap from photo
+    const deadOrAliveY = photoY + photoH + 15; // Reduced gap
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - CLEAR SEPARATION from DEAD OR ALIVE
-    ctx.font = ctxFont('bold', 60); // Slightly smaller for better fit
+    // Pirate name - better spacing
+    ctx.font = ctxFont('bold', 65); // Consistent size
     let displayName = 'UNKNOWN PIRATE';
-    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 18);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
     
     // Check if name is too long and adjust font size
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
     const nameWidth = ctx.measureText(displayName).width;
-    if (nameWidth > width - 80) {
-        ctx.font = ctxFont('bold', 50); // Smaller if name is long
+    if (nameWidth > width - 100) {
+        ctx.font = ctxFont('bold', 55); // Smaller if name is long
+        const newWidth = ctx.measureText(displayName).width;
+        if (newWidth > width - 100) {
+            ctx.font = ctxFont('bold', 45); // Even smaller
+        }
     }
     
-    const nameY = deadOrAliveY + 70; // CLEAR separation - 70px gap
+    const nameY = deadOrAliveY + 55; // Reduced gap
     ctx.fillText(displayName, width / 2, nameY);
 
-    // Bounty section - CLEAR SEPARATION from name
-    const bountyY = nameY + 80; // CLEAR separation - 80px gap
+    // Bounty section - the focal point
+    const bountyY = nameY + 90; // Better spacing
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
     } catch {
         console.log('Berry icon not found, creating placeholder...');
-        const berryCanvas = Canvas.createCanvas(50, 50);
+        const berryCanvas = Canvas.createCanvas(60, 60);
         const berryCtx = berryCanvas.getContext('2d');
-        berryCtx.fillStyle = '#111';
-        berryCtx.font = 'bold 40px serif';
+        berryCtx.fillStyle = '#000';
+        berryCtx.font = 'bold 45px serif';
         berryCtx.textAlign = 'center';
         berryCtx.textBaseline = 'middle';
-        berryCtx.fillText('฿', 25, 25);
+        berryCtx.fillText('฿', 30, 30);
         berryImg = berryCanvas;
     }
     
+    // Draw decorative dashes first
+    ctx.font = ctxFont('', 50);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000';
+    ctx.fillText('–', width / 2 - 160, bountyY);
+    ctx.fillText('–', width / 2 + 160, bountyY);
+    
     // Perfect bounty layout - berry and text properly aligned
-    const berryHeight = 55, berryWidth = 55; 
+    const berryHeight = 60, berryWidth = 60; 
     const bountyStr = bounty.toLocaleString();
-    ctx.font = ctxFont('bold', 65); // Slightly smaller for better proportions
-    const bountyWidth = ctx.measureText(bountyStr).width;
-    const gap = 12; 
-    const totalWidth = berryWidth + gap + bountyWidth;
+    ctx.font = ctxFont('bold', 70); // Bigger bounty text
+    const bountyTextWidth = ctx.measureText(bountyStr).width;
+    const gap = 15; 
+    const totalWidth = berryWidth + gap + bountyTextWidth;
     const bountyStartX = (width - totalWidth) / 2;
     
-    // Draw bounty text first with middle baseline
+    // Draw berry icon
+    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
+    
+    // Draw bounty text
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#111';
+    ctx.fillStyle = '#000';
     ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
-    
-    // Draw berry icon perfectly centered with text
-    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
 
-    // MARINE text - positioned at bottom with clear margin
+    // MARINE text - positioned at bottom right
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = ctxFont('bold', 30);
-    ctx.fillText('MARINE', width - 40, height - 40); // Clear margin from edges
+    ctx.font = ctxFont('bold', 35);
+    ctx.fillText('MARINE', width - 45, height - 45);
 
     return canvas.toBuffer('image/png');
 }
@@ -278,11 +292,11 @@ module.exports = {
             let text = '🏴‍☠️ **COMPLETE PIRATE REGISTRY** 🏴‍☠️\n\n';
             let rank = 1;
             if (pirateKingUser) {
-                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - Level ${pirateKingUser.level} - ₿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
+                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - Level ${pirateKingUser.level} - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
             for (const user of leaderboard) {
                 const bounty = getBountyForLevel(user.level);
-                text += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}> — Level **${user.level}** — ₿**${bounty.toLocaleString()}**\n`;
+                text += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}> — Level **${user.level}** — ฿**${bounty.toLocaleString()}**\n`;
                 rank++;
             }
             if (leaderboard.length === 0) {
@@ -300,14 +314,14 @@ module.exports = {
                 .setTimestamp();
             let description = '';
             if (pirateKingUser) {
-                description += `👑 **PIRATE KING**: <@${pirateKingUser.userId}>\nLevel ${pirateKingUser.level} • ₿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
+                description += `👑 **PIRATE KING**: <@${pirateKingUser.userId}>\nLevel ${pirateKingUser.level} • ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
             const topTen = leaderboard.slice(0, 10);
             for (let i = 0; i < topTen.length; i++) {
                 const user = topTen[i];
                 const rank = i + 1;
                 const bounty = getBountyForLevel(user.level);
-                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ₿${bounty.toLocaleString()}\n\n`;
+                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ฿${bounty.toLocaleString()}\n\n`;
             }
             if (topTen.length === 0) {
                 description = "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
