@@ -51,11 +51,11 @@ function drawTextSafe(ctx, text, x, y, maxWidth = null) {
     } catch (e) {}
 }
 
-// Poster generation function (improved layout)
+// Poster generation function (matching HTML styling exactly)
 async function createWantedPoster(user, rank, bounty, guild) {
-    const CANVAS_WIDTH = 350;
-    const CANVAS_HEIGHT = 500;
-    const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
+    const CANVAS_WIDTH = 400;
+    const CANVAS_HEIGHT = 600;
+    const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, serif, sans-serif`;
 
     try {
         const canvas = Canvas.createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -63,40 +63,70 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        // --- Background and borders ---
-        ctx.fillStyle = '#ecd3b1';
+        // --- Background (F5DEB3 - wheat color) ---
+        ctx.fillStyle = '#F5DEB3';
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // --- Main border (8px solid #8B0000) ---
         ctx.strokeStyle = '#8B0000';
         ctx.lineWidth = 8;
-        ctx.strokeRect(5, 5, CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10);
-        ctx.strokeStyle = '#dc143c';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(18, 18, CANVAS_WIDTH - 36, CANVAS_HEIGHT - 36);
+        ctx.strokeRect(4, 4, CANVAS_WIDTH - 8, CANVAS_HEIGHT - 8);
 
-        // --- Header: WANTED ---
-        ctx.font = ctxFont('bold', 42);
+        // --- Inner border area (10px margin from main border) ---
+        const innerX = 14;
+        const innerY = 14;
+        const innerWidth = CANVAS_WIDTH - 28;
+        const innerHeight = CANVAS_HEIGHT - 28;
+        ctx.fillStyle = '#F5DEB3';
+        ctx.fillRect(innerX, innerY, innerWidth, innerHeight);
+
+        // --- Header: WANTED (56px, bold, centered, letter-spacing) ---
+        ctx.font = ctxFont('bold', 56);
         ctx.fillStyle = '#8B0000';
         ctx.shadowColor = 'rgba(0,0,0,0.3)';
-        ctx.shadowBlur = 2;
-        ctx.fillText('WANTED', CANVAS_WIDTH / 2, 40);
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.shadowBlur = 4;
+        
+        // Manual letter spacing for WANTED
+        const wantedText = 'WANTED';
+        const letterSpacing = 6;
+        let totalWidth = 0;
+        for (let i = 0; i < wantedText.length; i++) {
+            totalWidth += ctx.measureText(wantedText[i]).width + (i < wantedText.length - 1 ? letterSpacing : 0);
+        }
+        let startX = (CANVAS_WIDTH - totalWidth) / 2;
+        for (let i = 0; i < wantedText.length; i++) {
+            ctx.fillText(wantedText[i], startX, 94); // Height: 80px from top + half
+            startX += ctx.measureText(wantedText[i]).width + letterSpacing;
+        }
+        
         ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
 
-        // --- Avatar ---
-        const photoY = 65;
-        const photoW = 180;
+        // --- Photo Frame (280x200, 4px border, centered) ---
+        const photoY = 94 + 40; // After WANTED text + spacing
+        const photoW = 280;
         const photoH = 200;
         const photoX = (CANVAS_WIDTH - photoW) / 2;
-        ctx.fillStyle = '#FFF';
+        
+        // White background
+        ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(photoX, photoY, photoW, photoH);
+        
+        // 4px border
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;
         ctx.strokeRect(photoX, photoY, photoW, photoH);
 
+        // Avatar inside frame
         let member = null;
         try {
             if (guild && user.userId) member = await guild.members.fetch(user.userId);
         } catch {}
-        const avatarArea = { x: photoX + 5, y: photoY + 5, width: photoW - 10, height: photoH - 10 };
+        
+        const avatarArea = { x: photoX + 4, y: photoY + 4, width: photoW - 8, height: photoH - 8 };
         if (member) {
             try {
                 const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
@@ -108,34 +138,105 @@ async function createWantedPoster(user, rank, bounty, guild) {
                 ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
                 ctx.restore();
             } catch {
-                ctx.fillStyle = '#bbb'; ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.fillStyle = '#ddd'; 
+                ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             }
         } else {
-            ctx.fillStyle = '#bbb'; ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            ctx.fillStyle = '#ddd'; 
+            ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
         }
 
-        // --- DEAD OR ALIVE (right below picture) ---
-        ctx.font = ctxFont('bold', 22);
-        ctx.fillStyle = '#222';
-        ctx.fillText('DEAD OR ALIVE', CANVAS_WIDTH / 2, photoY + photoH + 25);
+        // --- DEAD OR ALIVE (32px, bold, letter-spacing: 2px) ---
+        ctx.font = ctxFont('bold', 32);
+        ctx.fillStyle = '#8B0000';
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        ctx.shadowBlur = 2;
+        
+        const deadOrAliveText = 'DEAD OR ALIVE';
+        const deadLetterSpacing = 2;
+        let deadTotalWidth = 0;
+        for (let i = 0; i < deadOrAliveText.length; i++) {
+            deadTotalWidth += ctx.measureText(deadOrAliveText[i]).width + (i < deadOrAliveText.length - 1 ? deadLetterSpacing : 0);
+        }
+        let deadStartX = (CANVAS_WIDTH - deadTotalWidth) / 2;
+        const deadY = photoY + photoH + 25;
+        for (let i = 0; i < deadOrAliveText.length; i++) {
+            ctx.fillText(deadOrAliveText[i], deadStartX, deadY);
+            deadStartX += ctx.measureText(deadOrAliveText[i]).width + deadLetterSpacing;
+        }
 
-        // --- Name ---
-        ctx.font = ctxFont('bold', 28);
-        ctx.fillStyle = '#222';
+        // --- Name (48px, bold, letter-spacing: 6px) ---
+        ctx.font = ctxFont('bold', 48);
+        ctx.fillStyle = '#8B0000';
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.shadowBlur = 4;
+        
         let displayName = 'UNKNOWN PIRATE';
         if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
         else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
-        ctx.fillText(displayName, CANVAS_WIDTH / 2, photoY + photoH + 60);
+        
+        const nameLetterSpacing = 6;
+        let nameTotalWidth = 0;
+        for (let i = 0; i < displayName.length; i++) {
+            nameTotalWidth += ctx.measureText(displayName[i]).width + (i < displayName.length - 1 ? nameLetterSpacing : 0);
+        }
+        let nameStartX = (CANVAS_WIDTH - nameTotalWidth) / 2;
+        const nameY = deadY + 48;
+        for (let i = 0; i < displayName.length; i++) {
+            ctx.fillText(displayName[i], nameStartX, nameY);
+            nameStartX += ctx.measureText(displayName[i]).width + nameLetterSpacing;
+        }
 
-        // --- Bounty amount (under name) ---
-        ctx.font = ctxFont('bold', 40);
+        // --- Bounty (44px + 48px berry symbol, bold) ---
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.shadowBlur = 4;
+        
+        const bountyY = nameY + 50;
+        
+        // Berry symbol (48px)
+        ctx.font = ctxFont('bold', 48);
         ctx.fillStyle = '#8B0000';
-        ctx.fillText(formatCommas(bounty), CANVAS_WIDTH / 2, photoY + photoH + 105);
+        const berrySymbol = '₿';
+        const berryWidth = ctx.measureText(berrySymbol).width;
+        
+        // Bounty amount (44px)
+        ctx.font = ctxFont('bold', 44);
+        const bountyText = formatCommas(bounty);
+        const bountyWidth = ctx.measureText(bountyText).width;
+        
+        // Center both with 8px gap
+        const gap = 8;
+        const totalBountyWidth = berryWidth + gap + bountyWidth;
+        const bountyStartX = (CANVAS_WIDTH - totalBountyWidth) / 2;
+        
+        // Draw berry symbol
+        ctx.font = ctxFont('bold', 48);
+        ctx.fillText(berrySymbol, bountyStartX + berryWidth/2, bountyY);
+        
+        // Draw bounty amount
+        ctx.font = ctxFont('bold', 44);
+        ctx.fillText(bountyText, bountyStartX + berryWidth + gap + bountyWidth/2, bountyY);
 
-        // --- BERRY label ---
-        ctx.font = ctxFont('bold', 16);
-        ctx.fillStyle = '#222';
-        ctx.fillText('BERRY', CANVAS_WIDTH / 2, photoY + photoH + 125);
+        // --- MARINE text (bottom right, 18px, bold) ---
+        ctx.font = ctxFont('bold', 18);
+        ctx.fillStyle = '#8B0000';
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        ctx.shadowBlur = 2;
+        ctx.textAlign = 'right';
+        ctx.fillText('MARINE', CANVAS_WIDTH - 25, CANVAS_HEIGHT - 15);
+        
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
 
         return canvas.toBuffer('image/png');
     } catch (error) {
