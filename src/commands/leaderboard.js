@@ -86,7 +86,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textBaseline = 'top';
     ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 20);
 
-    // Pirate name - vertically centered in space between "DEAD OR ALIVE" and bounty
+    // Pirate name - positioned between DEAD OR ALIVE and bounty
     ctx.font = ctxFont('bold', 68);
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -99,15 +99,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.font = ctxFont('bold', 58);
     }
     
-    // Calculate space for name centering
-    const deadOrAliveY = photoY + photoH + 20;
-    const bountyAreaY = photoY + photoH + 180; // Space for bounty area
-    const nameSpaceHeight = bountyAreaY - deadOrAliveY - 50; // Available space for name
-    const nameY = deadOrAliveY + 50 + (nameSpaceHeight / 2); // Center in available space
-    ctx.fillText(displayName, width / 2, nameY);
+    // Position SHANKS between DEAD OR ALIVE and bounty
+    ctx.fillText(displayName, width / 2, photoY + photoH + 80);
 
-    // Bounty section - positioned lower with proper spacing
-    const bountyY = photoY + photoH + 180;
+    // Bounty section - positioned lower 
+    const bountyY = photoY + photoH + 160;
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
@@ -123,7 +119,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // Optimized bounty layout with berry perfectly centered with text
+    // Optimized bounty layout with berry centered with text middle
     const berryHeight = 60, berryWidth = 60; 
     const bountyStr = bounty.toLocaleString();
     ctx.font = ctxFont('bold', 72); 
@@ -132,18 +128,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const totalWidth = berryWidth + gap + bountyWidth;
     const bountyStartX = (width - totalWidth) / 2;
     
-    // Calculate text baseline for perfect berry alignment
+    // Set text baseline for bounty text
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle'; // Use middle baseline for easier alignment
+    ctx.textBaseline = 'middle';
     
-    // Draw berry icon - perfectly centered with text middle line
-    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
-    
-    // Draw bounty text with perfect alignment
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle'; // Same as berry for perfect alignment
+    // Draw bounty text first to establish the baseline
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
+    
+    // Draw berry icon centered with the text middle line
+    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
+    
+
 
     // MARINE text - positioned at very bottom
     ctx.textAlign = 'right';
