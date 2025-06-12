@@ -6,6 +6,7 @@ const path = require('path');
 
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Pirate King Role ID
 const berryPath = path.join(__dirname, '../../assets/berry.png'); // Make sure your berry.png is here
+const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png'); // One Piece logo
 
 // Register custom fonts
 try {
@@ -64,13 +65,22 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const wantedY = 105;
     ctx.fillText('WANTED', width / 2, wantedY);
 
-    // Profile picture - ADJUSTED FOR NEW WANTED POSITION
+    // Profile picture with enhanced framing and weathered effect
     const photoW = 300, photoH = 300;
     const photoX = (width - photoW) / 2;
     const photoY = 155; // MOVED DOWN to account for new WANTED position
+    
+    // Outer red border
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
+    
+    // Inner thin black border for inked look
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(photoX + 5, photoY + 5, photoW - 10, photoH - 10);
+    
+    // White background
     ctx.fillStyle = '#fff';
     ctx.fillRect(photoX, photoY, photoW, photoH);
 
@@ -83,11 +93,22 @@ async function createWantedPoster(user, rank, bounty, guild) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
             const avatar = await Canvas.loadImage(avatarURL);
+            
+            // Apply weathered effect to image
             ctx.save();
             ctx.beginPath();
             ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             ctx.clip();
+            
+            // Slightly reduce contrast and add sepia tone for weathered look
+            ctx.filter = 'contrast(0.9) sepia(0.1)';
             ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            
+            // Add subtle paper texture overlay
+            ctx.filter = 'none';
+            ctx.fillStyle = 'rgba(245, 222, 179, 0.15)'; // Very light parchment overlay
+            ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            
             ctx.restore();
         } catch {
             ctx.fillStyle = '#ddd';
@@ -106,8 +127,8 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const deadOrAliveY = photoY + photoH + 20; // Reduced spacing from 25 to 20
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - Using Captain Kidd NF font with better centering
-    ctx.font = '55px CaptainKiddNF, Arial, sans-serif'; // Captain Kidd NF font for pirate name
+    // Pirate name - Using Captain Kidd NF font with increased size for dominance
+    ctx.font = '62px CaptainKiddNF, Arial, sans-serif'; // Increased from 55px for more dominance
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -116,7 +137,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     let nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 80) {
-        ctx.font = '45px CaptainKiddNF, Arial, sans-serif'; // Smaller Captain Kidd NF for long names
+        ctx.font = '50px CaptainKiddNF, Arial, sans-serif'; // Increased from 45px proportionally
         nameWidth = ctx.measureText(displayName).width;
     }
     
@@ -126,8 +147,8 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const nameX = width / 2;
     ctx.fillText(displayName, nameX, nameY);
 
-    // Bounty section - Using Cinzel font with better berry symbol alignment
-    const bountyY = nameY + 95; // Adjusted spacing
+    // Bounty section - Using Cinzel font with bounty positioned closer to name
+    const bountyY = nameY + 85; // Reduced from 95 to bring bounty closer to name
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
@@ -167,14 +188,30 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
 
-    // MARINE text - Using Times New Normal font with reduced letter spacing and smaller size
+    // MARINE text - More subtle and discreet like original posters
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = '26px TimesNewNormal, Times, serif'; // Reduced from 30px (13% smaller)
+    ctx.font = '22px TimesNewNormal, Times, serif'; // Further reduced by 15% (26px → 22px)
     
-    // Create letter-spaced effect for MARINE text with reduced spacing
-    const marineText = 'M A R I N E'; // Reduced spacing from 'M A R I N E'
+    // Create tighter letter-spaced effect for MARINE text
+    const marineText = 'M A R I N E'; // Tighter tracking
     ctx.fillText(marineText, width - 40, height - 40);
+
+    // Add One Piece logo at bottom center if available
+    try {
+        const onePieceLogo = await Canvas.loadImage(onePieceLogoPath);
+        const logoSize = 60; // Size of the logo
+        const logoX = (width - logoSize) / 2;
+        const logoY = height - 100; // Position above MARINE text
+        
+        // Apply slight transparency for subtle effect
+        ctx.globalAlpha = 0.8;
+        ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+        ctx.globalAlpha = 1.0; // Reset transparency
+    } catch {
+        // Logo not found, continue without it
+        console.log('One Piece logo not found at assets/one-piece-symbol.png');
+    }
 
     return canvas.toBuffer('image/png');
 }
