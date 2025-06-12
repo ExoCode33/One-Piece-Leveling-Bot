@@ -705,9 +705,3 @@ module.exports = {
                 embeds: []
             };
             
-            return isButtonInteraction 
-                ? interaction.editReply(responseData)
-                : interaction.reply(responseData);
-
-        } else {
-            // Top 10
