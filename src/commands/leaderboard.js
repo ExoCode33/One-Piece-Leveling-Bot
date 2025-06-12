@@ -49,12 +49,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // WANTED title - Size 35, Horiz 50, Vert 92
+    // WANTED title - Size 30, Horiz 50, Vert 91
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '105px CaptainKiddNF, Arial, sans-serif'; // Size 35/100 * 300 = 105px
-    const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
+    ctx.font = '90px CaptainKiddNF, Arial, sans-serif'; // Size 30/100 * 300 = 90px
+    const wantedY = height * (1 - 91/100); // Vert 91: 91% from bottom = 9% from top
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
 
@@ -103,16 +103,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // "DEAD OR ALIVE" - Size 11, Horiz 50, Vert 35
+    // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 40
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '33px CaptainKiddNF, Arial, sans-serif'; // Size 11/100 * 300 = 33px
-    const deadOrAliveY = height * (1 - 35/100); // Vert 35: 35% from bottom
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+    const deadOrAliveY = height * (1 - 40/100); // Vert 40: 40% from bottom
     const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Name ("SHANKS") - Size 19, Horiz 50, Vert 40
+    // Name ("SHANKS") - Size 19, Horiz 50, Vert 35
     ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -125,14 +125,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.font = '45px CaptainKiddNF, Arial, sans-serif';
     }
     
-    const nameY = height * (1 - 40/100); // Vert 40: 40% from bottom
+    const nameY = height * (1 - 35/100); // Vert 35: 35% from bottom
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 20, Horiz 20, Vert 30
-    const berrySize = (20/100) * 150; // Size 20/100 * reasonable max = 30px
+    // Berry Symbol - Size 24, Horiz 20, Vert 32
+    const berrySize = (24/100) * 150; // Size 24/100 * reasonable max = 36px
     const berryX = ((20/100) * width) - (berrySize/2); // Horiz 20: left side
-    const berryY = height * (1 - 30/100) - (berrySize/2); // Vert 30: 30% from bottom
+    const berryY = height * (1 - 32/100) - (berrySize/2); // Vert 32: 32% from bottom
     
     let berryImg;
     try {
@@ -151,23 +151,23 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 16, Horiz 25, Vert 30
+    // Bounty Numbers - Size 18, Horiz 30, Vert 32
     const bountyStr = bounty.toLocaleString();
-    ctx.font = '48px Cinzel, Georgia, serif'; // Size 16/100 * 300 = 48px
-    const bountyX = (25/100) * width; // Horiz 25: slightly right of berry
-    const bountyY = height * (1 - 30/100); // Vert 30: 30% from bottom (same as berry)
+    ctx.font = '54px Cinzel, Georgia, serif'; // Size 18/100 * 300 = 54px
+    const bountyX = (30/100) * width; // Horiz 30: right of berry
+    const bountyY = height * (1 - 32/100); // Vert 32: 32% from bottom (same as berry)
     
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyX, bountyY);
 
-    // One Piece logo - Size 8, Horiz 50, Vert 12
+    // One Piece logo - Size 16, Horiz 50, Vert 4
     try {
         const onePieceLogo = await Canvas.loadImage(onePieceLogoPath);
-        const logoSize = (8/100) * 200; // Size 8/100 * reasonable max = 16px
+        const logoSize = (16/100) * 200; // Size 16/100 * reasonable max = 32px
         const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
-        const logoY = height * (1 - 12/100) - (logoSize/2); // Vert 12: 12% from bottom
+        const logoY = height * (1 - 4/100) - (logoSize/2); // Vert 4: 4% from bottom
         
         ctx.globalAlpha = 0.6;
         ctx.filter = 'sepia(0.2) brightness(0.9)';
