@@ -1,4 +1,4 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard with Perfect Text Spacing
+// src/commands/leaderboard.js - One Piece Themed Leaderboard with Custom Fonts
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 const Canvas = require('canvas');
@@ -7,11 +7,15 @@ const path = require('path');
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Pirate King Role ID
 const berryPath = path.join(__dirname, '../../assets/berry.png'); // Make sure your berry.png is here
 
-// Register custom font if available
+// Register custom fonts
 try {
-    Canvas.registerFont(path.join(__dirname, '../../assets/fonts/pirate.ttf'), { family: 'PirateFont' });
-} catch {
-    // fallback to system font
+    Canvas.registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    Canvas.registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Regular.otf'), { family: 'Cinzel' });
+    Canvas.registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+    console.log('[DEBUG] Successfully registered custom fonts for wanted posters');
+} catch (error) {
+    console.error('[ERROR] Failed to register custom fonts:', error.message);
+    console.log('[INFO] Falling back to system fonts');
 }
 
 function pirateRankEmoji(rank) {
@@ -21,10 +25,9 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-// Utility: draw wanted poster with PERFECT TEXT WIDTH AND POSITIONING
+// Utility: draw wanted poster with CUSTOM FONTS
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
-    const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px Arial, sans-serif`; // REMOVED PirateFont to get cleaner, less bold text
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -37,11 +40,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - CLEAN, NON-BOLD TEXT
+    // WANTED header - Using Captain Kidd NF font
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `${80}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    ctx.font = '80px CaptainKiddNF, Arial, sans-serif'; // Captain Kidd NF font for WANTED
     const wantedY = 105;
     ctx.fillText('WANTED', width / 2, wantedY);
 
@@ -79,16 +82,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - CLEAN, NON-BOLD TEXT
+    // DEAD OR ALIVE - Using Captain Kidd NF font
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.font = `${60}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    ctx.font = '60px CaptainKiddNF, Arial, sans-serif'; // Captain Kidd NF font for DEAD OR ALIVE
     const deadOrAliveY = photoY + photoH + 25;
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - CLEAN, NON-BOLD TEXT
-    ctx.font = `${55}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    // Pirate name - Using Captain Kidd NF font
+    ctx.font = '55px CaptainKiddNF, Arial, sans-serif'; // Captain Kidd NF font for pirate name
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -97,14 +100,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     const nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 80) {
-        ctx.font = `${45}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+        ctx.font = '45px CaptainKiddNF, Arial, sans-serif'; // Smaller Captain Kidd NF for long names
     }
     
     const nameY = deadOrAliveY + 70;
     ctx.fillStyle = '#111';
     ctx.fillText(displayName, width / 2, nameY);
 
-    // Bounty section - INCREASED SIZE TO MATCH OTHER TEXT
+    // Bounty section - Using Cinzel font for the bounty amount
     const bountyY = nameY + 100; // COMFORTABLE SPACING FROM NAME
     let berryImg;
     try {
@@ -121,10 +124,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // PERFECT bounty with CLEAN, NON-BOLD TEXT
+    // PERFECT bounty with Cinzel font
     const berryHeight = 45, berryWidth = 45;
     const bountyStr = bounty.toLocaleString();
-    ctx.font = `${68}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    ctx.font = '68px Cinzel, Georgia, serif'; // Cinzel font for bounty amount
     const gap = 12;
     
     // Calculate total width for centering
@@ -141,11 +144,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
 
-    // MARINE text - CLEAN, NON-BOLD
+    // MARINE text - Using Times New Normal font with letter spacing effect
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = `${30}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
-    ctx.fillText('MARINE', width - 40, height - 40);
+    ctx.font = '30px TimesNewNormal, Times, serif'; // Times New Normal for MARINE
+    
+    // Create letter-spaced effect for MARINE text (small caps style)
+    const marineText = 'M A R I N E';
+    ctx.fillText(marineText, width - 40, height - 40);
 
     return canvas.toBuffer('image/png');
 }
