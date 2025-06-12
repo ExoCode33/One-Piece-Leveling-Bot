@@ -136,9 +136,27 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 32, Horiz 17, Vert 22
+    // Berry Symbol and Bounty Numbers - Dynamic centering with fixed distance
+    // Calculate the fixed distance between berry and numbers (22 - 17 = 5 in our scale)
+    const berryBountyGap = 5; // Fixed gap in our 1-100 scale
+    
+    // Measure bounty text width to calculate total unit width
+    const bountyStr = bounty.toLocaleString();
+    ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
+    const bountyTextWidth = ctx.measureText(bountyStr).width;
+    
+    // Berry symbol size
     const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
-    const berryX = ((17/100) * width) - (berrySize/2); // Horiz 17: moved further left
+    
+    // Calculate total width of the bounty unit (berry + gap + text)
+    const gapPixels = (berryBountyGap/100) * width; // Convert gap to pixels
+    const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+    
+    // Center the entire bounty unit horizontally
+    const bountyUnitStartX = (width - totalBountyWidth) / 2;
+    
+    // Position berry symbol at the start of the centered unit
+    const berryX = bountyUnitStartX + (berrySize/2); // Center of berry symbol
     const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
     
     let berryImg;
@@ -156,13 +174,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
+    ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 18, Horiz 22, Vert 22
-    // Font used: Cinzel Bold (Georgia serif as fallback)
-    const bountyStr = bounty.toLocaleString();
-    ctx.font = '54px Cinzel, Georgia, serif'; // Size 18/100 * 300 = 54px - CINZEL BOLD FONT
-    const bountyX = (22/100) * width; // Horiz 22: positioned closer to berry
+    // Position bounty numbers with fixed gap from berry
+    const bountyX = bountyUnitStartX + berrySize + gapPixels; // Start after berry + gap
     const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
     
     ctx.textAlign = 'left';
