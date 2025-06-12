@@ -49,19 +49,19 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // WANTED title - Size 24, Horiz 55, Vert 93
+    // WANTED title - Size 24, Horiz 55, Vert 93 (93% from bottom = near top)
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '72px CaptainKiddNF, Arial, sans-serif'; // Size 24/100 * 300 = 72px
-    const wantedY = height - (93/100 * height); // Vert 93 from bottom
-    const wantedX = (55/100) * width; // Horiz 55 from left
+    const wantedY = height * (1 - 93/100); // Vert 93: 93% from bottom = 7% from top
+    const wantedX = (55/100) * width; // Horiz 55: 55% from left
     ctx.fillText('WANTED', wantedX, wantedY);
 
-    // Image Box - Size 62, Horiz 50, Vert 73
-    const photoSize = (62/100) * 500; // Size 62/100 * max size = 310px
-    const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50 centered
-    const photoY = height - ((73/100) * height) - (photoSize/2); // Vert 73 from bottom
+    // Image Box - Size 62, Horiz 50, Vert 73 (73% from bottom = upper middle)
+    const photoSize = (62/100) * 400; // Size 62/100 * reasonable max = 248px
+    const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
+    const photoY = height * (1 - 73/100) - (photoSize/2); // Vert 73: 73% from bottom
     
     // Single thin black border only
     ctx.strokeStyle = '#000';
@@ -103,16 +103,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // "DEAD OR ALIVE" - Size 20, Horiz 50, Vert 45
+    // "DEAD OR ALIVE" - Size 20, Horiz 50, Vert 45 (45% from bottom = middle)
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '60px CaptainKiddNF, Arial, sans-serif'; // Size 20/100 * 300 = 60px
-    const deadOrAliveY = height - ((45/100) * height); // Vert 45 from bottom
-    const deadOrAliveX = (50/100) * width; // Horiz 50 centered
+    const deadOrAliveY = height * (1 - 45/100); // Vert 45: 45% from bottom
+    const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Name ("SHANKS") - Size 20, Horiz 50, Vert 35
+    // Name ("SHANKS") - Size 20, Horiz 50, Vert 35 (35% from bottom = lower middle)
     ctx.font = '60px CaptainKiddNF, Arial, sans-serif'; // Size 20/100 * 300 = 60px
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -125,14 +125,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.font = '48px CaptainKiddNF, Arial, sans-serif';
     }
     
-    const nameY = height - ((35/100) * height); // Vert 35 from bottom
-    const nameX = (50/100) * width; // Horiz 50 centered
+    const nameY = height * (1 - 35/100); // Vert 35: 35% from bottom
+    const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 16, Horiz 42, Vert 25
-    const berrySize = (16/100) * 100; // Size 16/100 * max = 16px
-    const berryX = ((42/100) * width) - (berrySize/2); // Horiz 42 centered on symbol
-    const berryY = height - ((25/100) * height) - (berrySize/2); // Vert 25 from bottom
+    // Berry Symbol - Size 16, Horiz 42, Vert 25 (25% from bottom = lower area)
+    const berrySize = (16/100) * 150; // Size 16/100 * reasonable max = 24px
+    const berryX = ((42/100) * width) - (berrySize/2); // Horiz 42: left of center
+    const berryY = height * (1 - 25/100) - (berrySize/2); // Vert 25: 25% from bottom
     
     let berryImg;
     try {
@@ -151,23 +151,23 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 20, Horiz 58, Vert 25
+    // Bounty Numbers - Size 20, Horiz 58, Vert 25 (25% from bottom = same level as berry)
     const bountyStr = bounty.toLocaleString();
     ctx.font = '60px Cinzel, Georgia, serif'; // Size 20/100 * 300 = 60px
-    const bountyX = (58/100) * width; // Horiz 58
-    const bountyY = height - ((25/100) * height); // Vert 25 from bottom
+    const bountyX = (58/100) * width; // Horiz 58: right of center
+    const bountyY = height * (1 - 25/100); // Vert 25: 25% from bottom
     
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyX, bountyY);
 
-    // One Piece logo - Size 12, Horiz 50, Vert 10
+    // One Piece logo - Size 12, Horiz 50, Vert 10 (10% from bottom = near bottom)
     try {
         const onePieceLogo = await Canvas.loadImage(onePieceLogoPath);
-        const logoSize = (12/100) * 100; // Size 12/100 * max = 12px
-        const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50 centered
-        const logoY = height - ((10/100) * height) - (logoSize/2); // Vert 10 from bottom
+        const logoSize = (12/100) * 200; // Size 12/100 * reasonable max = 24px
+        const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
+        const logoY = height * (1 - 10/100) - (logoSize/2); // Vert 10: 10% from bottom
         
         ctx.globalAlpha = 0.6;
         ctx.filter = 'sepia(0.2) brightness(0.9)';
@@ -178,15 +178,15 @@ async function createWantedPoster(user, rank, bounty, guild) {
         console.log('One Piece logo not found at assets/one-piece-symbol.png');
     }
 
-    // "MARINE" - Size 6, Horiz 98, Vert 3
+    // "MARINE" - Size 6, Horiz 98, Vert 3 (3% from bottom = very bottom right)
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     ctx.font = '18px TimesNewNormal, Times, serif'; // Size 6/100 * 300 = 18px
     ctx.fillStyle = '#111';
     
     const marineText = 'M A R I N E';
-    const marineX = (98/100) * width; // Horiz 98 from left
-    const marineY = height - ((3/100) * height); // Vert 3 from bottom
+    const marineX = (98/100) * width; // Horiz 98: far right
+    const marineY = height * (1 - 3/100); // Vert 3: 3% from bottom
     ctx.fillText(marineText, marineX, marineY);
 
     return canvas.toBuffer('image/png');
