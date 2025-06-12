@@ -70,14 +70,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
 
-    // Image Box - Size 95, Horiz 50, Vert 65 with smaller border to eliminate gap
+    // Image Box - Size 95, Horiz 50, Vert 65 with slightly wider border
     const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
     const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
     const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
     
-    // Thinner black border to eliminate gap
-    ctx.strokeStyle = '#000000'; // Ensure black border
-    ctx.lineWidth = 1; // Reduced from 2 to eliminate gap
+    // Slightly wider black border
+    ctx.strokeStyle = '#000000'; // Black border
+    ctx.lineWidth = 3; // Increased from 1 to 3 for wider border
     ctx.strokeRect(photoX, photoY, photoSize, photoSize);
     
     // No white background - image goes directly on texture
@@ -87,7 +87,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
     
-    const avatarArea = { x: photoX + 1, y: photoY + 1, width: photoSize - 2, height: photoSize - 2 }; // Adjusted for thinner border
+    const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 }; // Adjusted for wider border
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -136,9 +136,9 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 32, Horiz 19, Vert 22
+    // Berry Symbol - Size 32, Horiz 17, Vert 22
     const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
-    const berryX = ((19/100) * width) - (berrySize/2); // Horiz 19: slightly more left
+    const berryX = ((17/100) * width) - (berrySize/2); // Horiz 17: moved further left
     const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
     
     let berryImg;
@@ -158,11 +158,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 20, Horiz 23, Vert 22
-    // Font used: Cinzel (Georgia serif as fallback)
+    // Bounty Numbers - Size 18, Horiz 21, Vert 22
+    // Font used: Cinzel Bold (Georgia serif as fallback)
     const bountyStr = bounty.toLocaleString();
-    ctx.font = '60px Cinzel, Georgia, serif'; // Size 20/100 * 300 = 60px - CINZEL FONT
-    const bountyX = (23/100) * width; // Horiz 23: closer to berry
+    ctx.font = '54px Cinzel, Georgia, serif'; // Size 18/100 * 300 = 54px - CINZEL BOLD FONT
+    const bountyX = (21/100) * width; // Horiz 21: moved closer to berry
     const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
     
     ctx.textAlign = 'left';
