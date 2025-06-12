@@ -1,17 +1,17 @@
-// src/commands/leaderboard.js
-
+// src/commands/leaderboard.js - One Piece Themed Leaderboard with Canvas Poster
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 const Canvas = require('canvas');
 const path = require('path');
 
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Pirate King Role ID
+const berryPath = path.join(__dirname, '../../assets/berry.png'); // Make sure your berry.png is here
 
-// Register custom pirate font if available
+// Register custom font if available
 try {
     Canvas.registerFont(path.join(__dirname, '../../assets/fonts/pirate.ttf'), { family: 'PirateFont' });
 } catch {
-    // Fallback to Impact/Arial if not present
+    // fallback to system font
 }
 
 function pirateRankEmoji(rank) {
@@ -21,56 +21,38 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-function getThreatLevelShort(level) {
-    if (level >= 50) return 'YONKO CLASS';
-    if (level >= 45) return 'DEVIL FRUIT USER';
-    if (level >= 40) return 'VICE ADMIRAL RIVAL';
-    if (level >= 35) return 'CREW CAPTAIN';
-    if (level >= 30) return 'MASTER COMBATANT';
-    if (level >= 25) return 'EXTREMELY DANGEROUS';
-    if (level >= 20) return 'CAPTAIN LEVEL';
-    if (level >= 15) return 'GRAND LINE PIRATE';
-    if (level >= 10) return 'SQUAD DESTROYER';
-    if (level >= 5) return 'WANTED CRIMINAL';
-    return 'ROOKIE PIRATE';
-}
-
-// Poster generation (latest version)
+// Utility: draw wanted poster, fully centered and clean, using berry icon
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
-
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // === Background and Borders ===
+    // BG + border
     ctx.fillStyle = '#F5DEB3';
     ctx.fillRect(0, 0, width, height);
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 10;
     ctx.strokeRect(0, 0, width, height);
-    ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // === WANTED Header ===
-    ctx.font = ctxFont('bold', 86);
-    ctx.fillStyle = '#8B0000';
+    // WANTED header
+    ctx.font = ctxFont('bold', 90);
+    ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText('WANTED', width / 2, 70);
 
-    // === Avatar (square, perfectly centered) ===
-    const photoW = 340, photoH = 340;
-    const photoX = (width - photoW) / 2;
-    const photoY = 180;
+    // Profile picture (square, large, centered)
+    const photoW = 350, photoH = 350;
+    const photoX = (width - photoW) / 2, photoY = 180;
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
     ctx.fillStyle = '#fff';
     ctx.fillRect(photoX, photoY, photoW, photoH);
 
-    // Draw avatar
     let member = null;
     try {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
@@ -95,60 +77,41 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // === DEAD OR ALIVE ===
-    ctx.font = ctxFont('bold', 42);
-    ctx.fillStyle = '#8B0000';
+    // DEAD OR ALIVE
+    ctx.font = ctxFont('bold', 46);
+    ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 30);
 
-    // === Pirate Name ===
-    ctx.font = ctxFont('bold', 68);
+    // Pirate name
+    ctx.font = ctxFont('bold', 75);
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
-    ctx.fillText(displayName, width / 2, photoY + photoH + 90);
+    ctx.fillText(displayName, width / 2, photoY + photoH + 95);
 
-    // === Bounty (Berry symbol smaller and aligned) ===
-    const bountyY = photoY + photoH + 175;
-    const berryFontSize = 60;
-    ctx.font = ctxFont('bold', berryFontSize);
-    const berry = '₿';
-    const berryWidth = ctx.measureText(berry).width;
-
-    // Bounty amount
-    ctx.font = ctxFont('bold', 78);
+    // Bounty (berry image + number)
+    const bountyY = photoY + photoH + 200;
+    const berryImg = await Canvas.loadImage(berryPath);
+    const berryHeight = 50, berryWidth = 50;
     const bountyStr = bounty.toLocaleString();
+    ctx.font = ctxFont('bold', 82);
     const bountyWidth = ctx.measureText(bountyStr).width;
+    const totalWidth = berryWidth + 14 + bountyWidth;
+    const bountyStartX = (width - totalWidth) / 2;
+    ctx.drawImage(berryImg, bountyStartX, bountyY, berryWidth, berryHeight);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#111';
+    ctx.font = ctxFont('bold', 82);
+    ctx.fillText(bountyStr, bountyStartX + berryWidth + 14, bountyY + berryHeight / 2);
 
-    // Calculate total width
-    const gap = 16;
-    const totalBountyWidth = berryWidth + gap + bountyWidth;
-    const startX = (width - totalBountyWidth) / 2;
-
-    // Berry symbol
-    ctx.font = ctxFont('bold', berryFontSize);
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(berry, startX + berryWidth / 2, bountyY + 78);
-
-    // If ₿ doesn't show: use a small image instead!
-    // const berryImg = await Canvas.loadImage(path.join(__dirname, '../../assets/berry_symbol.png'));
-    // ctx.drawImage(berryImg, startX, bountyY + 8, 45, 55);
-
-    // Bounty number
-    ctx.font = ctxFont('bold', 78);
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(bountyStr, startX + berryWidth + gap + bountyWidth / 2, bountyY + 78);
-
-    // === MARINE (smaller, bottom right) ===
-    ctx.font = ctxFont('bold', 38);
-    ctx.fillStyle = '#8B0000';
+    // MARINE (small, lower right)
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
+    ctx.font = ctxFont('bold', 38);
     ctx.fillText('MARINE', width - 45, height - 35);
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
 
     return canvas.toBuffer('image/png');
 }
@@ -264,7 +227,7 @@ module.exports = {
                             .setTitle(pirate.isPirateKing ? '👑 PIRATE KING' : `${pirateRankEmoji(rank)} RANK ${rank}`)
                             .addFields(
                                 { name: '🏴‍☠️ Pirate', value: `<@${user.userId}>`, inline: true },
-                                { name: '💰 Bounty', value: `₿${bounty.toLocaleString()}`, inline: true },
+                                { name: '💰 Bounty', value: `${bounty.toLocaleString()}`, inline: true },
                                 { name: '⚔️ Level', value: `${user.level}`, inline: true },
                                 { name: '💎 Total XP', value: `${user.xp.toLocaleString()}`, inline: true },
                                 { name: '📍 Status', value: pirate.isPirateKing ? 'Ruler of the Grand Line' :
@@ -312,7 +275,7 @@ module.exports = {
                 const user = topTen[i];
                 const rank = i + 1;
                 const bounty = getBountyForLevel(user.level);
-                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ₿${bounty.toLocaleString()} • ${getThreatLevelShort(user.level)}\n\n`;
+                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ₿${bounty.toLocaleString()}\n\n`;
             }
             if (topTen.length === 0) {
                 description = "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
