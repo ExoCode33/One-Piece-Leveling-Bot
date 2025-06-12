@@ -1,4 +1,4 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard with Canvas Poster
+// src/commands/leaderboard.js - One Piece Themed Leaderboard with Optimized Canvas Poster
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 const Canvas = require('canvas');
@@ -21,7 +21,7 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-// Utility: draw wanted poster, fully centered and clean, using berry icon
+// Utility: draw wanted poster with optimized text placement
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
@@ -37,16 +37,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header
-    ctx.font = ctxFont('bold', 90);
+    // WANTED header - better positioning and spacing
+    ctx.font = ctxFont('bold', 85); // Slightly smaller for better proportion
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('WANTED', width / 2, 70);
+    ctx.fillText('WANTED', width / 2, 50); // Moved up slightly
 
-    // Profile picture (square, large, centered)
-    const photoW = 350, photoH = 350;
-    const photoX = (width - photoW) / 2, photoY = 180;
+    // Profile picture (square, large, centered) - adjusted position
+    const photoW = 320, photoH = 320; // Slightly smaller for better balance
+    const photoX = (width - photoW) / 2, photoY = 160; // Moved up
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
@@ -77,28 +77,34 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE
-    ctx.font = ctxFont('bold', 46);
+    // DEAD OR ALIVE - better spacing from photo
+    ctx.font = ctxFont('bold', 42); // Slightly smaller
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 30);
+    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 25); // Better spacing
 
-    // Pirate name
-    ctx.font = ctxFont('bold', 75);
+    // Pirate name - optimized positioning
+    ctx.font = ctxFont('bold', 68); // Adjusted size for better fit
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
-    ctx.fillText(displayName, width / 2, photoY + photoH + 95);
+    
+    // Check if name is too long and adjust font size
+    ctx.textAlign = 'center';
+    const nameWidth = ctx.measureText(displayName).width;
+    if (nameWidth > width - 80) {
+        ctx.font = ctxFont('bold', 58); // Smaller if name is long
+    }
+    ctx.fillText(displayName, width / 2, photoY + photoH + 85);
 
-    // Bounty (berry image + number)
-    const bountyY = photoY + photoH + 200;
+    // Bounty section - much better positioning and spacing
+    const bountyY = photoY + photoH + 170; // More space between name and bounty
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
     } catch {
         console.log('Berry icon not found, creating placeholder...');
-        // Create a simple ฿ symbol as fallback
         const berryCanvas = Canvas.createCanvas(50, 50);
         const berryCtx = berryCanvas.getContext('2d');
         berryCtx.fillStyle = '#111';
@@ -109,24 +115,29 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    const berryHeight = 50, berryWidth = 50;
+    // Optimized bounty layout
+    const berryHeight = 45, berryWidth = 45; // Slightly smaller berry
     const bountyStr = bounty.toLocaleString();
-    ctx.font = ctxFont('bold', 82);
+    ctx.font = ctxFont('bold', 72); // Better proportion
     const bountyWidth = ctx.measureText(bountyStr).width;
-    const totalWidth = berryWidth + 14 + bountyWidth;
+    const gap = 12; // Reduced gap
+    const totalWidth = berryWidth + gap + bountyWidth;
     const bountyStartX = (width - totalWidth) / 2;
-    ctx.drawImage(berryImg, bountyStartX, bountyY, berryWidth, berryHeight);
+    
+    // Draw berry icon
+    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
+    
+    // Draw bounty text with better alignment
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
-    ctx.font = ctxFont('bold', 82);
-    ctx.fillText(bountyStr, bountyStartX + berryWidth + 14, bountyY + berryHeight / 2);
+    ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
 
-    // MARINE (small, lower right)
+    // MARINE text - better positioning at bottom
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = ctxFont('bold', 38);
-    ctx.fillText('MARINE', width - 45, height - 35);
+    ctx.font = ctxFont('bold', 32); // Slightly smaller
+    ctx.fillText('MARINE', width - 35, height - 25); // Better margins
 
     return canvas.toBuffer('image/png');
 }
