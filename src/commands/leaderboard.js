@@ -704,4 +704,52 @@ module.exports = {
                 components: [row],
                 embeds: []
             };
+            return isButtonInteraction 
+                ? interaction.editReply(responseData)
+                : interaction.reply(responseData);
+
+        } else { // view === 'long' - Top 10 list
+            const embed = new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('🏴‍☠️ Top 10 Most Wanted Pirates')
+                .setDescription('The most notorious criminals on the Grand Line!')
+                .setFooter({ text: 'Marine Intelligence • World Government Bounty Board' })
+                .setTimestamp();
+
+            let description = '';
+            
+            if (pirateKingUser) {
+                description += `👑 **PIRATE KING**: <@${pirateKingUser.userId}>\n`;
+                description += `Level ${pirateKingUser.level} • ₿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
+            }
+
+            const topTen = leaderboard.slice(0, 10);
+            
+            for (let i = 0; i < topTen.length; i++) {
+                const user = topTen[i];
+                const rank = i + 1;
+                const bounty = getBountyForLevel(user.level);
+                const threat = getThreatLevelShort(user.level);
+                
+                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\n`;
+                description += `Level ${user.level} • ₿${bounty.toLocaleString()} • ${threat}\n\n`;
+            }
+
+            if (topTen.length === 0) {
+                description = "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
+            }
+
+            embed.setDescription(description);
+
+            const responseData = { 
+                embeds: [embed], 
+                components: [row]
+            };
+            
+            return isButtonInteraction 
+                ? interaction.editReply(responseData)
+                : interaction.reply(responseData);
+        }
+    },
+};
             
