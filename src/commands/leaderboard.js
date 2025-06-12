@@ -1,148 +1,142 @@
-=// src/commands/leaderboard.js - One Piece Wanted Poster Replica
+// src/commands/leaderboard.js - One Piece Poster, Perfect Text Placement
 
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 const Canvas = require('canvas');
 const path = require('path');
 
 const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Pirate King Role ID
 
-// Register pirate font if available (not required, will fallback)
+// Register your custom pirate font
 try {
     Canvas.registerFont(path.join(__dirname, '../../assets/fonts/pirate.ttf'), { family: 'PirateFont' });
-} catch { /* fallback to Impact */ }
+} catch (e) {
+    console.log('Custom font not found, using fallback fonts');
+}
 
-// Number formatting
-const formatCommas = n => n.toLocaleString();
+// Format numbers with commas
+function formatCommas(n) {
+    return n.toLocaleString();
+}
 
-async function createWantedPoster(user, bounty, guild) {
-    const W = 400, H = 600;
-    const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, serif, sans-serif`;
-    const canvas = Canvas.createCanvas(W, H);
-    const ctx = canvas.getContext('2d');
+// Util: draw left-aligned text with fallback
+function drawLeftText(ctx, text, x, y, maxWidth) {
+    ctx.textAlign = 'left';
+    ctx.fillText(text, x, y, maxWidth);
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+}
 
-    // Background & Borders
+// Main poster function
+async function createWantedPoster(user, rank, bounty, guild) {
+    const width = 600;
+    const height = 900;
+    const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
+
+    const canvas = Canvas.createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    // === Background and Border ===
     ctx.fillStyle = '#F5DEB3';
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, 0, width, height);
+
     ctx.strokeStyle = '#8B0000';
-    ctx.lineWidth = 8;
-    ctx.strokeRect(4, 4, W-8, H-8);
-    ctx.fillStyle = '#F5DEB3';
-    ctx.fillRect(14, 14, W-28, H-28);
+    ctx.lineWidth = 12;
+    ctx.strokeRect(0, 0, width, height);
 
-    // WANTED Header
-    ctx.font = ctxFont('bold', 56);
+    ctx.strokeStyle = '#8B0000';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(24, 24, width - 48, height - 48);
+
+    // === WANTED Header ===
+    ctx.font = ctxFont('bold', 100);
     ctx.fillStyle = '#8B0000';
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2; ctx.shadowBlur = 4;
-    const wanted = 'WANTED';
-    // Manual letter-spacing
-    let lsp = 6, x = 0;
-    for (let c of wanted) x += ctx.measureText(c).width + lsp;
-    let wx = (W - x + lsp) / 2;
-    for (let c of wanted) {
-        ctx.fillText(c, wx + ctx.measureText(c).width/2, 70);
-        wx += ctx.measureText(c).width + lsp;
-    }
-    ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+    ctx.shadowColor = 'rgba(0,0,0,0.25)';
+    ctx.shadowBlur = 5;
+    ctx.fillText('WANTED', width/2, 100);
 
-    // Photo Frame
-    const pW = 280, pH = 200, pX = (W-pW)/2, pY = 100;
+    ctx.shadowBlur = 0;
+
+    // === Photo Frame ===
+    const photoW = 400, photoH = 250;
+    const photoX = (width - photoW) / 2;
+    const photoY = 150;
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = '#8B0000';
+    ctx.strokeRect(photoX, photoY, photoW, photoH);
     ctx.fillStyle = '#fff';
-    ctx.fillRect(pX, pY, pW, pH);
-    ctx.strokeStyle = '#8B0000'; ctx.lineWidth = 4;
-    ctx.strokeRect(pX, pY, pW, pH);
+    ctx.fillRect(photoX, photoY, photoW, photoH);
 
-    // Avatar
+    // Draw avatar
     let member = null;
     try {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
-    const a = { x: pX+4, y: pY+4, w: pW-8, h: pH-8 };
+    const avatarArea = { x: photoX+8, y: photoY+8, width: photoW-16, height: photoH-16 };
     if (member) {
         try {
-            const url = member.user.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
-            const img = await Canvas.loadImage(url);
+            const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
+            const avatar = await Canvas.loadImage(avatarURL);
             ctx.save();
             ctx.beginPath();
-            ctx.rect(a.x, a.y, a.w, a.h);
+            ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             ctx.clip();
-            // Center-crop avatar
-            const scale = Math.max(a.w / img.width, a.h / img.height);
-            const sw = img.width * scale, sh = img.height * scale;
-            ctx.drawImage(img, a.x + (a.w-sw)/2, a.y + (a.h-sh)/2, sw, sh);
+            ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             ctx.restore();
         } catch {
-            ctx.fillStyle = '#ddd'; ctx.fillRect(a.x, a.y, a.w, a.h);
+            ctx.fillStyle = '#ddd';
+            ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
         }
-    } else { ctx.fillStyle = '#ddd'; ctx.fillRect(a.x, a.y, a.w, a.h); }
-
-    // DEAD OR ALIVE
-    ctx.font = ctxFont('bold', 32);
-    ctx.fillStyle = '#8B0000';
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-    ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1; ctx.shadowBlur = 2;
-    const doa = 'DEAD OR ALIVE';
-    lsp = 2; x = 0;
-    for (let c of doa) x += ctx.measureText(c).width + lsp;
-    wx = (W - x + lsp) / 2;
-    for (let c of doa) {
-        ctx.fillText(c, wx + ctx.measureText(c).width/2, pY + pH + 25);
-        wx += ctx.measureText(c).width + lsp;
+    } else {
+        ctx.fillStyle = '#ddd';
+        ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
-    ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
 
-    // Pirate Name
-    ctx.font = ctxFont('bold', 48);
+    // === DEAD OR ALIVE ===
+    ctx.font = ctxFont('bold', 46);
     ctx.fillStyle = '#8B0000';
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2; ctx.shadowBlur = 4;
-    let name = member 
-        ? member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().slice(0, 16)
-        : user.userId ? `PIRATE ${user.userId.slice(-4)}` : 'UNKNOWN PIRATE';
-    lsp = 6; x = 0;
-    for (let c of name) x += ctx.measureText(c).width + lsp;
-    wx = (W - x + lsp) / 2;
-    for (let c of name) {
-        ctx.fillText(c, wx + ctx.measureText(c).width/2, pY + pH + 75);
-        wx += ctx.measureText(c).width + lsp;
-    }
-    ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+    ctx.fillText('DEAD OR ALIVE', width/2, photoY + photoH + 65);
 
-    // Bounty - symbol + amount with gap, NO YELLOW CIRCLE!
-    ctx.font = ctxFont('bold', 48);
-    ctx.fillStyle = '#8B0000';
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2; ctx.shadowBlur = 4;
-    const bountySymbol = '฿';
-    const bountyText = formatCommas(bounty);
-    const berryW = ctx.measureText(bountySymbol).width, bountyW = ctx.measureText(bountyText).width;
-    const gap = 8, totalW = berryW + gap + bountyW;
-    ctx.fillText(bountySymbol, (W-totalW)/2 + berryW/2, pY + pH + 135);
+    // === Name ===
+    ctx.font = ctxFont('bold', 74);
+    let displayName = 'UNKNOWN PIRATE';
+    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 18);
+    else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
+    ctx.fillText(displayName, width/2, photoY + photoH + 130);
+
+    // === Bounty ===
+    ctx.font = ctxFont('bold', 80);
+    ctx.fillText(formatCommas(bounty), width/2, photoY + photoH + 220);
+
+    // === DE3F Box (left of bounty, optional, can remove) ===
     ctx.font = ctxFont('bold', 44);
-    ctx.fillText(bountyText, (W-totalW)/2 + berryW + gap + bountyW/2, pY + pH + 135);
-    ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = '#8B0000';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(60, photoY + photoH + 170, 70, 80);
+    ctx.fillStyle = '#8B0000';
+    ctx.textAlign = 'left';
+    ctx.fillText('DE', 70, photoY + photoH + 210);
+    ctx.fillText('3F', 70, photoY + photoH + 250);
+    ctx.textAlign = 'center';
 
-    // MARINE label (bottom right)
-    ctx.font = ctxFont('bold', 18);
+    // === Threat Assessment ===
+    ctx.font = ctxFont('bold', 56);
+    ctx.fillStyle = '#8B0000';
+    ctx.fillText('THREAT ASSESSMENT', width/2, photoY + photoH + 340);
+
+    // Threat level
+    ctx.font = ctxFont('bold', 44);
+    ctx.fillText('ROOKIE PIRATE', width/2, photoY + photoH + 400);
+
+    // === MARINE (bottom right, with gap above border) ===
+    ctx.font = ctxFont('bold', 46);
     ctx.fillStyle = '#8B0000';
     ctx.textAlign = 'right';
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-    ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1; ctx.shadowBlur = 2;
-    ctx.fillText('MARINE', W-25, H-15);
-    ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+    ctx.fillText('MARINE', width - 50, height - 38);
+
+    // Restore default
     ctx.textAlign = 'center';
 
     return canvas.toBuffer('image/png');
-}
-
-function pirateRankEmoji(rank) {
-    if (rank === 1) return '🥇';
-    if (rank === 2) return '🥈';
-    if (rank === 3) return '🥉';
-    return '🏴‍☠️';
 }
 
 module.exports = {
@@ -163,17 +157,22 @@ module.exports = {
         let guild = interaction.guild;
         let guildId = interaction.guildId;
         if (!guild && guildId) {
-            try { guild = await client.guilds.fetch(guildId); } catch { }
+            try { guild = await client.guilds.fetch(guildId); } catch {}
         }
-        if (!guild || !guildId) return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
+        if (!guild || !guildId) {
+            return interaction.reply({ content: "This command can only be used in a server, not in DMs.", ephemeral: true });
+        }
 
         const view = interaction.options.getString('view') || 'posters';
+
         let leaderboard;
         try { leaderboard = await xpTracker.getLeaderboard(guildId); }
-        catch { return interaction.reply({ content: "Database error occurred. Please try again later.", ephemeral: true }); }
-        if (!Array.isArray(leaderboard)) return interaction.reply({ content: "No leaderboard data available.", ephemeral: true });
+        catch { return interaction.reply({ content: "Database error occurred.", ephemeral: true }); }
+        if (!leaderboard || !Array.isArray(leaderboard)) {
+            return interaction.reply({ content: "No leaderboard data available.", ephemeral: true });
+        }
 
-        // Detect Pirate King
+        // Pirate King detection (same logic as before)
         let pirateKingUser = null;
         if (LEADERBOARD_EXCLUDE_ROLE) {
             try {
@@ -183,27 +182,41 @@ module.exports = {
                     pirateKingUser = leaderboard.find(u => u.userId === king.user.id);
                     if (pirateKingUser) leaderboard = leaderboard.filter(u => u.userId !== king.user.id);
                 }
-            } catch {}
+            } catch { pirateKingUser = null; }
         }
         if (!pirateKingUser && leaderboard.length > 0 && leaderboard[0].level >= 50) {
             pirateKingUser = leaderboard[0];
             leaderboard = leaderboard.slice(1);
         }
+
         leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number');
         leaderboard.sort((a, b) => b.xp - a.xp);
 
-        // Buttons
+        // Create navigation buttons
+        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('leaderboard_posters_1_xp').setLabel('🎯 Top 3 Posters').setStyle(view === 'posters' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('leaderboard_long_1_xp').setLabel('📋 Top 10 List').setStyle(view === 'long' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('leaderboard_full_1_xp').setLabel('📜 Full Board').setStyle(view === 'full' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            new ButtonBuilder()
+                .setCustomId('leaderboard_posters_1_xp')
+                .setLabel('🎯 Top 3 Posters')
+                .setStyle(view === 'posters' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('leaderboard_long_1_xp')
+                .setLabel('📋 Top 10 List')
+                .setStyle(view === 'long' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('leaderboard_full_1_xp')
+                .setLabel('📜 Full Board')
+                .setStyle(view === 'full' ? ButtonStyle.Primary : ButtonStyle.Secondary)
         );
 
         if (view === 'posters') {
+            // Top 3 posters (Pirate King + 3 best)
             const topThree = leaderboard.slice(0, 3);
             const allPirates = [];
-            if (pirateKingUser) allPirates.push({ user: pirateKingUser, isPirateKing: true });
-            for (let i = 0; i < topThree.length; i++) allPirates.push({ user: topThree[i], isPirateKing: false });
+            if (pirateKingUser) allPirates.push({ user: pirateKingUser, rank: 'KING', isPirateKing: true });
+            for (let i = 0; i < topThree.length; i++) {
+                allPirates.push({ user: topThree[i], rank: i + 1, isPirateKing: false });
+            }
             // Header
             const headerEmbed = new EmbedBuilder()
                 .setColor(0x8B0000)
@@ -215,39 +228,48 @@ module.exports = {
 
             // Posters
             for (let i = 0; i < Math.min(allPirates.length, 4); i++) {
-                const pirate = allPirates[i], user = pirate.user;
+                const pirate = allPirates[i];
+                const user = pirate.user;
+                const rank = pirate.rank;
                 const bounty = pirate.isPirateKing ? PIRATE_KING_BOUNTY : getBountyForLevel(user.level);
                 try {
-                    const posterBuffer = await createWantedPoster(user, bounty, guild);
+                    const posterBuffer = await createWantedPoster(user, rank, bounty, guild);
                     if (posterBuffer) {
                         const attachment = new AttachmentBuilder(posterBuffer, { name: `wanted_poster_${i + 1}.png` });
                         const posterEmbed = new EmbedBuilder()
                             .setColor(pirate.isPirateKing ? 0xFFD700 : 0x8B0000)
-                            .setTitle(pirate.isPirateKing ? '👑 PIRATE KING' : `${pirateRankEmoji(i + 1)} RANK ${i + 1}`)
+                            .setTitle(pirate.isPirateKing ? '👑 PIRATE KING' : `WANTED POSTER #${rank}`)
                             .addFields(
                                 { name: '🏴‍☠️ Pirate', value: `<@${user.userId}>`, inline: true },
-                                { name: '💰 Bounty', value: `฿${bounty.toLocaleString()}`, inline: true },
+                                { name: '💰 Bounty', value: bounty.toLocaleString(), inline: true },
                                 { name: '⚔️ Level', value: `${user.level}`, inline: true },
-                                { name: '💎 Total XP', value: `${user.xp.toLocaleString()}`, inline: true }
+                                { name: '💎 Total XP', value: `${user.xp.toLocaleString()}`, inline: true },
+                                { name: '📍 Status', value: pirate.isPirateKing ? 'Ruler of the Grand Line' :
+                                    rank === 1 ? 'Most Dangerous Pirate' : 
+                                    rank === 2 ? 'Rising Star' : 'Notorious Criminal', inline: true }
                             )
                             .setImage(`attachment://wanted_poster_${i + 1}.png`)
                             .setFooter({ text: `Marine Intelligence • Report any sightings immediately • Bounty #${String(i + 1).padStart(3, '0')}` });
                         await interaction.followUp({ embeds: [posterEmbed], files: [attachment] });
                     }
-                } catch { }
+                } catch (e) { }
             }
             return;
         } else if (view === 'full') {
             // Full text list
-            let text = '🏴‍☠️ **COMPLETE PIRATE REGISTRY** 🏴‍☠️\n\n', rank = 1;
-            if (pirateKingUser)
-                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - Level ${pirateKingUser.level} - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
+            let text = '🏴‍☠️ **COMPLETE PIRATE REGISTRY** 🏴‍☠️\n\n';
+            let rank = 1;
+            if (pirateKingUser) {
+                text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - Level ${pirateKingUser.level} - ${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
+            }
             for (const user of leaderboard) {
                 const bounty = getBountyForLevel(user.level);
-                text += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}> — Level **${user.level}** — ฿**${bounty.toLocaleString()}**\n`;
+                text += `#${rank} <@${user.userId}> — Level **${user.level}** — **${bounty.toLocaleString()}**\n`;
                 rank++;
             }
-            if (leaderboard.length === 0) text += "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
+            if (leaderboard.length === 0) {
+                text += "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
+            }
             const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
             return interaction.reply({ content: finalText, components: [row], embeds: [] });
         } else {
@@ -258,17 +280,20 @@ module.exports = {
                 .setDescription('The most notorious criminals on the Grand Line!')
                 .setFooter({ text: 'Marine Intelligence • World Government Bounty Board' })
                 .setTimestamp();
-            let description = '', rank = 1;
-            if (pirateKingUser)
-                description += `👑 **PIRATE KING**: <@${pirateKingUser.userId}>\nLevel ${pirateKingUser.level} • ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
-            const topTen = leaderboard.slice(0, 10);
-            for (const user of topTen) {
-                const bounty = getBountyForLevel(user.level);
-                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ฿${bounty.toLocaleString()}\n\n`;
-                rank++;
+            let description = '';
+            if (pirateKingUser) {
+                description += `👑 **PIRATE KING**: <@${pirateKingUser.userId}>\nLevel ${pirateKingUser.level} • ${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
-            if (topTen.length === 0)
+            const topTen = leaderboard.slice(0, 10);
+            for (let i = 0; i < topTen.length; i++) {
+                const user = topTen[i];
+                const rank = i + 1;
+                const bounty = getBountyForLevel(user.level);
+                description += `#${rank} <@${user.userId}>\nLevel ${user.level} • ${bounty.toLocaleString()}\n\n`;
+            }
+            if (topTen.length === 0) {
                 description = "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
+            }
             embed.setDescription(description);
             return interaction.reply({ embeds: [embed], components: [row] });
         }
