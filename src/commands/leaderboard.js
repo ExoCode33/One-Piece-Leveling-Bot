@@ -125,16 +125,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - Centered below image
+    // DEAD OR ALIVE - Centered below image with tighter spacing
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.font = '51px CaptainKiddNF, Arial, sans-serif';
     ctx.letterSpacing = '-1px';
-    const deadOrAliveY = photoY + photoSize + 30; // Good spacing below image
+    const deadOrAliveY = photoY + photoSize + 25; // Slightly increased spacing
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - Centered below "DEAD OR ALIVE"
+    // Pirate name - Centered below "DEAD OR ALIVE" with tighter spacing
     ctx.font = '71px CaptainKiddNF, Arial, sans-serif';
     ctx.letterSpacing = '0px';
     let displayName = 'UNKNOWN PIRATE';
@@ -149,12 +149,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
         nameWidth = ctx.measureText(displayName).width;
     }
     
-    const nameY = deadOrAliveY + 70; // Good spacing below "DEAD OR ALIVE"
+    const nameY = deadOrAliveY + 60; // Tighter spacing - reduced from 70
     ctx.fillStyle = '#111';
     ctx.fillText(displayName, width / 2, nameY);
 
-    // Bounty section - Berry symbol and numbers together, centered
-    const bountyY = nameY + 80; // Good spacing below name
+    // Bounty section - Much closer to name
+    const bountyY = nameY + 65; // Much tighter spacing - reduced from 80
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
@@ -204,12 +204,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const marineText = 'M A R I N E';
     ctx.fillText(marineText, width - 55, height - 50);
 
-    // One Piece logo at bottom center
+    // One Piece logo at bottom center - positioned with more space from bounty
     try {
         const onePieceLogo = await Canvas.loadImage(onePieceLogoPath);
         const logoSize = 48;
         const logoX = (width - logoSize) / 2;
-        const logoY = height - 120;
+        const logoY = height - 140; // More space from bottom to match your layout
         
         ctx.globalAlpha = 0.7;
         ctx.filter = 'sepia(0.3) brightness(0.9)';
