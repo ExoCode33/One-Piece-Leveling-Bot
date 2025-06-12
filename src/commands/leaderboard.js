@@ -1,4 +1,4 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard Poster
+// src/commands/leaderboard.js - One Piece Themed Leaderboard Poster (with Berry, no DE3F, square avatar)
 
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
@@ -20,15 +20,12 @@ function pirateRankEmoji(rank) {
     if (rank === 3) return '🥉';
     return '🏴‍☠️';
 }
-
 function formatCommas(n) {
     return n.toLocaleString();
 }
 
-// Minimal wanted poster, matching HTML
 async function createWantedPoster(user, rank, bounty, guild) {
-    const width = 600;
-    const height = 900;
+    const width = 600, height = 900;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
 
     const canvas = Canvas.createCanvas(width, height);
@@ -48,14 +45,15 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.font = ctxFont('bold', 90);
     ctx.fillStyle = '#8B0000';
     ctx.textAlign = 'center';
-    ctx.fillText('WANTED', width / 2, 110);
+    ctx.textBaseline = 'top';
+    ctx.fillText('WANTED', width / 2, 45);
 
-    // === Avatar Frame ===
-    const photoW = 380, photoH = 230;
+    // === Avatar (square, perfectly centered) ===
+    const photoW = 340, photoH = 340;
     const photoX = (width - photoW) / 2;
-    const photoY = 150;
+    const photoY = 170;
     ctx.strokeStyle = '#8B0000';
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
     ctx.fillStyle = '#fff';
     ctx.fillRect(photoX, photoY, photoW, photoH);
@@ -65,7 +63,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     try {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
-    const avatarArea = { x: photoX+5, y: photoY+5, width: photoW-10, height: photoH-10 };
+    const avatarArea = { x: photoX + 7, y: photoY + 7, width: photoW - 14, height: photoH - 14 };
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -86,43 +84,36 @@ async function createWantedPoster(user, rank, bounty, guild) {
     }
 
     // === DEAD OR ALIVE ===
-    ctx.font = ctxFont('bold', 38);
+    ctx.font = ctxFont('bold', 42);
     ctx.fillStyle = '#8B0000';
     ctx.textAlign = 'center';
-    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 56);
+    ctx.textBaseline = 'top';
+    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 32);
 
     // === Pirate Name ===
-    ctx.font = ctxFont('bold', 64);
+    ctx.font = ctxFont('bold', 70);
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
-    ctx.fillText(displayName, width / 2, photoY + photoH + 128);
+    ctx.fillText(displayName, width / 2, photoY + photoH + 95);
 
-    // === Bounty (big, red, centered) ===
-    ctx.font = ctxFont('bold', 70);
+    // === Bounty (with Berry symbol, big, red, centered) ===
+    ctx.font = ctxFont('bold', 82);
     ctx.fillStyle = '#8B0000';
-    ctx.fillText(formatCommas(bounty), width / 2, photoY + photoH + 210);
-
-    // === DE3F Box on left ===
-    ctx.font = ctxFont('bold', 36);
-    ctx.strokeStyle = '#8B0000';
-    ctx.lineWidth = 4;
-    const boxX = 48, boxY = photoY + photoH + 140, boxW = 65, boxH = 80;
-    ctx.strokeRect(boxX, boxY, boxW, boxH);
-    ctx.fillStyle = '#8B0000';
-    ctx.textAlign = 'left';
-    ctx.fillText('DE', boxX + 10, boxY + 35);
-    ctx.fillText('3F', boxX + 10, boxY + 75);
-    ctx.textAlign = 'center';
+    const berry = '₿';
+    const bountyText = berry + formatCommas(bounty);
+    ctx.fillText(bountyText, width / 2, photoY + photoH + 190);
 
     // === MARINE (bottom right) ===
-    ctx.font = ctxFont('bold', 40);
+    ctx.font = ctxFont('bold', 52);
     ctx.fillStyle = '#8B0000';
     ctx.textAlign = 'right';
-    ctx.fillText('MARINE', width - 50, height - 40);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('MARINE', width - 45, height - 40);
 
     // Center text for rest
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
 
     return canvas.toBuffer('image/png');
 }
