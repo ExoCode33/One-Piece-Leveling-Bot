@@ -37,8 +37,8 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - vertically centered at top
-    ctx.font = ctxFont('bold', 85); 
+    // WANTED header - smaller size to prevent overlap
+    ctx.font = ctxFont('bold', 72); // Reduced from 85 to prevent overlap
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -85,7 +85,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textBaseline = 'top';
     ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 20);
 
-    // Pirate name - better positioning
+    // Pirate name - moved lower to prevent overlap
     ctx.font = ctxFont('bold', 68);
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -97,10 +97,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
     if (nameWidth > width - 80) {
         ctx.font = ctxFont('bold', 58);
     }
-    ctx.fillText(displayName, width / 2, photoY + photoH + 75);
+    ctx.fillText(displayName, width / 2, photoY + photoH + 85); // Moved lower
 
-    // Bounty section - moved much lower to prevent overlap
-    const bountyY = photoY + photoH + 200; // Increased space to prevent overlap
+    // Bounty section - moved even lower to prevent overlap with name
+    const bountyY = photoY + photoH + 230; // Increased from 200 to 230
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
@@ -116,17 +116,20 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // Optimized bounty layout with bigger berry to match amount size
-    const berryHeight = 60, berryWidth = 60; // Bigger berry to match text size
+    // Optimized bounty layout with berry vertically centered with text
+    const berryHeight = 60, berryWidth = 60; 
     const bountyStr = bounty.toLocaleString();
     ctx.font = ctxFont('bold', 72); 
     const bountyWidth = ctx.measureText(bountyStr).width;
-    const gap = 15; // Slightly larger gap for bigger berry
+    const gap = 15; 
     const totalWidth = berryWidth + gap + bountyWidth;
     const bountyStartX = (width - totalWidth) / 2;
     
-    // Draw berry icon - bigger size
-    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
+    // Draw berry icon - vertically centered with the text baseline
+    const textMetrics = ctx.measureText(bountyStr);
+    const textHeight = textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent;
+    const berryVerticalCenter = bountyY - (textHeight / 2);
+    ctx.drawImage(berryImg, bountyStartX, berryVerticalCenter - berryHeight/2, berryWidth, berryHeight);
     
     // Draw bounty text with better alignment
     ctx.textAlign = 'left';
