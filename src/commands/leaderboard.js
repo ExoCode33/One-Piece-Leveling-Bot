@@ -38,17 +38,17 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
     // WANTED header - positioned higher and bigger
-    ctx.font = ctxFont('bold', 80); // Bigger font
+    ctx.font = ctxFont('bold', 90); // Even bigger font
     ctx.fillStyle = '#000'; // Pure black for contrast
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top'; // Changed to top for better control
-    const wantedY = 35; // Closer to top
+    const wantedY = 30; // Closer to top
     ctx.fillText('WANTED', width / 2, wantedY);
 
     // Profile picture - adjusted position
-    const photoW = 340, photoH = 340; // Bigger photo
+    const photoW = 360, photoH = 360; // Bigger photo
     const photoX = (width - photoW) / 2;
-    const photoY = 130; // Adjusted for new WANTED position
+    const photoY = 140; // Adjusted for new WANTED position
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 8;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
@@ -109,47 +109,45 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.fillText(displayName, width / 2, nameY);
 
     // Bounty section - the focal point
-    const bountyY = nameY + 90; // Better spacing
+    const bountyY = nameY + 100; // More space for bounty
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
     } catch {
-        console.log('Berry icon not found, creating placeholder...');
-        const berryCanvas = Canvas.createCanvas(60, 60);
-        const berryCtx = berryCanvas.getContext('2d');
-        berryCtx.fillStyle = '#000';
-        berryCtx.font = 'bold 45px serif';
-        berryCtx.textAlign = 'center';
-        berryCtx.textBaseline = 'middle';
-        berryCtx.fillText('฿', 30, 30);
-        berryImg = berryCanvas;
+        console.log('Berry icon not found, using text symbol...');
+        berryImg = null;
     }
     
-    // Draw decorative dashes first
-    ctx.font = ctxFont('', 50);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#000';
-    ctx.fillText('–', width / 2 - 160, bountyY);
-    ctx.fillText('–', width / 2 + 160, bountyY);
+    // Remove the decorative dashes - they're causing the weird symbols
     
     // Perfect bounty layout - berry and text properly aligned
-    const berryHeight = 60, berryWidth = 60; 
     const bountyStr = bounty.toLocaleString();
-    ctx.font = ctxFont('bold', 70); // Bigger bounty text
-    const bountyTextWidth = ctx.measureText(bountyStr).width;
-    const gap = 15; 
-    const totalWidth = berryWidth + gap + bountyTextWidth;
-    const bountyStartX = (width - totalWidth) / 2;
     
-    // Draw berry icon
-    ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
-    
-    // Draw bounty text
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#000';
-    ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
+    // Use just the text without berry image if it's not available
+    if (berryImg) {
+        const berryHeight = 65, berryWidth = 65; 
+        ctx.font = ctxFont('bold', 75); // Bigger bounty text
+        const bountyTextWidth = ctx.measureText(bountyStr).width;
+        const gap = 15; 
+        const totalWidth = berryWidth + gap + bountyTextWidth;
+        const bountyStartX = (width - totalWidth) / 2;
+        
+        // Draw berry icon
+        ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
+        
+        // Draw bounty text
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#000';
+        ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
+    } else {
+        // Fallback: just use text with ฿ symbol
+        ctx.font = ctxFont('bold', 75);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#000';
+        ctx.fillText(`฿ ${bountyStr}`, width / 2, bountyY);
+    }
 
     // MARINE text - positioned at bottom right
     ctx.textAlign = 'right';
