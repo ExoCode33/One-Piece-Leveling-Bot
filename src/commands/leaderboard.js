@@ -48,8 +48,8 @@ async function createWantedPoster(user, rank, bounty, guild) {
     }
     
     // All borders and elements go on top of the texture
-    // Only essential borders - thin red/black as in reference
-    ctx.strokeStyle = '#8B0000';
+    // Only essential borders - outer border now black instead of red
+    ctx.strokeStyle = '#000000'; // Changed from blood red to black
     ctx.lineWidth = 8;
     ctx.strokeRect(0, 0, width, height);
     
@@ -80,16 +80,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 2;
     ctx.strokeRect(photoX, photoY, photoSize, photoSize);
     
-    // White background
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(photoX + 1, photoY + 1, photoSize - 2, photoSize - 2);
+    // No white background - image goes directly on texture
 
     let member = null;
     try {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
     
-    const avatarArea = { x: photoX + 5, y: photoY + 5, width: photoSize - 10, height: photoSize - 10 };
+    const avatarArea = { x: photoX + 2, y: photoY + 2, width: photoSize - 4, height: photoSize - 4 };
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -107,12 +105,9 @@ async function createWantedPoster(user, rank, bounty, guild) {
             
             ctx.restore();
         } catch {
-            ctx.fillStyle = '#ddd';
-            ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            // If no avatar, just leave the texture showing through with border
+            console.log('No avatar found, texture will show through');
         }
-    } else {
-        ctx.fillStyle = '#ddd';
-        ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
     // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 39
@@ -141,10 +136,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 30, Horiz 19, Vert 23
-    const berrySize = (30/100) * 150; // Size 30/100 * reasonable max = 45px
+    // Berry Symbol - Size 32, Horiz 19, Vert 22
+    const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
     const berryX = ((19/100) * width) - (berrySize/2); // Horiz 19: slightly more left
-    const berryY = height * (1 - 23/100) - (berrySize/2); // Vert 23: 23% from bottom
+    const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
     
     let berryImg;
     try {
@@ -163,11 +158,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 20, Horiz 23, Vert 23
+    // Bounty Numbers - Size 20, Horiz 23, Vert 22
+    // Font used: Cinzel (Georgia serif as fallback)
     const bountyStr = bounty.toLocaleString();
-    ctx.font = '60px Cinzel, Georgia, serif'; // Size 20/100 * 300 = 60px
+    ctx.font = '60px Cinzel, Georgia, serif'; // Size 20/100 * 300 = 60px - CINZEL FONT
     const bountyX = (23/100) * width; // Horiz 23: closer to berry
-    const bountyY = height * (1 - 23/100); // Vert 23: 23% from bottom (same as berry)
+    const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
     
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -266,21 +262,21 @@ module.exports = {
         leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number');
         leaderboard.sort((a, b) => b.xp - a.xp);
 
-        // Create navigation buttons
+        // Create navigation buttons with red styling
         const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('leaderboard_posters_1_xp')
                 .setLabel('🎯 Top 3 Posters')
-                .setStyle(view === 'posters' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                .setStyle(view === 'posters' ? ButtonStyle.Danger : ButtonStyle.Secondary), // Red when active
             new ButtonBuilder()
                 .setCustomId('leaderboard_long_1_xp')
                 .setLabel('📋 Top 10 List')
-                .setStyle(view === 'long' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+                .setStyle(view === 'long' ? ButtonStyle.Danger : ButtonStyle.Secondary), // Red when active
             new ButtonBuilder()
                 .setCustomId('leaderboard_full_1_xp')
                 .setLabel('📜 Full Board')
-                .setStyle(view === 'full' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                .setStyle(view === 'full' ? ButtonStyle.Danger : ButtonStyle.Secondary) // Red when active
         );
 
         if (view === 'posters') {
