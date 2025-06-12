@@ -6,11 +6,6 @@ require('dotenv').config();
 const XPTracker = require('./src/utils/xpTracker');
 const { sendXPLog } = require('./src/utils/xpLogger');
 
-// Import commands
-const levelCommand = require('./src/commands/level');
-const leaderboardCommand = require('./src/commands/leaderboard');
-const adminCommand = require('./src/commands/admin');
-
 // === Database Setup ===
 const { Pool } = require('pg');
 const db = new Pool({
@@ -36,9 +31,42 @@ client.db = db;
 
 const xpTracker = new XPTracker(client, db);
 
-client.commands.set('level', levelCommand);
-client.commands.set('leaderboard', leaderboardCommand);
-client.commands.set('settings', adminCommand);
+// === Import Commands with Error Handling ===
+let levelCommand, leaderboardCommand, adminCommand;
+
+try {
+    levelCommand = require('./src/commands/level');
+    console.log('[DEBUG] Successfully loaded level command');
+} catch (error) {
+    console.error('[ERROR] Failed to load level command:', error.message);
+}
+
+try {
+    leaderboardCommand = require('./src/commands/leaderboard');
+    console.log('[DEBUG] Successfully loaded leaderboard command');
+} catch (error) {
+    console.error('[ERROR] Failed to load leaderboard command:', error.message);
+}
+
+try {
+    adminCommand = require('./src/commands/admin');
+    console.log('[DEBUG] Successfully loaded admin command');
+} catch (error) {
+    console.error('[ERROR] Failed to load admin command:', error.message);
+}
+
+// === Register Commands Safely ===
+if (levelCommand && levelCommand.data) {
+    client.commands.set('level', levelCommand);
+}
+
+if (leaderboardCommand && leaderboardCommand.data) {
+    client.commands.set('leaderboard', leaderboardCommand);
+}
+
+if (adminCommand && adminCommand.data) {
+    client.commands.set('settings', adminCommand);
+}
 
 // === Database Initialization (with migrations) ===
 async function initializeDatabase() {
@@ -57,6 +85,7 @@ async function initializeDatabase() {
                 PRIMARY KEY (user_id, guild_id)
             )
         `);
+        
         // Create voice_sessions table
         await db.query(`
             CREATE TABLE IF NOT EXISTS voice_sessions (
@@ -70,6 +99,7 @@ async function initializeDatabase() {
                 xp_awarded INTEGER DEFAULT 0
             )
         `);
+        
         // Create guild_settings table
         await db.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
@@ -78,6 +108,7 @@ async function initializeDatabase() {
                 settings JSONB DEFAULT '{}'
             )
         `);
+        
         // Patch for missing "rep" column in user_levels
         await db.query(`
         DO $$
@@ -92,6 +123,7 @@ async function initializeDatabase() {
         `);
 
         console.log('[INFO] Database tables initialized successfully');
+        
         if (process.env.DEBUG_DATABASE === 'true') {
             const userCount = await db.query('SELECT COUNT(*) FROM user_levels');
             console.log(`[DEBUG] Database has ${userCount.rows[0].count} user records`);
@@ -109,14 +141,17 @@ client.on('interactionCreate', async interaction => {
     try {
         if (interaction.isCommand()) {
             const command = client.commands.get(interaction.commandName);
-            if (!command) return;
+            if (!command) {
+                console.error(`[ERROR] No command matching ${interaction.commandName} was found.`);
+                return;
+            }
             await command.execute(interaction, client, xpTracker);
         }
         
         // Handle button interactions for leaderboard pagination
         if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
             const parts = interaction.customId.split('_');
-            const view = parts[1]; // 'short', 'long', or 'full'
+            const view = parts[1]; // 'posters', 'long', or 'full'
             const page = parseInt(parts[2]) || 1;
             const type = parts[3] || 'xp';
             
@@ -130,7 +165,7 @@ client.on('interactionCreate', async interaction => {
                 reply: async (options) => await interaction.editReply(options),
                 options: {
                     getString: (name) => {
-                        if (name === 'view') return view; // This handles 'short', 'long', and 'full'
+                        if (name === 'view') return view;
                         if (name === 'type') return type;
                         return null;
                     },
@@ -138,9 +173,9 @@ client.on('interactionCreate', async interaction => {
                 }
             };
             
-            const leaderboardCommand = client.commands.get('leaderboard');
-            if (leaderboardCommand) {
-                await leaderboardCommand.execute(mockInteraction, client, xpTracker);
+            const leaderboardCmd = client.commands.get('leaderboard');
+            if (leaderboardCmd) {
+                await leaderboardCmd.execute(mockInteraction, client, xpTracker);
             }
         }
     } catch (error) {
@@ -162,7 +197,7 @@ client.on('messageCreate', async message => {
     try {
         await xpTracker.handleMessageXP(message);
     } catch (e) {
-        console.error(e);
+        console.error('Error handling message XP:', e);
     }
 });
 
@@ -170,7 +205,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     try {
         await xpTracker.handleReactionXP(reaction, user);
     } catch (e) {
-        console.error(e);
+        console.error('Error handling reaction XP:', e);
     }
 });
 
@@ -178,15 +213,16 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
         await xpTracker.handleVoiceStateUpdate(oldState, newState);
     } catch (e) {
-        console.error(e);
+        console.error('Error handling voice state update:', e);
     }
 });
 
+// Process voice XP every minute
 setInterval(async () => {
     try {
         await xpTracker.processVoiceXP();
     } catch (e) {
-        console.error(e);
+        console.error('Error processing voice XP:', e);
     }
 }, 60000);
 
@@ -196,32 +232,68 @@ client.once('ready', async () => {
     
     try {
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-        const commands = [
-            levelCommand.data,
-            leaderboardCommand.data,
-            adminCommand.data
+        
+        // Build commands array with validation
+        const commandModules = [
+            { name: 'level', module: levelCommand },
+            { name: 'leaderboard', module: leaderboardCommand },
+            { name: 'admin/settings', module: adminCommand }
         ];
         
-        if (process.env.DEBUG_COMMANDS === 'true') {
-            console.log('[DEBUG] Registering slash commands...');
+        const commands = [];
+        const validCommands = [];
+        
+        for (const { name, module } of commandModules) {
+            if (module && module.data) {
+                try {
+                    const commandData = module.data.toJSON();
+                    commands.push(commandData);
+                    validCommands.push(name);
+                    console.log(`[DEBUG] ✅ Loaded command: ${name}`);
+                } catch (error) {
+                    console.error(`[ERROR] ❌ Failed to serialize command ${name}:`, error.message);
+                }
+            } else {
+                console.error(`[ERROR] ❌ Failed to load command: ${name} - module or data is undefined`);
+            }
         }
+        
+        if (commands.length === 0) {
+            throw new Error('No valid commands found to register');
+        }
+        
+        console.log(`[DEBUG] Registering ${commands.length} slash commands: ${validCommands.join(', ')}`);
         
         await rest.put(
             Routes.applicationCommands(client.user.id),
             { body: commands }
         );
         
-        console.log('[INFO] Slash commands registered successfully');
+        console.log(`[INFO] Successfully registered ${commands.length} slash commands`);
     } catch (error) {
         console.error('Error registering slash commands:', error);
+        console.error('Stack trace:', error.stack);
     }
     
-    client.user.setActivity('for XP gains!', { type: 'WATCHING' });
+    try {
+        client.user.setActivity('for XP gains!', { type: 'WATCHING' });
+    } catch (error) {
+        console.error('Error setting activity:', error);
+    }
+    
     console.log('[INFO] Discord Leveling Bot is fully operational!');
 });
 
 client.on('error', error => {
     console.error('Discord client error:', error);
+});
+
+client.on('disconnect', () => {
+    console.log('[WARNING] Bot disconnected');
+});
+
+client.on('reconnecting', () => {
+    console.log('[INFO] Bot reconnecting...');
 });
 
 process.on('unhandledRejection', error => {
@@ -233,29 +305,21 @@ process.on('uncaughtException', error => {
     process.exit(1);
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('[INFO] Received SIGINT. Graceful shutdown...');
+    client.destroy();
+    process.exit(0);
+});
 
-/* 
-IMPORTANT NOTE: The button interaction handler above is working correctly.
-The actual issue is in your leaderboard.js command file.
+process.on('SIGTERM', () => {
+    console.log('[INFO] Received SIGTERM. Graceful shutdown...');
+    client.destroy();
+    process.exit(0);
+});
 
-In your leaderboard.js execute function, you need logic like this:
-
-if (view === 'full') {
-    // Show ONLY the list format with buttons, NO EMBED
-    return await interaction.editReply({
-        content: fullLeaderboardListContent, // Your formatted list
-        components: [buttonRow], // The buttons
-        embeds: [] // NO EMBEDS for full view
-    });
-} else {
-    // Show ONLY the embed with buttons, NO CONTENT
-    return await interaction.editReply({
-        content: '', // No content for short/long views
-        embeds: [embed], // The newspaper-style embed
-        components: [buttonRow] // The buttons
-    });
-}
-
-This will fix the issue where both list and embed show simultaneously.
-*/
+// Login with error handling
+client.login(process.env.DISCORD_TOKEN).catch(error => {
+    console.error('Failed to login:', error);
+    process.exit(1);
+});
