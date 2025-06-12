@@ -1,5 +1,3 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard with Canvas Poster
-
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 const Canvas = require('canvas');
@@ -10,9 +8,7 @@ const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Pirate
 // Register custom pirate font if available
 try {
     Canvas.registerFont(path.join(__dirname, '../../assets/fonts/pirate.ttf'), { family: 'PirateFont' });
-} catch {
-    // Will fallback to Impact/Arial
-}
+} catch {}
 
 function pirateRankEmoji(rank) {
     if (rank === 1) return '🥇';
@@ -35,26 +31,24 @@ function getThreatLevelShort(level) {
     return 'ROOKIE PIRATE';
 }
 
-// Utility to format numbers with commas
 function formatCommas(n) {
     return n.toLocaleString();
 }
 
 // Utility to draw text safely
-function drawTextSafe(ctx, text, x, y, maxWidth = null) {
-    try {
-        if (maxWidth) {
-            ctx.fillText(text, x, y, maxWidth);
-        } else {
-            ctx.fillText(text, x, y);
-        }
-    } catch (e) {}
+function drawTextSafe(ctx, text, x, y, font, color = '#222', align = 'center', baseline = 'middle', maxWidth = null) {
+    ctx.font = font;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = baseline;
+    if (maxWidth) ctx.fillText(text, x, y, maxWidth);
+    else ctx.fillText(text, x, y);
 }
 
 // Poster generation function (improved layout)
 async function createWantedPoster(user, rank, bounty, guild) {
-    const CANVAS_WIDTH = 350;
-    const CANVAS_HEIGHT = 500;
+    const CANVAS_WIDTH = 400;
+    const CANVAS_HEIGHT = 600;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
 
     try {
@@ -67,48 +61,37 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillStyle = '#ecd3b1';
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 8;
-        ctx.strokeRect(5, 5, CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10);
+        ctx.lineWidth = 10;
+        ctx.strokeRect(6, 6, CANVAS_WIDTH - 12, CANVAS_HEIGHT - 12);
         ctx.strokeStyle = '#dc143c';
         ctx.lineWidth = 3;
-        ctx.strokeRect(18, 18, CANVAS_WIDTH - 36, CANVAS_HEIGHT - 36);
+        ctx.strokeRect(24, 24, CANVAS_WIDTH - 48, CANVAS_HEIGHT - 48);
 
         // --- Header: WANTED ---
         ctx.fillStyle = '#8B0000';
-        ctx.fillRect(45, 32, CANVAS_WIDTH - 90, 46);
-        ctx.fillStyle = '#FFD700';
-        ctx.beginPath();
-        ctx.arc(CANVAS_WIDTH - 50, 52, 18, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(58, 36, CANVAS_WIDTH - 116, 55);
 
-        ctx.font = ctxFont('bold', 38);
-        ctx.fillStyle = '#FFF';
-        ctx.shadowColor = 'rgba(0,0,0,0.2)';
-        ctx.shadowBlur = 3;
-        ctx.fillText('WANTED', CANVAS_WIDTH / 2, 56);
-        ctx.shadowBlur = 0;
+        drawTextSafe(ctx, 'WANTED', CANVAS_WIDTH / 2, 63, ctxFont('bold', 46), '#fff', 'center', 'middle');
 
         // --- DEAD OR ALIVE ---
-        ctx.font = ctxFont('bold', 16);
-        ctx.fillStyle = '#222';
-        ctx.fillText('DEAD OR ALIVE', CANVAS_WIDTH / 2, 85);
+        drawTextSafe(ctx, 'DEAD OR ALIVE', CANVAS_WIDTH / 2, 105, ctxFont('bold', 19), '#222');
 
-        // --- Avatar ---
-        const photoY = 105;
-        const photoW = 140;
-        const photoH = 150;
+        // --- Avatar (LARGER) ---
+        const photoY = 130;
+        const photoW = 220;
+        const photoH = 220;
         const photoX = (CANVAS_WIDTH - photoW) / 2;
-        ctx.fillStyle = '#FFF';
+        ctx.fillStyle = '#fff';
         ctx.fillRect(photoX, photoY, photoW, photoH);
         ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 5;
+        ctx.lineWidth = 6;
         ctx.strokeRect(photoX, photoY, photoW, photoH);
 
         let member = null;
         try {
             if (guild && user.userId) member = await guild.members.fetch(user.userId);
         } catch {}
-        const avatarArea = { x: photoX + 5, y: photoY + 5, width: photoW - 10, height: photoH - 10 };
+        const avatarArea = { x: photoX + 6, y: photoY + 6, width: photoW - 12, height: photoH - 12 };
         if (member) {
             try {
                 const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
@@ -127,49 +110,37 @@ async function createWantedPoster(user, rank, bounty, guild) {
         }
 
         // --- Name ---
-        ctx.font = ctxFont('bold', 22);
-        ctx.fillStyle = '#222';
         let displayName = 'UNKNOWN PIRATE';
         if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
         else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
-        ctx.fillText(displayName, CANVAS_WIDTH / 2, photoY + photoH + 22);
+        drawTextSafe(ctx, displayName, CANVAS_WIDTH / 2, photoY + photoH + 28, ctxFont('bold', 28), '#222');
 
-        // --- Bounty background ---
+        // --- Bounty background (WIDER, NO ICONS) ---
+        const bountyBoxY = photoY + photoH + 54;
         ctx.fillStyle = '#8B0000';
-        ctx.fillRect(60, photoY + photoH + 40, CANVAS_WIDTH - 120, 56);
+        ctx.fillRect(60, bountyBoxY, CANVAS_WIDTH - 120, 65);
 
         // --- Bounty number (full with commas) ---
-        ctx.font = ctxFont('bold', 36);
-        ctx.fillStyle = '#FFD700';
-        ctx.fillText('฿' + formatCommas(bounty), CANVAS_WIDTH / 2, photoY + photoH + 66);
+        drawTextSafe(ctx, formatCommas(bounty), CANVAS_WIDTH / 2, bountyBoxY + 35, ctxFont('bold', 36), '#FFD700');
 
         // --- BERRY label (below bounty) ---
-        ctx.font = ctxFont('bold', 16);
-        ctx.fillStyle = '#FFF';
-        ctx.fillText('BERRY', CANVAS_WIDTH / 2, photoY + photoH + 88);
+        drawTextSafe(ctx, 'BERRY', CANVAS_WIDTH / 2, bountyBoxY + 55, ctxFont('bold', 18), '#fff');
 
         // --- Threat Assessment ---
+        const threatBoxY = bountyBoxY + 70;
         ctx.strokeStyle = '#8B0000';
         ctx.lineWidth = 2;
-        ctx.fillStyle = '#FFF';
-        ctx.fillRect(40, photoY + photoH + 110, CANVAS_WIDTH - 80, 54);
-        ctx.strokeRect(40, photoY + photoH + 110, CANVAS_WIDTH - 80, 54);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(48, threatBoxY, CANVAS_WIDTH - 96, 62);
+        ctx.strokeRect(48, threatBoxY, CANVAS_WIDTH - 96, 62);
 
-        ctx.font = ctxFont('bold', 16);
-        ctx.fillStyle = '#8B0000';
-        ctx.fillText('THREAT ASSESSMENT', CANVAS_WIDTH / 2, photoY + photoH + 128);
-
-        ctx.font = ctxFont('bold', 14);
-        ctx.fillStyle = '#222';
-        ctx.fillText(getThreatLevelShort(user.level), CANVAS_WIDTH / 2, photoY + photoH + 148);
+        drawTextSafe(ctx, 'THREAT ASSESSMENT', CANVAS_WIDTH / 2, threatBoxY + 20, ctxFont('bold', 20), '#8B0000');
+        drawTextSafe(ctx, getThreatLevelShort(user.level), CANVAS_WIDTH / 2, threatBoxY + 42, ctxFont('bold', 17), '#222');
 
         // --- Footer: Level & XP ---
         ctx.fillStyle = '#111';
-        ctx.fillRect(35, CANVAS_HEIGHT - 40, CANVAS_WIDTH - 70, 32);
-        ctx.font = ctxFont('bold', 18);
-        ctx.fillStyle = '#FFF';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Level ${user.level}   ${formatCommas(user.xp)} XP`, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 24);
+        ctx.fillRect(38, CANVAS_HEIGHT - 52, CANVAS_WIDTH - 76, 36);
+        drawTextSafe(ctx, `Level ${user.level}    ${formatCommas(user.xp)} XP`, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 34, ctxFont('bold', 21), '#fff');
 
         return canvas.toBuffer('image/png');
     } catch (error) {
