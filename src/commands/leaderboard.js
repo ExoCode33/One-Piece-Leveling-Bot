@@ -112,7 +112,7 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Name ("SHANKS") - Size 19, Horiz 50, Vert 32
+    // Name ("SHANKS") - Size 19, Horiz 50, Vert 31
     ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -125,12 +125,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.font = '45px CaptainKiddNF, Arial, sans-serif';
     }
     
-    const nameY = height * (1 - 32/100); // Vert 32: 32% from bottom
+    const nameY = height * (1 - 31/100); // Vert 31: 31% from bottom
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 28, Horiz 19, Vert 25
-    const berrySize = (28/100) * 150; // Size 28/100 * reasonable max = 42px
+    // Berry Symbol - Size 30, Horiz 19, Vert 25
+    const berrySize = (30/100) * 150; // Size 30/100 * reasonable max = 45px
     const berryX = ((19/100) * width) - (berrySize/2); // Horiz 19: slightly more left
     const berryY = height * (1 - 25/100) - (berrySize/2); // Vert 25: 25% from bottom
     
