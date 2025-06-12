@@ -37,18 +37,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - properly centered in available space above photo
+    // WANTED header - moved down from border with proper spacing
     ctx.font = ctxFont('bold', 72); 
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const headerHeight = 120; // Increased space for better centering
-    const wantedY = headerHeight / 2; // Perfect vertical center
+    const headerHeight = 140; // Increased space to separate from border
+    const wantedY = 80; // Moved down from border, not touching top
     ctx.fillText('WANTED', width / 2, wantedY);
 
-    // Profile picture (square, large, centered) - positioned after header
+    // Profile picture - positioned with clear gap after WANTED
     const photoW = 320, photoH = 320; 
-    const photoX = (width - photoW) / 2, photoY = headerHeight; // Start right after header
+    const photoX = (width - photoW) / 2, photoY = headerHeight; // Clear separation
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
@@ -79,14 +79,14 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - proper spacing from photo
+    // DEAD OR ALIVE - clear spacing from photo
     ctx.font = ctxFont('bold', 42);
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 20);
+    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 30); // Increased gap
 
-    // Pirate name - positioned between DEAD OR ALIVE and bounty
+    // Pirate name - clear separation from DEAD OR ALIVE
     ctx.font = ctxFont('bold', 68);
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -99,11 +99,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.font = ctxFont('bold', 58);
     }
     
-    // Position SHANKS between DEAD OR ALIVE and bounty
-    ctx.fillText(displayName, width / 2, photoY + photoH + 80);
+    // Position SHANKS with clear gap from DEAD OR ALIVE
+    ctx.fillText(displayName, width / 2, photoY + photoH + 100); // Increased separation
 
-    // Bounty section - positioned lower 
-    const bountyY = photoY + photoH + 160;
+    // Bounty section - clear separation from name
+    const bountyY = photoY + photoH + 200; // Increased gap to prevent overlap
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
