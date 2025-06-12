@@ -57,38 +57,46 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - Using Captain Kidd NF font
+    // WANTED header - Using Captain Kidd NF font with refined spacing and positioning
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '80px CaptainKiddNF, Arial, sans-serif'; // Captain Kidd NF font for WANTED
-    const wantedY = 105;
+    const wantedY = height * 0.05 + 40; // Position at 5% from top edge
+    
+    // Measure and adjust letter spacing for visual balance
+    ctx.letterSpacing = '-2px'; // Reduce kerning slightly
     ctx.fillText('WANTED', width / 2, wantedY);
 
-    // Profile picture with enhanced framing and weathered effect
-    const photoW = 300, photoH = 300;
-    const photoX = (width - photoW) / 2;
-    const photoY = 155; // MOVED DOWN to account for new WANTED position
+    // Profile picture - Perfectly square with enhanced framing (35-40% of poster height)
+    const photoSize = Math.floor(height * 0.37); // 37% of total height for perfect proportions
+    const photoX = (width - photoSize) / 2;
+    const photoY = wantedY + 50; // Positioned with equal margins
     
     // Outer red border
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
-    ctx.strokeRect(photoX, photoY, photoW, photoH);
+    ctx.strokeRect(photoX, photoY, photoSize, photoSize);
+    
+    // Thin black outline for double-framed border effect
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(photoX - 2, photoY - 2, photoSize + 4, photoSize + 4);
     
     // Inner thin black border for inked look
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(photoX + 5, photoY + 5, photoW - 10, photoH - 10);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(photoX + 5, photoY + 5, photoSize - 10, photoSize - 10);
     
     // White background
     ctx.fillStyle = '#fff';
-    ctx.fillRect(photoX, photoY, photoW, photoH);
+    ctx.fillRect(photoX, photoY, photoSize, photoSize);
 
     let member = null;
     try {
         if (guild && user.userId) member = await guild.members.fetch(user.userId);
     } catch {}
-    const avatarArea = { x: photoX + 7, y: photoY + 7, width: photoW - 14, height: photoH - 14 };
+    const avatarArea = { x: photoX + 7, y: photoY + 7, width: photoSize - 14, height: photoSize - 14 };
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -119,16 +127,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - Using Captain Kidd NF font with tighter spacing and smaller size
+    // DEAD OR ALIVE - Refined sizing and spacing
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Reduced from 60px (5% smaller)
-    const deadOrAliveY = photoY + photoH + 20; // Reduced spacing from 25 to 20
+    ctx.font = '51px CaptainKiddNF, Arial, sans-serif'; // Reduced to 90% of 57px
+    ctx.letterSpacing = '-1px'; // Reduce letter spacing by 10-15%
+    const deadOrAliveY = photoY + photoSize + 20;
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - Using Captain Kidd NF font with increased size for dominance
-    ctx.font = '62px CaptainKiddNF, Arial, sans-serif'; // Increased from 55px for more dominance
+    // Pirate name - Increased size and closer positioning with pixel-perfect centering
+    ctx.font = '71px CaptainKiddNF, Arial, sans-serif'; // Increased by 15% from 62px
+    ctx.letterSpacing = '0px'; // Reset letter spacing for name
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -137,18 +147,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     let nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 80) {
-        ctx.font = '50px CaptainKiddNF, Arial, sans-serif'; // Increased from 45px proportionally
+        ctx.font = '58px CaptainKiddNF, Arial, sans-serif'; // Increased proportionally from 50px
         nameWidth = ctx.measureText(displayName).width;
     }
     
-    const nameY = deadOrAliveY + 65; // Reduced from 70 to bring name closer
+    const nameY = deadOrAliveY + 55; // Pulled closer to "DEAD OR ALIVE"
     ctx.fillStyle = '#111';
-    // Ensure perfect horizontal centering
+    // Pixel-perfect horizontal centering
     const nameX = width / 2;
     ctx.fillText(displayName, nameX, nameY);
 
-    // Bounty section - Using Cinzel font with bounty positioned closer to name
-    const bountyY = nameY + 85; // Reduced from 95 to bring bounty closer to name
+    // Bounty section - Left-aligned with name, reduced size, better berry alignment
+    const bountyY = nameY + 75;
     let berryImg;
     try {
         berryImg = await Canvas.loadImage(berryPath);
@@ -164,50 +174,56 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // Perfect bounty with Cinzel font and better berry alignment
-    const berryHeight = 50, berryWidth = 50; // Slightly larger berry
+    // Bounty with Cinzel font, reduced size and left-aligned with name
+    const berryHeight = 45, berryWidth = 45;
     const bountyStr = bounty.toLocaleString();
-    ctx.font = '68px Cinzel, Georgia, serif'; // Cinzel font for bounty amount
-    const gap = 15; // Slightly increased gap
+    ctx.font = '63px Cinzel, Georgia, serif'; // Reduced to 92% of 68px
+    ctx.letterSpacing = '0px'; // Reset letter spacing
+    const gap = 12;
     
-    // Calculate total width for centering
+    // Left-align with the name instead of centering across poster
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     const totalBountyWidth = berryWidth + gap + bountyTextWidth;
-    const bountyStartX = (width - totalBountyWidth) / 2;
+    const nameTextWidth = ctx.measureText(displayName).width;
+    const bountyStartX = (width / 2) - (nameTextWidth / 2); // Align with left edge of name
     
-    // Draw berry icon with better vertical alignment (centered with text baseline)
+    // Draw berry icon with better vertical alignment
     const textMetrics = ctx.measureText(bountyStr);
     const textHeight = textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent;
-    const berryY = bountyY - (textHeight / 2) - (berryHeight / 2) + 5; // Better vertical centering
+    const berryY = bountyY - (textHeight / 2) - (berryHeight / 2) + 8; // Raised slightly for mid-height alignment
     
     ctx.drawImage(berryImg, bountyStartX, berryY, berryWidth, berryHeight);
     
-    // Draw bounty text with perfect alignment
+    // Draw bounty text left-aligned
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
 
-    // MARINE text - More subtle and discreet like original posters
+    // MARINE text - More subtle, tighter spacing, better positioning
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = '22px TimesNewNormal, Times, serif'; // Further reduced by 15% (26px → 22px)
+    ctx.font = '18px TimesNewNormal, Times, serif'; // Reduced by 18% (22px → 18px)
+    ctx.letterSpacing = '-0.5px'; // Tighter letter spacing
     
     // Create tighter letter-spaced effect for MARINE text
-    const marineText = 'M A R I N E'; // Tighter tracking
-    ctx.fillText(marineText, width - 40, height - 40);
+    const marineText = 'M A R I N E';
+    // Move in from edge with more padding (15px instead of 5px from calculations)
+    ctx.fillText(marineText, width - 55, height - 50);
 
-    // Add One Piece logo at bottom center if available
+    // Add One Piece logo at bottom center - smaller and with parchment tone
     try {
         const onePieceLogo = await Canvas.loadImage(onePieceLogoPath);
-        const logoSize = 60; // Size of the logo
+        const logoSize = 48; // Reduced to 80% of 60px
         const logoX = (width - logoSize) / 2;
-        const logoY = height - 100; // Position above MARINE text
+        const logoY = height - 120; // Position above MARINE text with more space
         
-        // Apply slight transparency for subtle effect
-        ctx.globalAlpha = 0.8;
+        // Apply parchment tone and slight transparency for authentic integration
+        ctx.globalAlpha = 0.7;
+        ctx.filter = 'sepia(0.3) brightness(0.9)'; // Yellowed/parchment effect
         ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
         ctx.globalAlpha = 1.0; // Reset transparency
+        ctx.filter = 'none'; // Reset filter
     } catch {
         // Logo not found, continue without it
         console.log('One Piece logo not found at assets/one-piece-symbol.png');
