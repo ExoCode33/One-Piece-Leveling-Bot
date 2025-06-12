@@ -1,6 +1,6 @@
-// src/commands/leaderboard.js - One Piece Themed Leaderboard Poster (with Berry, no DE3F, square avatar)
+// src/commands/leaderboard.js
 
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getBountyForLevel, PIRATE_KING_BOUNTY } = require('../utils/bountySystem');
 const Canvas = require('canvas');
 const path = require('path');
@@ -11,7 +11,7 @@ const LEADERBOARD_EXCLUDE_ROLE = process.env.LEADERBOARD_EXCLUDE_ROLE; // Pirate
 try {
     Canvas.registerFont(path.join(__dirname, '../../assets/fonts/pirate.ttf'), { family: 'PirateFont' });
 } catch {
-    // Fallback to Impact/Arial if not found
+    // Fallback to Impact/Arial if not present
 }
 
 function pirateRankEmoji(rank) {
@@ -20,10 +20,22 @@ function pirateRankEmoji(rank) {
     if (rank === 3) return '🥉';
     return '🏴‍☠️';
 }
-function formatCommas(n) {
-    return n.toLocaleString();
+
+function getThreatLevelShort(level) {
+    if (level >= 50) return 'YONKO CLASS';
+    if (level >= 45) return 'DEVIL FRUIT USER';
+    if (level >= 40) return 'VICE ADMIRAL RIVAL';
+    if (level >= 35) return 'CREW CAPTAIN';
+    if (level >= 30) return 'MASTER COMBATANT';
+    if (level >= 25) return 'EXTREMELY DANGEROUS';
+    if (level >= 20) return 'CAPTAIN LEVEL';
+    if (level >= 15) return 'GRAND LINE PIRATE';
+    if (level >= 10) return 'SQUAD DESTROYER';
+    if (level >= 5) return 'WANTED CRIMINAL';
+    return 'ROOKIE PIRATE';
 }
 
+// Poster generation (latest version)
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
     const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
@@ -42,16 +54,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
     // === WANTED Header ===
-    ctx.font = ctxFont('bold', 90);
+    ctx.font = ctxFont('bold', 86);
     ctx.fillStyle = '#8B0000';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('WANTED', width / 2, 45);
+    ctx.fillText('WANTED', width / 2, 70);
 
     // === Avatar (square, perfectly centered) ===
     const photoW = 340, photoH = 340;
     const photoX = (width - photoW) / 2;
-    const photoY = 170;
+    const photoY = 180;
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
@@ -88,30 +100,53 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.fillStyle = '#8B0000';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 32);
+    ctx.fillText('DEAD OR ALIVE', width / 2, photoY + photoH + 30);
 
     // === Pirate Name ===
-    ctx.font = ctxFont('bold', 70);
+    ctx.font = ctxFont('bold', 68);
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
-    ctx.fillText(displayName, width / 2, photoY + photoH + 95);
+    ctx.fillText(displayName, width / 2, photoY + photoH + 90);
 
-    // === Bounty (with Berry symbol, big, red, centered) ===
-    ctx.font = ctxFont('bold', 82);
-    ctx.fillStyle = '#8B0000';
+    // === Bounty (Berry symbol smaller and aligned) ===
+    const bountyY = photoY + photoH + 175;
+    const berryFontSize = 60;
+    ctx.font = ctxFont('bold', berryFontSize);
     const berry = '₿';
-    const bountyText = berry + formatCommas(bounty);
-    ctx.fillText(bountyText, width / 2, photoY + photoH + 190);
+    const berryWidth = ctx.measureText(berry).width;
 
-    // === MARINE (bottom right) ===
-    ctx.font = ctxFont('bold', 52);
+    // Bounty amount
+    ctx.font = ctxFont('bold', 78);
+    const bountyStr = bounty.toLocaleString();
+    const bountyWidth = ctx.measureText(bountyStr).width;
+
+    // Calculate total width
+    const gap = 16;
+    const totalBountyWidth = berryWidth + gap + bountyWidth;
+    const startX = (width - totalBountyWidth) / 2;
+
+    // Berry symbol
+    ctx.font = ctxFont('bold', berryFontSize);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(berry, startX + berryWidth / 2, bountyY + 78);
+
+    // If ₿ doesn't show: use a small image instead!
+    // const berryImg = await Canvas.loadImage(path.join(__dirname, '../../assets/berry_symbol.png'));
+    // ctx.drawImage(berryImg, startX, bountyY + 8, 45, 55);
+
+    // Bounty number
+    ctx.font = ctxFont('bold', 78);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(bountyStr, startX + berryWidth + gap + bountyWidth / 2, bountyY + 78);
+
+    // === MARINE (smaller, bottom right) ===
+    ctx.font = ctxFont('bold', 38);
     ctx.fillStyle = '#8B0000';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('MARINE', width - 45, height - 40);
+    ctx.fillText('MARINE', width - 45, height - 35);
 
-    // Center text for rest
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
 
@@ -180,7 +215,8 @@ module.exports = {
         leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number');
         leaderboard.sort((a, b) => b.xp - a.xp);
 
-        // Navigation buttons
+        // Create navigation buttons
+        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('leaderboard_posters_1_xp')
@@ -276,7 +312,7 @@ module.exports = {
                 const user = topTen[i];
                 const rank = i + 1;
                 const bounty = getBountyForLevel(user.level);
-                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ₿${bounty.toLocaleString()}\n\n`;
+                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ₿${bounty.toLocaleString()} • ${getThreatLevelShort(user.level)}\n\n`;
             }
             if (topTen.length === 0) {
                 description = "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
