@@ -24,7 +24,7 @@ function pirateRankEmoji(rank) {
 // Utility: draw wanted poster with PERFECT TEXT WIDTH AND POSITIONING
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
-    const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px PirateFont, Impact, Arial, sans-serif`;
+    const ctxFont = (style, size) => `${style ? style + ' ' : ''}${size}px Arial, sans-serif`; // REMOVED PirateFont to get cleaner, less bold text
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -37,12 +37,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - BIGGER AND LOWER, LESS BOLD
+    // WANTED header - CLEAN, NON-BOLD TEXT
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = ctxFont('normal', 80); // REMOVED 'bold', INCREASED from 70 to 80
-    const wantedY = 105; // MOVED DOWN from 95 to 105
+    ctx.font = `${80}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    const wantedY = 105;
     ctx.fillText('WANTED', width / 2, wantedY);
 
     // Profile picture - ADJUSTED FOR NEW WANTED POSITION
@@ -79,16 +79,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - LESS BOLD, BIGGER, SLIGHTLY LOWER
+    // DEAD OR ALIVE - CLEAN, NON-BOLD TEXT
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.font = ctxFont('normal', 60); // REMOVED 'bold', INCREASED from 52 to 60
-    const deadOrAliveY = photoY + photoH + 25; // MOVED DOWN from 20 to 25
+    ctx.font = `${60}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    const deadOrAliveY = photoY + photoH + 25;
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - LESS BOLD, BIGGER, SLIGHTLY LOWER
-    ctx.font = ctxFont('normal', 55); // REMOVED 'bold', INCREASED from 48 to 55
+    // Pirate name - CLEAN, NON-BOLD TEXT
+    ctx.font = `${55}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -97,10 +97,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     const nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 80) {
-        ctx.font = ctxFont('normal', 45); // REMOVED 'bold', INCREASED from 40 to 45
+        ctx.font = `${45}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
     }
     
-    const nameY = deadOrAliveY + 70; // MOVED DOWN from 60 to 70
+    const nameY = deadOrAliveY + 70;
     ctx.fillStyle = '#111';
     ctx.fillText(displayName, width / 2, nameY);
 
@@ -121,16 +121,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // PERFECT LEFT-ALIGNED bounty with LESS BOLD, BIGGER SIZE, CENTERED POSITIONING
-    const berryHeight = 45, berryWidth = 45; // GOOD proportion
+    // PERFECT bounty with CLEAN, NON-BOLD TEXT
+    const berryHeight = 45, berryWidth = 45;
     const bountyStr = bounty.toLocaleString();
-    ctx.font = ctxFont('normal', 68); // REMOVED 'bold', INCREASED from 58 to 68
-    const gap = 12; // GOOD SPACING
+    ctx.font = `${68}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    const gap = 12;
     
     // Calculate total width for centering
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     const totalBountyWidth = berryWidth + gap + bountyTextWidth;
-    const bountyStartX = (width - totalBountyWidth) / 2; // CENTERED HORIZONTALLY
+    const bountyStartX = (width - totalBountyWidth) / 2;
     
     // Draw berry icon perfectly centered vertically with text
     ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
@@ -141,11 +141,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyStartX + berryWidth + gap, bountyY);
 
-    // MARINE text - positioned at bottom with clear margin
+    // MARINE text - CLEAN, NON-BOLD
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = ctxFont('bold', 30);
-    ctx.fillText('MARINE', width - 40, height - 40); // Clear margin from edges
+    ctx.font = `${30}px Arial, sans-serif`; // DIRECT FONT SPECIFICATION - NO BOLD
+    ctx.fillText('MARINE', width - 40, height - 40);
 
     return canvas.toBuffer('image/png');
 }
