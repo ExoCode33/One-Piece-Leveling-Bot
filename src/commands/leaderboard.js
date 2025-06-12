@@ -26,16 +26,28 @@ function pirateRankEmoji(rank) {
     return '🏴‍☠️';
 }
 
-// Utility: draw wanted poster with PERFECT layout matching specifications
+// Utility: draw wanted poster with CUSTOM FONTS and scroll texture background
 async function createWantedPoster(user, rank, bounty, guild) {
     const width = 600, height = 900;
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Clean parchment background - flat color, no heavy grain
-    ctx.fillStyle = '#f5e6c5'; // Light tan parchment color
-    ctx.fillRect(0, 0, width, height);
+    // Load and draw scroll texture background
+    try {
+        const scrollTexture = await Canvas.loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+        
+        // Draw the texture to fill the entire canvas
+        ctx.drawImage(scrollTexture, 0, 0, width, height);
+        
+        console.log('[DEBUG] Successfully loaded scroll texture background');
+    } catch (error) {
+        console.log('[INFO] Scroll texture not found, using fallback parchment color');
+        // Fallback to original parchment background if texture fails to load
+        ctx.fillStyle = '#f5e6c5';
+        ctx.fillRect(0, 0, width, height);
+    }
     
+    // All borders and elements go on top of the texture
     // Only essential borders - thin red/black as in reference
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 8;
@@ -49,11 +61,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // WANTED title - Size 28, Horiz 50, Vert 92
+    // WANTED title - Size 27, Horiz 50, Vert 92
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '84px CaptainKiddNF, Arial, sans-serif'; // Size 28/100 * 300 = 84px
+    ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
     const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
@@ -112,8 +124,8 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Name ("SHANKS") - Size 19, Horiz 50, Vert 31
-    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+    // Name ("SHANKS") - Size 23, Horiz 50, Vert 30
+    ctx.font = '69px CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -122,17 +134,17 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     let nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 60) {
-        ctx.font = '45px CaptainKiddNF, Arial, sans-serif';
+        ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
     }
     
-    const nameY = height * (1 - 31/100); // Vert 31: 31% from bottom
+    const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 30, Horiz 19, Vert 25
+    // Berry Symbol - Size 30, Horiz 19, Vert 23
     const berrySize = (30/100) * 150; // Size 30/100 * reasonable max = 45px
     const berryX = ((19/100) * width) - (berrySize/2); // Horiz 19: slightly more left
-    const berryY = height * (1 - 25/100) - (berrySize/2); // Vert 25: 25% from bottom
+    const berryY = height * (1 - 23/100) - (berrySize/2); // Vert 23: 23% from bottom
     
     let berryImg;
     try {
@@ -151,11 +163,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 20, Horiz 23, Vert 25
+    // Bounty Numbers - Size 20, Horiz 23, Vert 23
     const bountyStr = bounty.toLocaleString();
     ctx.font = '60px Cinzel, Georgia, serif'; // Size 20/100 * 300 = 60px
     const bountyX = (23/100) * width; // Horiz 23: closer to berry
-    const bountyY = height * (1 - 25/100); // Vert 25: 25% from bottom (same as berry)
+    const bountyY = height * (1 - 23/100); // Vert 23: 23% from bottom (same as berry)
     
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
