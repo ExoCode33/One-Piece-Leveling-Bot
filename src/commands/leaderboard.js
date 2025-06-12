@@ -37,18 +37,18 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 4;
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // WANTED header - POSITIONED PROPERLY BELOW TOP RED LINE
+    // WANTED header - BIGGER AND LOWER, LESS BOLD
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = ctxFont('bold', 70);
-    const wantedY = 95; // MOVED DOWN MORE - proper gap from top red border
+    ctx.font = ctxFont('normal', 80); // REMOVED 'bold', INCREASED from 70 to 80
+    const wantedY = 105; // MOVED DOWN from 95 to 105
     ctx.fillText('WANTED', width / 2, wantedY);
 
-    // Profile picture - ADJUSTED FOR PROPER WANTED POSITION
+    // Profile picture - ADJUSTED FOR NEW WANTED POSITION
     const photoW = 300, photoH = 300;
     const photoX = (width - photoW) / 2;
-    const photoY = 145; // MOVED DOWN to account for proper WANTED position
+    const photoY = 155; // MOVED DOWN to account for new WANTED position
     ctx.strokeStyle = '#8B0000';
     ctx.lineWidth = 7;
     ctx.strokeRect(photoX, photoY, photoW, photoH);
@@ -79,16 +79,16 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // DEAD OR ALIVE - MUCH BIGGER TO MATCH SHANKS WIDTH
+    // DEAD OR ALIVE - LESS BOLD, BIGGER, SLIGHTLY LOWER
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.font = ctxFont('bold', 52); // INCREASED from 45 to 52 to match SHANKS width
-    const deadOrAliveY = photoY + photoH + 20; // TIGHT SPACING
+    ctx.font = ctxFont('normal', 60); // REMOVED 'bold', INCREASED from 52 to 60
+    const deadOrAliveY = photoY + photoH + 25; // MOVED DOWN from 20 to 25
     ctx.fillText('DEAD OR ALIVE', width / 2, deadOrAliveY);
 
-    // Pirate name - OPTIMIZED SIZE
-    ctx.font = ctxFont('bold', 48); // KEPT AT 48 for good proportion
+    // Pirate name - LESS BOLD, BIGGER, SLIGHTLY LOWER
+    ctx.font = ctxFont('normal', 55); // REMOVED 'bold', INCREASED from 48 to 55
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
@@ -97,10 +97,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.textAlign = 'center';
     const nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 80) {
-        ctx.font = ctxFont('bold', 40); // KEPT AT 40 for long names
+        ctx.font = ctxFont('normal', 45); // REMOVED 'bold', INCREASED from 40 to 45
     }
     
-    const nameY = deadOrAliveY + 60; // TIGHTER SPACING BETWEEN DEAD OR ALIVE AND NAME
+    const nameY = deadOrAliveY + 70; // MOVED DOWN from 60 to 70
     ctx.fillStyle = '#111';
     ctx.fillText(displayName, width / 2, nameY);
 
@@ -121,17 +121,21 @@ async function createWantedPoster(user, rank, bounty, guild) {
         berryImg = berryCanvas;
     }
     
-    // PERFECT LEFT-ALIGNED bounty with INCREASED SIZE
-    const berryHeight = 45, berryWidth = 45; // INCREASED from 40 to 45 for better proportion
+    // PERFECT LEFT-ALIGNED bounty with LESS BOLD, BIGGER SIZE, CENTERED POSITIONING
+    const berryHeight = 45, berryWidth = 45; // GOOD proportion
     const bountyStr = bounty.toLocaleString();
-    ctx.font = ctxFont('bold', 58); // INCREASED from 52 to 58 - BIGGER BOUNTY
+    ctx.font = ctxFont('normal', 68); // REMOVED 'bold', INCREASED from 58 to 68
     const gap = 12; // GOOD SPACING
-    const bountyStartX = 120; // PERFECT LEFT ALIGNMENT
     
-    // Draw berry icon first at perfect left position
+    // Calculate total width for centering
+    const bountyTextWidth = ctx.measureText(bountyStr).width;
+    const totalBountyWidth = berryWidth + gap + bountyTextWidth;
+    const bountyStartX = (width - totalBountyWidth) / 2; // CENTERED HORIZONTALLY
+    
+    // Draw berry icon perfectly centered vertically with text
     ctx.drawImage(berryImg, bountyStartX, bountyY - berryHeight/2, berryWidth, berryHeight);
     
-    // Draw bounty text with increased size
+    // Draw bounty text with perfect alignment
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
