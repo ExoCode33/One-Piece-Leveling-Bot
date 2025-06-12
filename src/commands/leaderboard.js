@@ -78,11 +78,11 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillStyle = '#8B0000';
         ctx.shadowColor = 'rgba(0,0,0,0.3)';
         ctx.shadowBlur = 2;
-        ctx.fillText('WANTED', CANVAS_WIDTH / 2, 50);
+        ctx.fillText('WANTED', CANVAS_WIDTH / 2, 40);
         ctx.shadowBlur = 0;
 
         // --- Avatar ---
-        const photoY = 75;
+        const photoY = 65;
         const photoW = 180;
         const photoH = 200;
         const photoX = (CANVAS_WIDTH - photoW) / 2;
@@ -115,50 +115,27 @@ async function createWantedPoster(user, rank, bounty, guild) {
         }
 
         // --- DEAD OR ALIVE (right below picture) ---
-        ctx.font = ctxFont('bold', 16);
+        ctx.font = ctxFont('bold', 22);
         ctx.fillStyle = '#222';
-        ctx.fillText('DEAD OR ALIVE', CANVAS_WIDTH / 2, photoY + photoH + 20);
+        ctx.fillText('DEAD OR ALIVE', CANVAS_WIDTH / 2, photoY + photoH + 25);
 
         // --- Name ---
-        ctx.font = ctxFont('bold', 24);
+        ctx.font = ctxFont('bold', 28);
         ctx.fillStyle = '#222';
         let displayName = 'UNKNOWN PIRATE';
         if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
         else if (user.userId) displayName = `PIRATE ${user.userId.slice(-4)}`;
-        ctx.fillText(displayName, CANVAS_WIDTH / 2, photoY + photoH + 50);
+        ctx.fillText(displayName, CANVAS_WIDTH / 2, photoY + photoH + 60);
 
         // --- Bounty amount (under name) ---
-        ctx.font = ctxFont('bold', 36);
+        ctx.font = ctxFont('bold', 40);
         ctx.fillStyle = '#8B0000';
-        ctx.fillText(formatCommas(bounty), CANVAS_WIDTH / 2, photoY + photoH + 85);
+        ctx.fillText(formatCommas(bounty), CANVAS_WIDTH / 2, photoY + photoH + 105);
 
         // --- BERRY label ---
-        ctx.font = ctxFont('bold', 14);
-        ctx.fillStyle = '#222';
-        ctx.fillText('BERRY', CANVAS_WIDTH / 2, photoY + photoH + 105);
-
-        // --- Threat Assessment ---
-        ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 2;
-        ctx.fillStyle = '#FFF';
-        ctx.fillRect(40, photoY + photoH + 125, CANVAS_WIDTH - 80, 54);
-        ctx.strokeRect(40, photoY + photoH + 125, CANVAS_WIDTH - 80, 54);
-
-        ctx.font = ctxFont('bold', 14);
-        ctx.fillStyle = '#8B0000';
-        ctx.fillText('THREAT ASSESSMENT', CANVAS_WIDTH / 2, photoY + photoH + 143);
-
-        ctx.font = ctxFont('bold', 12);
-        ctx.fillStyle = '#222';
-        ctx.fillText(getThreatLevelShort(user.level), CANVAS_WIDTH / 2, photoY + photoH + 163);
-
-        // --- Footer: Level & XP (moved up to stay within red border) ---
-        ctx.fillStyle = '#111';
-        ctx.fillRect(35, CANVAS_HEIGHT - 50, CANVAS_WIDTH - 70, 32);
         ctx.font = ctxFont('bold', 16);
-        ctx.fillStyle = '#FFF';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Level ${user.level}   ${formatCommas(user.xp)} XP`, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 34);
+        ctx.fillStyle = '#222';
+        ctx.fillText('BERRY', CANVAS_WIDTH / 2, photoY + photoH + 125);
 
         return canvas.toBuffer('image/png');
     } catch (error) {
