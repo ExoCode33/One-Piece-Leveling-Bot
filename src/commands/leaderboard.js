@@ -49,17 +49,17 @@ async function createWantedPoster(user, rank, bounty, guild) {
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // WANTED title - Size 27, Horiz 50, Vert 92
+    // WANTED title - Size 35, Horiz 50, Vert 92
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
+    ctx.font = '105px CaptainKiddNF, Arial, sans-serif'; // Size 35/100 * 300 = 105px
     const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
 
-    // Image Box - Size 70, Horiz 50, Vert 65
-    const photoSize = (70/100) * 400; // Size 70/100 * reasonable max = 280px
+    // Image Box - Size 95, Horiz 50, Vert 65
+    const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
     const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
     const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
     
@@ -103,12 +103,12 @@ async function createWantedPoster(user, rank, bounty, guild) {
         ctx.fillRect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
     }
 
-    // "DEAD OR ALIVE" - Size 11, Horiz 50, Vert 48
+    // "DEAD OR ALIVE" - Size 11, Horiz 50, Vert 35
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '33px CaptainKiddNF, Arial, sans-serif'; // Size 11/100 * 300 = 33px
-    const deadOrAliveY = height * (1 - 48/100); // Vert 48: 48% from bottom
+    const deadOrAliveY = height * (1 - 35/100); // Vert 35: 35% from bottom
     const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
@@ -129,8 +129,8 @@ async function createWantedPoster(user, rank, bounty, guild) {
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol - Size 7, Horiz 20, Vert 30
-    const berrySize = (7/100) * 150; // Size 7/100 * reasonable max = 10.5px
+    // Berry Symbol - Size 20, Horiz 20, Vert 30
+    const berrySize = (20/100) * 150; // Size 20/100 * reasonable max = 30px
     const berryX = ((20/100) * width) - (berrySize/2); // Horiz 20: left side
     const berryY = height * (1 - 30/100) - (berrySize/2); // Vert 30: 30% from bottom
     
@@ -151,10 +151,10 @@ async function createWantedPoster(user, rank, bounty, guild) {
     
     ctx.drawImage(berryImg, berryX, berryY, berrySize, berrySize);
 
-    // Bounty Numbers - Size 16, Horiz 20, Vert 30
+    // Bounty Numbers - Size 16, Horiz 25, Vert 30
     const bountyStr = bounty.toLocaleString();
     ctx.font = '48px Cinzel, Georgia, serif'; // Size 16/100 * 300 = 48px
-    const bountyX = (20/100) * width; // Horiz 20: left side (same as berry)
+    const bountyX = (25/100) * width; // Horiz 25: slightly right of berry
     const bountyY = height * (1 - 30/100); // Vert 30: 30% from bottom (same as berry)
     
     ctx.textAlign = 'left';
@@ -178,15 +178,15 @@ async function createWantedPoster(user, rank, bounty, guild) {
         console.log('One Piece logo not found at assets/one-piece-symbol.png');
     }
 
-    // "MARINE" - Size 4, Horiz 90, Vert 5
+    // "MARINE" - Size 8, Horiz 95, Vert 2
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = '12px TimesNewNormal, Times, serif'; // Size 4/100 * 300 = 12px
+    ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
     ctx.fillStyle = '#111';
     
     const marineText = 'M A R I N E';
-    const marineX = (90/100) * width; // Horiz 90: toward right but not extreme
-    const marineY = height * (1 - 5/100); // Vert 5: 5% from bottom
+    const marineX = (95/100) * width; // Horiz 95: far right
+    const marineY = height * (1 - 2/100); // Vert 2: 2% from bottom
     ctx.fillText(marineText, marineX, marineY);
 
     return canvas.toBuffer('image/png');
