@@ -1,77 +1,51 @@
-// index.js - Discord Leveling Bot with Clean Modular Structure
-
-const { Client, GatewayIntentBits, Partials, Collection, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Collection, REST, Routes, EmbedBuilder } = require('discord.js');
+const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
+// Import XP Tracker
 const XPTracker = require('./src/utils/xpTracker');
-const { sendXPLog } = require('./src/utils/xpLogger');
 
-// === Database Setup ===
-const { Pool } = require('pg');
-const db = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-});
-
-// === Discord Client Setup ===
+// Create Discord client
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.DirectMessages
     ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User, Partials.GuildMember],
+    partials: [
+        Partials.Message,
+        Partials.Channel,
+        Partials.Reaction,
+        Partials.GuildMember,
+        Partials.User
+    ]
 });
 
-client.commands = new Collection();
-client.db = db;
+// Initialize database connection
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-const xpTracker = new XPTracker(client, db);
+// Test database connection
+db.query('SELECT NOW()', (err, res) => {
+    if (err) {
+        console.error('[ERROR] Database connection failed:', err);
+        process.exit(1);
+    } else {
+        console.log('[INFO] Database connected successfully');
+    }
+});
 
-// === Import Commands with Error Handling ===
-let levelCommand, leaderboardCommand, adminCommand;
-
-try {
-    levelCommand = require('./src/commands/level');
-    console.log('[DEBUG] Successfully loaded level command');
-} catch (error) {
-    console.error('[ERROR] Failed to load level command:', error.message);
-}
-
-try {
-    leaderboardCommand = require('./src/commands/leaderboard');
-    console.log('[DEBUG] Successfully loaded leaderboard command');
-} catch (error) {
-    console.error('[ERROR] Failed to load leaderboard command:', error.message);
-}
-
-try {
-    adminCommand = require('./src/commands/admin');
-    console.log('[DEBUG] Successfully loaded admin command');
-} catch (error) {
-    console.error('[ERROR] Failed to load admin command:', error.message);
-}
-
-// === Register Commands Safely ===
-if (levelCommand && levelCommand.data) {
-    client.commands.set('level', levelCommand);
-}
-
-if (leaderboardCommand && leaderboardCommand.data) {
-    client.commands.set('leaderboard', leaderboardCommand);
-}
-
-if (adminCommand && adminCommand.data) {
-    client.commands.set('settings', adminCommand);
-}
-
-// === Database Initialization (with migrations) ===
+// Initialize database tables
 async function initializeDatabase() {
     try {
-        // Create user_levels table
         await db.query(`
             CREATE TABLE IF NOT EXISTS user_levels (
                 user_id VARCHAR(20) NOT NULL,
@@ -81,251 +55,322 @@ async function initializeDatabase() {
                 messages INTEGER DEFAULT 0,
                 reactions INTEGER DEFAULT 0,
                 voice_time INTEGER DEFAULT 0,
-                last_updated TIMESTAMP DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, guild_id)
             )
         `);
         
-        // Create voice_sessions table
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS voice_sessions (
-                id SERIAL PRIMARY KEY,
-                user_id VARCHAR(20) NOT NULL,
-                guild_id VARCHAR(20) NOT NULL,
-                channel_id VARCHAR(20) NOT NULL,
-                start_time TIMESTAMP DEFAULT NOW(),
-                end_time TIMESTAMP,
-                duration INTEGER DEFAULT 0,
-                xp_awarded INTEGER DEFAULT 0
-            )
-        `);
-        
-        // Create guild_settings table
         await db.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
                 guild_id VARCHAR(20) PRIMARY KEY,
-                level_roles JSONB DEFAULT '{}',
-                settings JSONB DEFAULT '{}'
+                excluded_role VARCHAR(20),
+                levelup_channel VARCHAR(20),
+                xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        `);
-        
-        // Patch for missing "rep" column in user_levels
-        await db.query(`
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_name='user_levels' AND column_name='rep'
-            ) THEN
-                ALTER TABLE user_levels ADD COLUMN rep INTEGER DEFAULT 0;
-            END IF;
-        END$$;
         `);
 
         console.log('[INFO] Database tables initialized successfully');
         
-        if (process.env.DEBUG_DATABASE === 'true') {
-            const userCount = await db.query('SELECT COUNT(*) FROM user_levels');
-            console.log(`[DEBUG] Database has ${userCount.rows[0].count} user records`);
-        }
+        // Check user count
+        const userCount = await db.query('SELECT COUNT(*) FROM user_levels');
+        console.log('[DEBUG] Database has', userCount.rows[0].count, 'user records');
+        
     } catch (error) {
-        console.error('Error initializing database:', error);
+        console.error('[ERROR] Failed to initialize database:', error);
+        process.exit(1);
     }
 }
 
-// === Event Handlers ===
-
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isCommand() && !interaction.isButton()) return;
-    
+// Initialize XP Tracker
+let xpTracker;
+async function initializeXPTracker() {
     try {
-        if (interaction.isCommand()) {
-            const command = client.commands.get(interaction.commandName);
-            if (!command) {
-                console.error(`[ERROR] No command matching ${interaction.commandName} was found.`);
-                return;
-            }
-            await command.execute(interaction, client, xpTracker);
-        }
-        
-        // Handle button interactions for leaderboard pagination
-        if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
-            const parts = interaction.customId.split('_');
-            const view = parts[1]; // 'posters', 'long', or 'full'
-            const page = parseInt(parts[2]) || 1;
-            const type = parts[3] || 'xp';
-            
-            // Create proper mock interaction with all required methods
-            const mockInteraction = {
-                ...interaction,
-                // Keep the original interaction methods
-                isButton: () => true,
-                isCommand: () => false,
-                deferUpdate: interaction.deferUpdate.bind(interaction),
-                update: interaction.update.bind(interaction),
-                followUp: interaction.followUp.bind(interaction),
-                reply: interaction.reply.bind(interaction),
-                editReply: interaction.editReply.bind(interaction),
-                deleteReply: interaction.deleteReply.bind(interaction),
-                
-                // Mock the options for slash command compatibility
-                options: {
-                    getString: (name) => {
-                        if (name === 'view') return view;
-                        if (name === 'type') return type;
-                        return null;
-                    },
-                    getInteger: (name) => name === 'page' ? page : null
-                }
-            };
-            
-            const leaderboardCmd = client.commands.get('leaderboard');
-            if (leaderboardCmd) {
-                await leaderboardCmd.execute(mockInteraction, client, xpTracker);
-            }
-        }
+        xpTracker = new XPTracker(client, db);
+        global.xpTracker = xpTracker;
+        console.log('[INFO] XP Tracker initialized successfully');
     } catch (error) {
-        console.error('Error handling interaction:', error);
+        console.error('[ERROR] Failed to initialize XP Tracker:', error);
+        process.exit(1);
+    }
+}
+
+// Initialize guild settings
+global.guildSettings = new Map();
+
+async function loadGuildSettings() {
+    try {
+        const result = await db.query('SELECT * FROM guild_settings');
+        for (const row of result.rows) {
+            global.guildSettings.set(row.guild_id, {
+                excludedRole: row.excluded_role,
+                levelupChannel: row.levelup_channel,
+                xpMultiplier: parseFloat(row.xp_multiplier) || 1.0
+            });
+        }
+        console.log('[INFO] Loaded settings for', global.guildSettings.size, 'guilds');
+    } catch (error) {
+        console.error('[ERROR] Failed to load guild settings:', error);
+    }
+}
+
+// Commands collection
+client.commands = new Collection();
+
+// Load commands
+function loadCommands() {
+    const commandsPath = path.join(__dirname, 'src', 'commands');
+    const commandFiles = fs.readdirSync(commandsPath, { recursive: true }).filter(file => file.endsWith('.js'));
+
+    for (const file of commandFiles) {
+        const filePath = path.join(commandsPath, file);
         try {
-            const errorMessage = 'An error occurred while executing this command.';
-            if (interaction.deferred) {
-                await interaction.editReply(errorMessage);
+            delete require.cache[require.resolve(filePath)];
+            const command = require(filePath);
+            
+            if ('data' in command && 'execute' in command) {
+                client.commands.set(command.data.name, command);
+                console.log('[DEBUG] ✅ Loaded command:', command.data.name);
             } else {
-                await interaction.reply({ content: errorMessage, ephemeral: true });
+                console.log('[DEBUG] ⚠️ Command missing data or execute:', file);
             }
-        } catch (e) {
-            console.error('Error sending error message:', e);
+        } catch (error) {
+            console.error('[ERROR] Failed to load command', file, ':', error.message);
         }
     }
-});
+}
 
-client.on('messageCreate', async message => {
-    try {
-        await xpTracker.handleMessageXP(message);
-    } catch (e) {
-        console.error('Error handling message XP:', e);
-    }
-});
+// Register slash commands
+async function registerCommands() {
+    const commands = [];
+    client.commands.forEach(command => {
+        commands.push(command.data.toJSON());
+    });
 
-client.on('messageReactionAdd', async (reaction, user) => {
-    try {
-        await xpTracker.handleReactionXP(reaction, user);
-    } catch (e) {
-        console.error('Error handling reaction XP:', e);
-    }
-});
+    const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
-client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-        await xpTracker.handleVoiceStateUpdate(oldState, newState);
-    } catch (e) {
-        console.error('Error handling voice state update:', e);
-    }
-});
-
-// Process voice XP every minute
-setInterval(async () => {
-    try {
-        await xpTracker.processVoiceXP();
-    } catch (e) {
-        console.error('Error processing voice XP:', e);
-    }
-}, 60000);
-
-client.once('ready', async () => {
-    console.log(`[INFO] Bot logged in as ${client.user.tag}`);
-    await initializeDatabase();
-    
-    try {
-        const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-        
-        // Build commands array with validation
-        const commandModules = [
-            { name: 'level', module: levelCommand },
-            { name: 'leaderboard', module: leaderboardCommand },
-            { name: 'admin/settings', module: adminCommand }
-        ];
-        
-        const commands = [];
-        const validCommands = [];
-        
-        for (const { name, module } of commandModules) {
-            if (module && module.data) {
-                try {
-                    const commandData = module.data.toJSON();
-                    commands.push(commandData);
-                    validCommands.push(name);
-                    console.log(`[DEBUG] ✅ Loaded command: ${name}`);
-                } catch (error) {
-                    console.error(`[ERROR] ❌ Failed to serialize command ${name}:`, error.message);
-                }
-            } else {
-                console.error(`[ERROR] ❌ Failed to load command: ${name} - module or data is undefined`);
-            }
-        }
-        
-        if (commands.length === 0) {
-            throw new Error('No valid commands found to register');
-        }
-        
-        console.log(`[DEBUG] Registering ${commands.length} slash commands: ${validCommands.join(', ')}`);
+        console.log(`[DEBUG] Registering ${commands.length} slash commands:`, commands.map(c => c.name).join(', '));
         
         await rest.put(
-            Routes.applicationCommands(client.user.id),
+            Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands }
         );
-        
+
         console.log(`[INFO] Successfully registered ${commands.length} slash commands`);
     } catch (error) {
-        console.error('Error registering slash commands:', error);
-        console.error('Stack trace:', error.stack);
+        console.error('[ERROR] Failed to register slash commands:', error);
     }
+}
+
+// Client ready event
+client.once('ready', async () => {
+    console.log(`[INFO] Bot logged in as ${client.user.tag}`);
     
-    try {
-        client.user.setActivity('for XP gains!', { type: 'WATCHING' });
-    } catch (error) {
-        console.error('Error setting activity:', error);
-    }
+    // Initialize everything
+    await initializeDatabase();
+    await loadGuildSettings();
+    await initializeXPTracker();
+    
+    // Load and register commands
+    loadCommands();
+    await registerCommands();
+    
+    // Start voice XP processing (runs every 60 seconds)
+    setInterval(() => {
+        if (global.xpTracker) {
+            global.xpTracker.processVoiceXP().catch(console.error);
+        }
+    }, 60000);
     
     console.log('[INFO] Discord Leveling Bot is fully operational!');
 });
 
-client.on('error', error => {
-    console.error('Discord client error:', error);
+// Message event for XP tracking
+client.on('messageCreate', async (message) => {
+    if (!message.guild || message.author.bot) return;
+    
+    if (global.xpTracker) {
+        try {
+            await global.xpTracker.handleMessageXP(message);
+        } catch (error) {
+            console.error('[ERROR] Message XP tracking failed:', error);
+        }
+    }
 });
 
-client.on('disconnect', () => {
-    console.log('[WARNING] Bot disconnected');
+// Reaction events for XP tracking
+client.on('messageReactionAdd', async (reaction, user) => {
+    if (!reaction.message.guild || user.bot) return;
+    
+    if (global.xpTracker) {
+        try {
+            await global.xpTracker.handleReactionXP(reaction, user);
+        } catch (error) {
+            console.error('[ERROR] Reaction XP tracking failed:', error);
+        }
+    }
 });
 
-client.on('reconnecting', () => {
-    console.log('[INFO] Bot reconnecting...');
+// Voice state update for XP tracking
+client.on('voiceStateUpdate', async (oldState, newState) => {
+    if (global.xpTracker) {
+        try {
+            await global.xpTracker.handleVoiceStateUpdate(oldState, newState);
+        } catch (error) {
+            console.error('[ERROR] Voice XP tracking failed:', error);
+        }
+    }
 });
 
-process.on('unhandledRejection', error => {
-    console.error('Unhandled promise rejection:', error);
+// Slash command interaction handler
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const command = client.commands.get(interaction.commandName);
+    if (!command) {
+        console.error(`[ERROR] No command matching ${interaction.commandName} was found.`);
+        return;
+    }
+
+    try {
+        await command.execute(interaction);
+    } catch (error) {
+        console.error(`[ERROR] Error executing command ${interaction.commandName}:`, error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setTitle('❌ Command Error')
+            .setDescription('There was an error executing this command.')
+            .setColor('#FF0000')
+            .setTimestamp();
+
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ embeds: [errorEmbed], ephemeral: true }).catch(console.error);
+        } else {
+            await interaction.reply({ embeds: [errorEmbed], ephemeral: true }).catch(console.error);
+        }
+    }
 });
 
-process.on('uncaughtException', error => {
-    console.error('Uncaught exception:', error);
+// Button interaction handler for leaderboard navigation
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    
+    // Handle leaderboard button interactions
+    if (interaction.customId.startsWith('leaderboard_')) {
+        const command = client.commands.get('leaderboard');
+        if (!command) return;
+
+        try {
+            // Create mock interaction for button handling
+            const mockInteraction = {
+                ...interaction,
+                options: null,
+                isButton: () => true,
+                reply: interaction.reply.bind(interaction),
+                update: interaction.update.bind(interaction),
+                followUp: interaction.followUp.bind(interaction),
+                deferUpdate: interaction.deferUpdate.bind(interaction),
+                editReply: interaction.editReply.bind(interaction),
+                deleteReply: interaction.deleteReply.bind(interaction),
+                fetchReply: interaction.fetchReply.bind(interaction)
+            };
+
+            await command.execute(mockInteraction);
+        } catch (error) {
+            console.error('[ERROR] Button interaction failed:', error);
+            
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription('Failed to process button interaction.')
+                .setColor('#FF0000');
+
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp({ embeds: [errorEmbed], ephemeral: true }).catch(console.error);
+            } else {
+                await interaction.reply({ embeds: [errorEmbed], ephemeral: true }).catch(console.error);
+            }
+        }
+    }
+});
+
+// Guild join event
+client.on('guildCreate', async (guild) => {
+    console.log(`[INFO] Joined new guild: ${guild.name} (${guild.memberCount} members)`);
+    
+    // Initialize default settings for new guild
+    try {
+        await db.query(
+            `INSERT INTO guild_settings (guild_id, xp_multiplier) 
+             VALUES ($1, $2) 
+             ON CONFLICT (guild_id) DO NOTHING`,
+            [guild.id, 1.0]
+        );
+        
+        global.guildSettings.set(guild.id, {
+            excludedRole: null,
+            levelupChannel: null,
+            xpMultiplier: 1.0
+        });
+    } catch (error) {
+        console.error('[ERROR] Failed to initialize settings for new guild:', error);
+    }
+});
+
+// Guild leave event
+client.on('guildDelete', (guild) => {
+    console.log(`[INFO] Left guild: ${guild.name}`);
+    global.guildSettings.delete(guild.id);
+});
+
+// Error handling
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('[ERROR] Uncaught Exception:', error);
     process.exit(1);
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('[INFO] Received SIGINT. Graceful shutdown...');
-    client.destroy();
+process.on('SIGINT', async () => {
+    console.log('[INFO] Received SIGINT, shutting down gracefully...');
+    
+    if (client) {
+        await client.destroy();
+    }
+    
+    if (db) {
+        await db.end();
+    }
+    
     process.exit(0);
 });
 
-process.on('SIGTERM', () => {
-    console.log('[INFO] Received SIGTERM. Graceful shutdown...');
-    client.destroy();
+process.on('SIGTERM', async () => {
+    console.log('[INFO] Received SIGTERM, shutting down gracefully...');
+    
+    if (client) {
+        await client.destroy();
+    }
+    
+    if (db) {
+        await db.end();
+    }
+    
     process.exit(0);
 });
 
-// Login with error handling
+// Login to Discord
+if (!process.env.DISCORD_TOKEN) {
+    console.error('[ERROR] DISCORD_TOKEN is not set in environment variables');
+    process.exit(1);
+}
+
 client.login(process.env.DISCORD_TOKEN).catch(error => {
-    console.error('Failed to login:', error);
+    console.error('[ERROR] Failed to login to Discord:', error);
     process.exit(1);
 });
