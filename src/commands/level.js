@@ -30,30 +30,46 @@ module.exports = {
             const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
             if (!targetMember) {
-                return interaction.editReply({ 
-                    content: '❌ Could not find that pirate in this server!', 
-                    ephemeral: true 
-                });
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Pirate Not Found')
+                    .setDescription('Could not find that pirate in this server!')
+                    .setColor('#FF0000');
+                return interaction.editReply({ embeds: [embed] });
             }
 
             // Get XP tracker from global
             const xpTracker = global.xpTracker;
             if (!xpTracker) {
-                return interaction.editReply({ 
-                    content: '❌ XP system is not initialized!', 
-                    ephemeral: true 
-                });
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ System Error')
+                    .setDescription('XP Tracker is not initialized. Please restart the bot.')
+                    .setColor('#FF0000');
+                return interaction.editReply({ embeds: [embed] });
             }
 
-            // Get user stats
+            // Get user stats - FIXED: Use correct parameter order (guildId, userId)
             const userStats = await xpTracker.getUserStats(interaction.guildId, targetUser.id);
             
             if (!userStats) {
-                return interaction.editReply({ 
-                    content: `❌ ${targetUser.username} hasn't started their pirate journey yet!`, 
-                    ephemeral: true 
-                });
+                // Check if user exists in database at all
+                console.log(`[LEVEL] No stats found for user ${targetUser.id} in guild ${interaction.guildId}`);
+                
+                const embed = new EmbedBuilder()
+                    .setTitle('🏴‍☠️ New Pirate Detected')
+                    .setDescription(`${targetUser.username} hasn't started their pirate journey yet!\n\nThey need to send a message, add a reaction, or join a voice channel to begin earning bounty.`)
+                    .addFields(
+                        { name: '💰 Current Bounty', value: '฿0', inline: true },
+                        { name: '⭐ Current Level', value: '0', inline: true },
+                        { name: '🎯 Next Action', value: 'Send a message to get started!', inline: true }
+                    )
+                    .setColor('#FFA500')
+                    .setThumbnail(targetUser.displayAvatarURL())
+                    .setFooter({ text: 'Marine Intelligence • No criminal activity detected yet' });
+                
+                return interaction.editReply({ embeds: [embed] });
             }
+
+            console.log(`[LEVEL] Found stats for ${targetUser.username}: Level ${userStats.level}, XP ${userStats.xp}`);
 
             // Get user's rank in the leaderboard
             const leaderboard = await xpTracker.getLeaderboard(interaction.guildId);
@@ -64,32 +80,101 @@ module.exports = {
             const excludedRoleId = settings.excludedRole;
             const isPirateKing = excludedRoleId && targetMember.roles.cache.has(excludedRoleId);
 
+            // Calculate next level progress
+            const currentLevel = userStats.level;
+            const currentXP = userStats.xp;
+            let nextLevelXP = 0;
+            let xpNeeded = 0;
+            let progressPercentage = 100;
+
+            if (currentLevel < 50) {
+                const curve = process.env.FORMULA_CURVE || 'exponential';
+                const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+                
+                if (curve === 'exponential') {
+                    nextLevelXP = Math.floor(Math.pow((currentLevel + 1) / multiplier, 2) * 100);
+                } else {
+                    // Calculate XP needed for next level using same formula as tracker
+                    for (let i = 0; i <= currentLevel; i++) {
+                        nextLevelXP += 500 + (i * (multiplier * 100));
+                    }
+                }
+                
+                xpNeeded = Math.max(0, nextLevelXP - currentXP);
+                progressPercentage = nextLevelXP > 0 ? Math.floor((currentXP / nextLevelXP) * 100) : 100;
+            }
+
             // Create the wanted poster
+            console.log('[LEVEL] Creating wanted poster...');
             const canvas = await createWantedPoster(userStats, targetMember);
             const attachment = new AttachmentBuilder(canvas, { name: `wanted_${targetUser.id}.png` });
 
-            // Create the embed
+            // Create the embed with all the information
             const embed = new EmbedBuilder()
                 .setColor(isPirateKing ? '#FF0000' : '#FF6B35')
+                .setTitle(`${isPirateKing ? '👑' : '🏴‍☠️'} ${targetMember.displayName}'s Bounty`)
                 .addFields(
-                    { name: '🏴‍☠️ Rank', value: isPirateKing ? 'PIRATE KING' : `RANK ${rank}`, inline: true },
-                    { name: '🏴‍☠️ Pirate', value: targetMember.displayName, inline: true },
-                    { name: '💰 Bounty', value: `฿${userStats.xp.toLocaleString()}`, inline: true },
-                    { name: '⚔️ Level', value: userStats.level.toString(), inline: true },
-                    { name: '💎 Total XP', value: userStats.xp.toLocaleString(), inline: true },
-                    { name: '⚡ Status', value: isPirateKing ? 'Ruler of the Grand Line' : 'Notorious Criminal', inline: true }
-                )
-                .setImage(`attachment://wanted_${targetUser.id}.png`)
-                .setFooter({ text: `Marine Intelligence • Report any sightings immediately • Bounty #${String(rank).padStart(3, '0')}` });
+                    { name: '🏆 Rank', value: isPirateKing ? 'PIRATE KING' : `#${rank}`, inline: true },
+                    { name: '⭐ Level', value: userStats.level.toString(), inline: true },
+                    { name: '💰 Total Bounty', value: `฿${userStats.xp.toLocaleString()}`, inline: true }
+                );
 
+            // Add progress information if not max level
+            if (currentLevel < 50) {
+                embed.addFields(
+                    { name: '📈 Next Level', value: `${xpNeeded.toLocaleString()} XP needed`, inline: true },
+                    { name: '📊 Progress', value: `${progressPercentage}%`, inline: true },
+                    { name: '🎯 Target Level', value: (currentLevel + 1).toString(), inline: true }
+                );
+            } else {
+                embed.addFields(
+                    { name: '🌟 Status', value: 'MAX LEVEL REACHED!', inline: true },
+                    { name: '👑 Achievement', value: 'Legendary Pirate', inline: true },
+                    { name: '🎊 Congratulations!', value: 'You\'ve mastered the seas!', inline: true }
+                );
+            }
+
+            // Add activity breakdown
+            const voiceHours = Math.floor(userStats.voice_time / 3600);
+            const voiceMinutes = Math.floor((userStats.voice_time % 3600) / 60);
+            
+            embed.addFields(
+                { name: '💬 Messages', value: userStats.messages.toLocaleString(), inline: true },
+                { name: '😄 Reactions', value: userStats.reactions.toLocaleString(), inline: true },
+                { name: '🎙️ Voice Time', value: `${voiceHours}h ${voiceMinutes}m`, inline: true }
+            );
+
+            // Add special status if Pirate King
+            if (isPirateKing) {
+                embed.addFields({
+                    name: '👑 Special Status',
+                    value: 'Ruler of the Grand Line - Excluded from XP tracking',
+                    inline: false
+                });
+            }
+
+            embed.setImage(`attachment://wanted_${targetUser.id}.png`)
+                .setFooter({ 
+                    text: `Marine Intelligence • ${isPirateKing ? 'EMPEROR CLASS THREAT' : `Bounty #${String(rank).padStart(3, '0')}`}` 
+                })
+                .setTimestamp();
+
+            console.log('[LEVEL] Sending wanted poster and embed...');
             await interaction.editReply({ embeds: [embed], files: [attachment] });
 
         } catch (error) {
             console.error('[ERROR] Error in level command:', error);
-            await interaction.editReply({ 
-                content: '❌ An error occurred while creating the wanted poster!', 
-                ephemeral: true 
-            });
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Wanted Poster Creation Failed')
+                .setDescription('An error occurred while creating the wanted poster. The Marines are having technical difficulties!')
+                .addFields(
+                    { name: '🔧 Error Details', value: error.message || 'Unknown error', inline: false },
+                    { name: '💡 Try Again', value: 'Please try the command again in a moment.', inline: false }
+                )
+                .setColor('#FF0000')
+                .setFooter({ text: 'If this persists, contact a server administrator' });
+            
+            await interaction.editReply({ embeds: [embed] });
         }
     }
 };
