@@ -212,10 +212,27 @@ client.once('ready', async () => {
             global.xpTracker.processVoiceXP().catch(console.error);
         }
     }, 60000);
+
+    // Daily cleanup for voice XP caps (runs every 24 hours)
+    setInterval(() => {
+        if (global.xpTracker) {
+            global.xpTracker.cleanupDailyVoiceXP();
+            console.log('[INFO] Daily voice XP cap cleanup completed');
+        }
+    }, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+
+    // Initial cleanup on startup
+    if (global.xpTracker) {
+        global.xpTracker.cleanupDailyVoiceXP();
+    }
     
     console.log('[INFO] Discord Leveling Bot is fully operational!');
     console.log(`[INFO] Bot is in ${client.guilds.cache.size} servers`);
     console.log(`[INFO] Monitoring ${client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)} total members`);
+    
+    // Log daily voice XP cap setting
+    const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+    console.log(`[INFO] Daily voice XP cap: ${dailyCap} XP per user`);
 });
 
 // Message event for XP tracking
