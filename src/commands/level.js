@@ -92,12 +92,12 @@ module.exports = {
             // Create wanted poster using the same function as leaderboard
             const attachment = await createWantedPoster(userStats, targetMember, interaction.guild);
 
-            // Calculate next level progress
+            // Calculate next level progress (XP-based)
             const currentLevel = userStats.level;
             const currentXP = userStats.xp;
             let nextLevelXP = 0;
             let xpNeeded = 0;
-            let progressPercentage = 100;
+            let progressText = 'MAX LEVEL';
 
             if (currentLevel < 55) {
                 const curve = process.env.FORMULA_CURVE || 'exponential';
@@ -112,7 +112,7 @@ module.exports = {
                 }
                 
                 xpNeeded = Math.max(0, nextLevelXP - currentXP);
-                progressPercentage = nextLevelXP > 0 ? Math.floor((currentXP / nextLevelXP) * 100) : 100;
+                progressText = `${currentXP.toLocaleString()}/${nextLevelXP.toLocaleString()}`;
             }
 
             // Get threat level name
@@ -131,12 +131,11 @@ module.exports = {
                 return "MONITORING";
             }
 
-            // Calculate activity breakdown
+            // Calculate voice activity
             const voiceHours = Math.floor(userStats.voice_time / 3600);
             const voiceMinutes = Math.floor((userStats.voice_time % 3600) / 60);
-            const totalActivity = userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60);
 
-            // Create professional Marine Intelligence Report embed
+            // Create minimalist red Marine Intelligence Report embed
             const embed = new EmbedBuilder()
                 .setAuthor({ 
                     name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU',
@@ -144,40 +143,19 @@ module.exports = {
                 })
                 .setTitle(`📋 BOUNTY ASSESSMENT REPORT #${String(rank).padStart(4, '0')}`)
                 .setDescription(`\`\`\`diff\n${isPirateKing ? '+ EMPEROR-CLASS THREAT DETECTED' : '- ACTIVE CRIMINAL SURVEILLANCE'}\n\`\`\``)
-                .setColor(isPirateKing ? 0xFF0000 : userStats.level >= 40 ? 0xFF4500 : userStats.level >= 25 ? 0xFF8C00 : userStats.level >= 10 ? 0xFFD700 : 0x1E40AF);
+                .setColor(0xFF0000); // Red color
 
             // Intelligence header section
             embed.addFields({
                 name: '📊 INTELLIGENCE SUMMARY',
-                value: `\`\`\`yaml\nSubject: ${targetMember.displayName}\nAlias: ${targetUser.username}\nThreat Classification: ${getThreatLevelName(userStats.level)}\nBounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\n\`\`\``,
+                value: `\`\`\`yaml\nUsername: ${targetUser.username}\nAlias: ${targetMember.displayName}\nThreat Classification: ${getThreatLevelName(userStats.level)}\nBounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\nBounty Amount: ฿${bountyAmount.toLocaleString()}\nProgress to Next Level: ${progressText}\nThreat Level: Level ${userStats.level}\nRanking: #${rank}\n\`\`\``,
                 inline: false
             });
 
-            // Core metrics in professional layout
-            embed.addFields(
-                {
-                    name: '💀 BOUNTY ASSESSMENT',
-                    value: `**Current Bounty**\n\`฿${bountyAmount.toLocaleString()}\`\n\n**Threat Level**\n\`Level ${userStats.level}\`\n\n**Global Ranking**\n\`#${rank} Most Wanted\``,
-                    inline: true
-                },
-                {
-                    name: '⚔️ THREAT ANALYSIS',
-                    value: `**Classification**\n\`${getThreatLevelName(userStats.level)}\`\n\n**Status**\n\`${isPirateKing ? 'EMPEROR CLASS' : 'ACTIVE TARGET'}\`\n\n**Priority Level**\n\`${userStats.level >= 40 ? 'MAXIMUM' : userStats.level >= 25 ? 'HIGH' : userStats.level >= 10 ? 'ELEVATED' : 'STANDARD'}\``,
-                    inline: true
-                },
-                {
-                    name: '📈 PROGRESSION DATA',
-                    value: currentLevel >= 55 || isPirateKing ? 
-                        `**Status**\n\`MAXIMUM THREAT\`\n\n**Classification**\n\`BEYOND SCALE\`\n\n**Action Required**\n\`FLEET RESPONSE\`` :
-                        `**Progress to L${currentLevel + 1}**\n\`${progressPercentage}% Complete\`\n\n**XP Required**\n\`${xpNeeded.toLocaleString()}\`\n\n**Next Bounty**\n\`฿${getBountyForLevel(currentLevel + 1).toLocaleString()}\``,
-                    inline: true
-                }
-            );
-
-            // Activity surveillance report
+            // RED Activity surveillance report
             embed.addFields({
                 name: '🔍 SURVEILLANCE REPORT',
-                value: `\`\`\`ini\n[Communication Intercepts]\nMessages = ${userStats.messages.toLocaleString()}\nReactions = ${userStats.reactions.toLocaleString()}\n\n[Operational Monitoring]\nVoice Activity = ${voiceHours}h ${voiceMinutes}m\nTotal Incidents = ${totalActivity.toLocaleString()}\n\n[Behavioral Analysis]\nActivity Level = ${totalActivity > 1000 ? 'HIGH' : totalActivity > 500 ? 'MODERATE' : totalActivity > 100 ? 'LOW' : 'MINIMAL'}\nThreat Assessment = ${getThreatLevelName(userStats.level)}\n\`\`\``,
+                value: `\`\`\`css\n[Communication Intercepts]\nMessages = ${userStats.messages.toLocaleString()}\nReactions = ${userStats.reactions.toLocaleString()}\n\n[Operational Monitoring]\nVoice Activity = ${voiceHours}h ${voiceMinutes}m\n\n[Behavioral Analysis]\nActivity Level = ${userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 1000 ? 'HIGH' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 500 ? 'MODERATE' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\nThreat Assessment = ${getThreatLevelName(userStats.level)}\n\`\`\``,
                 inline: false
             });
 
