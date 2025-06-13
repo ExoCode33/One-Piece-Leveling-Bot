@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js
+// src/utils/xpTracker.js - Fixed for existing database schema
 
 const { getBountyForLevel, getLevelUpMessage, createLevelUpEmbed } = require('./bountySystem');
 const { getMessageXP } = require('./messageXP');
@@ -264,7 +264,7 @@ class XPTracker {
         }
     }
 
-    // === XP & LEVELING DATABASE OPS ===
+    // === XP & LEVELING DATABASE OPS === (FIXED FOR EXISTING SCHEMA)
 
     async addXP(userId, guildId, amount, stats = {}) {
         try {
@@ -273,16 +273,16 @@ class XPTracker {
             const multiplier = settings.xpMultiplier || 1.0;
             const finalAmount = Math.floor(amount * multiplier);
             
+            // FIXED: Use existing database schema without updated_at
             const res = await this.db.query(
-                `INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                `INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                  ON CONFLICT (user_id, guild_id)
                  DO UPDATE SET
                     total_xp = user_levels.total_xp + $3,
                     messages = user_levels.messages + $5,
                     reactions = user_levels.reactions + $6,
-                    voice_time = user_levels.voice_time + $7,
-                    updated_at = CURRENT_TIMESTAMP
+                    voice_time = user_levels.voice_time + $7
                  RETURNING *`,
                 [
                     userId,
@@ -320,7 +320,7 @@ class XPTracker {
     async getUserStats(guildId, userId) {
         try {
             const res = await this.db.query(
-                `SELECT user_id, guild_id, total_xp AS xp, level, messages, reactions, voice_time, created_at, updated_at 
+                `SELECT user_id, guild_id, total_xp AS xp, level, messages, reactions, voice_time, created_at
                  FROM user_levels WHERE guild_id = $1 AND user_id = $2`,
                 [guildId, userId]
             );
