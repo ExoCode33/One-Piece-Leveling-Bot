@@ -138,8 +138,7 @@ module.exports = {
             // Create minimalist red Marine Intelligence Report embed
             const embed = new EmbedBuilder()
                 .setAuthor({ 
-                    name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU',
-                    iconURL: interaction.guild.iconURL() || undefined
+                    name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                 })
                 .setTitle(`📋 BOUNTY ASSESSMENT REPORT #${String(rank).padStart(4, '0')}`)
                 .setDescription(`\`\`\`diff\n${isPirateKing ? '+ EMPEROR-CLASS THREAT DETECTED' : '- ACTIVE CRIMINAL SURVEILLANCE'}\n\`\`\``)
@@ -148,14 +147,7 @@ module.exports = {
             // Intelligence header section
             embed.addFields({
                 name: '📊 INTELLIGENCE SUMMARY',
-                value: `\`\`\`yaml\nUsername: ${targetUser.username}\nAlias: ${targetMember.displayName}\nThreat Classification: ${getThreatLevelName(userStats.level)}\nBounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\nBounty Amount: ฿${bountyAmount.toLocaleString()}\nProgress to Next Level: ${progressText}\nThreat Level: Level ${userStats.level}\nRanking: #${rank}\n\`\`\``,
-                inline: false
-            });
-
-            // RED Activity surveillance report
-            embed.addFields({
-                name: '🔍 SURVEILLANCE REPORT',
-                value: `\`\`\`css\n[Communication Intercepts]\nMessages = ${userStats.messages.toLocaleString()}\nReactions = ${userStats.reactions.toLocaleString()}\n\n[Operational Monitoring]\nVoice Activity = ${voiceHours}h ${voiceMinutes}m\n\n[Behavioral Analysis]\nActivity Level = ${userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 1000 ? 'HIGH' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 500 ? 'MODERATE' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\nThreat Assessment = ${getThreatLevelName(userStats.level)}\n\`\`\``,
+                value: `\`\`\`css\nUsername: ${targetUser.username}\nAlias: ${targetMember.displayName}\nThreat Classification: ${getThreatLevelName(userStats.level)}\nBounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\nBounty Amount: ฿${bountyAmount.toLocaleString()}\nProgress to Next Level: ${progressText}\nThreat Level: Level ${userStats.level}\nRanking: #${rank}\n\n[Communication Intercepts]\nMessages = ${userStats.messages.toLocaleString()}\nReactions = ${userStats.reactions.toLocaleString()}\n\n[Operational Monitoring]\nVoice Activity = ${voiceHours}h ${voiceMinutes}m\n\n[Behavioral Analysis]\nActivity Level = ${userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 1000 ? 'HIGH' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 500 ? 'MODERATE' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\nThreat Assessment = ${getThreatLevelName(userStats.level)}\n\`\`\``,
                 inline: false
             });
 
