@@ -297,7 +297,7 @@ module.exports = {
         );
 
         if (view === 'posters') {
-            // Top 3 Bounties - All 4 in a single embed with posters
+            // Top 3 Bounties - Canvas wanted posters only, no individual embeds
             const topThree = leaderboard.slice(0, 3);
             const allPirates = [];
             if (pirateKingUser) allPirates.push({ user: pirateKingUser, rank: 'KING', isPirateKing: true });
@@ -305,36 +305,17 @@ module.exports = {
                 allPirates.push({ user: topThree[i], rank: i + 1, isPirateKing: false });
             }
 
-            // Single combined embed with all information
-            const combinedEmbed = new EmbedBuilder()
+            // Header embed only
+            const headerEmbed = new EmbedBuilder()
                 .setColor(0x8B0000)
                 .setTitle('🏴‍☠️ TOP 3 BOUNTIES 🏴‍☠️')
                 .setDescription('The World Government has issued these bounties for the most dangerous criminals on the Grand Line.\n\u200B')
                 .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
                 .setTimestamp();
 
-            // Add fields for each pirate
-            for (let i = 0; i < Math.min(allPirates.length, 4); i++) {
-                const pirate = allPirates[i];
-                const user = pirate.user;
-                const bounty = pirate.isPirateKing ? PIRATE_KING_BOUNTY : getBountyForLevel(user.level);
-                const title = pirate.isPirateKing ? '👑 PIRATE KING' : `${pirateRankEmoji(pirate.rank)} RANK ${pirate.rank}`;
-                const status = pirate.isPirateKing ? 'Ruler of the Grand Line' :
-                    pirate.rank === 1 ? 'Most Dangerous Pirate' : 
-                    pirate.rank === 2 ? 'Rising Star' : 'Notorious Criminal';
-                
-                combinedEmbed.addFields(
-                    { 
-                        name: title, 
-                        value: `🏴‍☠️ **Pirate:** <@${user.userId}>\n💰 **Bounty:** ฿${bounty.toLocaleString()}\n⚔️ **Level:** ${user.level}\n💎 **Total XP:** ${user.xp.toLocaleString()}\n📍 **Status:** ${status}`, 
-                        inline: false 
-                    }
-                );
-            }
+            await interaction.reply({ embeds: [headerEmbed], components: [row] });
 
-            await interaction.reply({ embeds: [combinedEmbed], components: [row] });
-
-            // Generate and send posters
+            // Generate and send canvas posters only (no individual embeds)
             for (let i = 0; i < Math.min(allPirates.length, 4); i++) {
                 const pirate = allPirates[i];
                 const user = pirate.user;
@@ -344,6 +325,7 @@ module.exports = {
                     const posterBuffer = await createWantedPoster(user, rank, bounty, guild);
                     if (posterBuffer) {
                         const attachment = new AttachmentBuilder(posterBuffer, { name: `wanted_poster_${i + 1}.png` });
+                        // Send only the canvas image, no embed
                         await interaction.followUp({ files: [attachment] });
                     }
                 } catch (e) { 
