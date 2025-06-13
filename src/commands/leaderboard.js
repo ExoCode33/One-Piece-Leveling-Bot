@@ -156,16 +156,48 @@ module.exports = {
                         .setStyle(ButtonStyle.Danger)
                 );
 
+            // Helper function to get threat level name
+            function getThreatLevelName(level) {
+                if (level >= 55) return "LEGENDARY THREAT";
+                if (level >= 50) return "EMPEROR CLASS";
+                if (level >= 45) return "EXTRAORDINARY";
+                if (level >= 40) return "ELITE LEVEL";
+                if (level >= 35) return "TERRITORIAL";
+                if (level >= 30) return "ADVANCED COMBATANT";
+                if (level >= 25) return "HIGH PRIORITY";
+                if (level >= 20) return "DANGEROUS";
+                if (level >= 15) return "GRAND LINE";
+                if (level >= 10) return "ELEVATED";
+                if (level >= 5) return "CONFIRMED CRIMINAL";
+                return "MONITORING";
+            }
+
             if (type === 'posters') {
-                // TOP 3 BOUNTIES - Show Pirate King + Top 3 with canvas and embeds
+                // TOP 3 BOUNTIES - Show Pirate King + Top 3 with canvas and red intelligence embeds
                 const headerEmbed = new EmbedBuilder()
-                    .setTitle('🏆 Top 3 Bounties')
-                    .setDescription('The most notorious pirates in the server!')
-                    .setColor('#FFD700');
+                    .setAuthor({ 
+                        name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                    })
+                    .setColor(0xFF0000);
+
+                // Add Pirate King to header if exists
+                let headerValue = `🚨 **TOP 3 MOST WANTED PIRATES** 🚨\n\n`;
+                
+                if (pirateKing) {
+                    const pirateKingBounty = getBountyForLevel(pirateKing.level);
+                    headerValue += `\`\`\`diff\n+ EMPEROR STATUS ALERT\n+ Subject: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Classification: PIRATE KING\n+ Status: EXCLUDED FROM STANDARD TRACKING\n! EXTREME CAUTION REQUIRED\n\`\`\`\n\n`;
+                }
+
+                headerValue += `\`\`\`yaml\nMARINE INTELLIGENCE DIRECTIVE:\nThe following individuals represent the highest threat\nlevels currently under surveillance. Immediate\nresponse protocols are authorized for any sightings.\n\`\`\``;
+
+                headerEmbed.addFields({
+                    name: '📋 OPERATION BRIEFING',
+                    value: headerValue,
+                    inline: false
+                });
 
                 // Send header first
                 if (isButton) {
-                    // Update the existing message with buttons
                     await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
                 } else {
                     await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
@@ -178,7 +210,7 @@ module.exports = {
 
                 console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 3');
 
-                // Send each poster with embed
+                // Send each poster with red intelligence embed
                 for (let i = 0; i < postersToShow.length; i++) {
                     const userData = postersToShow[i];
                     const isPirateKing = pirateKing && userData === pirateKing;
@@ -191,19 +223,37 @@ module.exports = {
                         // Get bounty amount for embed
                         const bountyAmount = getBountyForLevel(userData.level);
                         
-                        // Create detailed embed for each poster
+                        // Create red intelligence embed for each poster
                         const embed = new EmbedBuilder()
-                            .setColor(isPirateKing ? '#FF0000' : '#FF6B35')
-                            .addFields(
-                                { name: '🏴‍☠️ Rank', value: rank, inline: true },
-                                { name: '🏴‍☠️ Pirate', value: userData.member.displayName, inline: true },
-                                { name: '💰 Bounty', value: `฿${bountyAmount.toLocaleString()}`, inline: true },
-                                { name: '⚔️ Level', value: userData.level.toString(), inline: true },
-                                { name: '💎 Total XP', value: userData.xp.toLocaleString(), inline: true },
-                                { name: '⚡ Status', value: isPirateKing ? 'Excluded Role' : 'Notorious Criminal', inline: true }
-                            )
-                            .setImage(`attachment://wanted_${userData.userId}.png`)
-                            .setFooter({ text: `Marine Intelligence • Report any sightings immediately • Bounty #${String(i + 1).padStart(3, '0')}` });
+                            .setAuthor({ 
+                                name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                            })
+                            .setColor(0xFF0000);
+
+                        // Intelligence summary for this pirate
+                        let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Threat Classification: ${getThreatLevelName(userData.level)}\n- Bounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\n- Bounty Amount: ฿${bountyAmount.toLocaleString()}\n- Threat Level: Level ${userData.level}\n- Current Ranking: ${rank}\n\n`;
+                        
+                        intelligenceValue += `- [Operational Assessment]\n- Activity Level: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n- Threat Assessment: ${getThreatLevelName(userData.level)}\n- Communication Intercepts: ${userData.messages.toLocaleString()} messages\n- Reaction Patterns: ${userData.reactions.toLocaleString()} documented\n\`\`\``;
+
+                        embed.addFields({
+                            name: '📊 INTELLIGENCE SUMMARY',
+                            value: intelligenceValue,
+                            inline: false
+                        });
+
+                        if (isPirateKing) {
+                            embed.addFields({
+                                name: '👑 SPECIAL CLASSIFICATION',
+                                value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
+                                inline: false
+                            });
+                        }
+
+                        embed.setImage(`attachment://wanted_${userData.userId}.png`)
+                            .setFooter({ 
+                                text: `⚓ Marine Intelligence Division • Sector Analysis Unit • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(userData.level)}`
+                            })
+                            .setTimestamp();
 
                         await interaction.followUp({ embeds: [embed], files: [attachment] });
                     } catch (error) {
@@ -213,25 +263,31 @@ module.exports = {
                 }
 
             } else if (type === 'long') {
-                // TOP 10 BOUNTIES - Show Pirate King + Top 10 with canvas and embeds
+                // TOP 10 BOUNTIES - Show Pirate King + Top 10 with canvas and red intelligence embeds
                 const headerEmbed = new EmbedBuilder()
-                    .setTitle('📊 Top 10 Bounties')
-                    .setDescription('The most wanted pirates in the server!')
-                    .setColor('#4169E1');
+                    .setAuthor({ 
+                        name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                    })
+                    .setColor(0xFF0000);
 
-                // Add Pirate King info to header if exists
+                // Add comprehensive header for top 10
+                let headerValue = `🚨 **TOP 10 MOST WANTED PIRATES** 🚨\n\n`;
+                
                 if (pirateKing) {
                     const pirateKingBounty = getBountyForLevel(pirateKing.level);
-                    headerEmbed.addFields({
-                        name: '👑 Pirate King',
-                        value: `${pirateKing.member.displayName} - ฿${pirateKingBounty.toLocaleString()} (Level ${pirateKing.level}) - **Excluded Role**`,
-                        inline: false
-                    });
+                    headerValue += `\`\`\`diff\n+ EMPEROR STATUS ALERT\n+ Subject: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Classification: PIRATE KING\n+ Status: EXCLUDED FROM STANDARD TRACKING\n! EXTREME CAUTION REQUIRED\n\`\`\`\n\n`;
                 }
+
+                headerValue += `\`\`\`yaml\nEXTENDED SURVEILLANCE REPORT:\nThis comprehensive assessment covers the ten most\ndangerous pirates currently under Marine observation.\nAll personnel are advised to review threat profiles\nand maintain heightened alert status.\n\`\`\``;
+
+                headerEmbed.addFields({
+                    name: '📋 EXTENDED OPERATION BRIEFING',
+                    value: headerValue,
+                    inline: false
+                });
 
                 // Send header first
                 if (isButton) {
-                    // Update the existing message with buttons
                     await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
                 } else {
                     await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
@@ -244,7 +300,7 @@ module.exports = {
 
                 console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 10');
 
-                // Send each poster with embed
+                // Send each poster with red intelligence embed
                 for (let i = 0; i < postersToShow.length; i++) {
                     const userData = postersToShow[i];
                     const isPirateKing = pirateKing && userData === pirateKing;
@@ -256,20 +312,40 @@ module.exports = {
                         
                         // Get bounty amount for embed
                         const bountyAmount = getBountyForLevel(userData.level);
+                        const voiceHours = Math.floor(userData.voice_time / 3600);
+                        const voiceMinutes = Math.floor((userData.voice_time % 3600) / 60);
                         
-                        // Create detailed embed for each poster
+                        // Create detailed red intelligence embed for each poster
                         const embed = new EmbedBuilder()
-                            .setColor(isPirateKing ? '#FF0000' : '#FF6B35')
-                            .addFields(
-                                { name: '🏴‍☠️ Rank', value: rank, inline: true },
-                                { name: '🏴‍☠️ Pirate', value: userData.member.displayName, inline: true },
-                                { name: '💰 Bounty', value: `฿${bountyAmount.toLocaleString()}`, inline: true },
-                                { name: '⚔️ Level', value: userData.level.toString(), inline: true },
-                                { name: '💎 Total XP', value: userData.xp.toLocaleString(), inline: true },
-                                { name: '⚡ Status', value: isPirateKing ? 'Excluded Role' : 'Notorious Criminal', inline: true }
-                            )
-                            .setImage(`attachment://wanted_${userData.userId}.png`)
-                            .setFooter({ text: `Marine Intelligence • Report any sightings immediately • Bounty #${String(i + 1).padStart(3, '0')}` });
+                            .setAuthor({ 
+                                name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                            })
+                            .setColor(0xFF0000);
+
+                        // Detailed intelligence summary for top 10
+                        let intelligenceValue = `\`\`\`diff\n- Username: ${userData.member.user.username}\n- Alias: ${userData.member.displayName}\n- Threat Classification: ${getThreatLevelName(userData.level)}\n- Bounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\n- Bounty Amount: ฿${bountyAmount.toLocaleString()}\n- Threat Level: Level ${userData.level}\n- Current Ranking: ${rank}\n\n`;
+                        
+                        intelligenceValue += `- [Communication Intercepts]\n- Messages: ${userData.messages.toLocaleString()}\n- Reactions: ${userData.reactions.toLocaleString()}\n\n- [Operational Monitoring]\n- Voice Activity: ${voiceHours}h ${voiceMinutes}m\n\n- [Behavioral Analysis]\n- Activity Level: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n- Threat Assessment: ${getThreatLevelName(userData.level)}\n\`\`\``;
+
+                        embed.addFields({
+                            name: '📊 INTELLIGENCE SUMMARY',
+                            value: intelligenceValue,
+                            inline: false
+                        });
+
+                        if (isPirateKing) {
+                            embed.addFields({
+                                name: '👑 SPECIAL CLASSIFICATION',
+                                value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
+                                inline: false
+                            });
+                        }
+
+                        embed.setImage(`attachment://wanted_${userData.userId}.png`)
+                            .setFooter({ 
+                                text: `⚓ Marine Intelligence Division • Sector Analysis Unit • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(userData.level)}`
+                            })
+                            .setTimestamp();
 
                         await interaction.followUp({ embeds: [embed], files: [attachment] });
                     } catch (error) {
@@ -279,42 +355,61 @@ module.exports = {
                 }
 
             } else if (type === 'full') {
-                // ALL THE BOUNTIES - Text only, no canvas, level 1+
+                // ALL THE BOUNTIES - Red intelligence report style, text only, no canvas, level 1+
                 const level1Plus = filteredUsers.filter(user => user.level >= 1);
                 
-                let content = '```\n📜 ALL THE BOUNTIES 📜\n';
-                content += '═══════════════════════════════════════\n\n';
+                const embed = new EmbedBuilder()
+                    .setAuthor({ 
+                        name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                    })
+                    .setColor(0xFF0000);
+
+                let intelligenceValue = `🚨 **COMPLETE BOUNTY DATABASE** 🚨\n\n`;
 
                 if (pirateKing) {
                     const pirateKingBounty = getBountyForLevel(pirateKing.level);
-                    content += `👑 PIRATE KING: ${pirateKing.member.displayName}\n`;
-                    content += `   ฿${pirateKingBounty.toLocaleString()} | Level ${pirateKing.level} | Excluded Role\n\n`;
+                    intelligenceValue += `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ Subject: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Level: ${pirateKing.level}\n+ Classification: PIRATE KING (EXCLUDED ROLE)\n! MAXIMUM THREAT DESIGNATION\n\`\`\`\n\n`;
                 }
 
-                content += '🏴‍☠️ NOTORIOUS PIRATES:\n';
-                content += '───────────────────────────────────────\n';
+                intelligenceValue += `\`\`\`yaml\nCOMPREHENSIVE SURVEILLANCE DATABASE:\nComplete registry of all known pirates with confirmed\nbounties. This intelligence report contains ${level1Plus.length + (pirateKing ? 1 : 0)} active\nthreat profiles requiring ongoing monitoring.\n\nClassification levels range from MONITORING to\nLEGENDARY THREAT. All field agents must familiarize\nthemselves with these profiles.\n\`\`\`\n\n`;
+
+                // Add all pirates in intelligence format
+                intelligenceValue += `\`\`\`diff\n🏴‍☠️ ACTIVE THREAT REGISTRY:\n${'═'.repeat(50)}\n\n`;
 
                 level1Plus.forEach((user, index) => {
                     const bountyAmount = getBountyForLevel(user.level);
-                    content += `${index + 1}. ${user.member.displayName}\n`;
-                    content += `   ฿${bountyAmount.toLocaleString()} | Level ${user.level}\n`;
+                    const threatLevel = getThreatLevelName(user.level);
+                    intelligenceValue += `${String(index + 1).padStart(2, '0')}. ${user.member.displayName}\n`;
+                    intelligenceValue += `    Bounty: ฿${bountyAmount.toLocaleString()}\n`;
+                    intelligenceValue += `    Level: ${user.level} | Class: ${threatLevel}\n`;
+                    intelligenceValue += `    Activity: ${user.messages + user.reactions + Math.floor(user.voice_time / 60) > 1000 ? 'HIGH' : user.messages + user.reactions + Math.floor(user.voice_time / 60) > 500 ? 'MODERATE' : user.messages + user.reactions + Math.floor(user.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\n`;
                 });
 
-                content += '\n═══════════════════════════════════════\n';
-                content += `Total Pirates: ${level1Plus.length + (pirateKing ? 1 : 0)}\n`;
-                content += '```';
+                intelligenceValue += `${'═'.repeat(50)}\n`;
+                intelligenceValue += `TOTAL ACTIVE THREATS: ${level1Plus.length + (pirateKing ? 1 : 0)}\n`;
+                intelligenceValue += `LAST UPDATED: ${new Date().toLocaleString()}\n`;
+                intelligenceValue += `\`\`\``;
+
+                embed.addFields({
+                    name: '📊 COMPLETE INTELLIGENCE SUMMARY',
+                    value: intelligenceValue,
+                    inline: false
+                });
+
+                embed.setFooter({ 
+                    text: `⚓ Marine Intelligence Division • Complete Database Access • ${level1Plus.length + (pirateKing ? 1 : 0)} Active Profiles`
+                })
+                .setTimestamp();
 
                 if (isButton) {
-                    // Update the existing message
                     await interaction.editReply({ 
-                        content: content, 
-                        embeds: [], 
+                        embeds: [embed], 
                         files: [], 
                         components: [buttons] 
                     });
                 } else {
                     await interaction.editReply({ 
-                        content: content, 
+                        embeds: [embed], 
                         components: [buttons] 
                     });
                 }
