@@ -4,11 +4,13 @@ const path = require('path');
 
 // Register custom fonts
 try {
-    registerFont(path.join(__dirname, '../assets/fonts/onePiece.ttf'), { family: 'OnePiece' });
-    registerFont(path.join(__dirname, '../assets/fonts/pirata.ttf'), { family: 'Pirata' });
+    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
     console.log('[DEBUG] Successfully registered custom fonts for wanted posters');
 } catch (error) {
-    console.log('[DEBUG] Font registration failed, using system fonts');
+    console.error('[ERROR] Failed to register custom fonts:', error.message);
+    console.log('[INFO] Falling back to system fonts');
 }
 
 module.exports = {
@@ -280,7 +282,7 @@ async function createWantedPoster(userData, guild) {
 
     // Load and draw scroll texture background
     try {
-        const scrollTexture = await loadImage(path.join(__dirname, '../assets/scroll_texture.jpg'));
+        const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
         
         // Draw the texture to fill the entire canvas
         ctx.drawImage(scrollTexture, 0, 0, width, height);
@@ -311,7 +313,7 @@ async function createWantedPoster(userData, guild) {
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '81px OnePiece, CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
+    ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
     const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
     const wantedX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('WANTED', wantedX, wantedY);
@@ -360,13 +362,13 @@ async function createWantedPoster(userData, guild) {
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '57px OnePiece, CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
     const deadOrAliveY = height * (1 - 39/100); // Vert 39: 39% from bottom
     const deadOrAliveX = (50/100) * width; // Horiz 50: centered
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
     // Name ("SHANKS") - Size 23, Horiz 50, Vert 30
-    ctx.font = '69px OnePiece, CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
+    ctx.font = '69px CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
@@ -375,7 +377,7 @@ async function createWantedPoster(userData, guild) {
     ctx.textAlign = 'center';
     let nameWidth = ctx.measureText(displayName).width;
     if (nameWidth > width - 60) {
-        ctx.font = '55px OnePiece, CaptainKiddNF, Arial, sans-serif';
+        ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
     }
     
     const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
@@ -388,7 +390,7 @@ async function createWantedPoster(userData, guild) {
     
     // Measure bounty text width to calculate total unit width
     const bountyStr = userData.xp.toLocaleString();
-    ctx.font = '54px Pirata, Cinzel, Georgia, serif'; // Set font to measure text
+    ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     
     // Berry symbol size
@@ -407,7 +409,7 @@ async function createWantedPoster(userData, guild) {
     
     let berryImg;
     try {
-        const berryPath = path.join(__dirname, '../assets/berry.png');
+        const berryPath = path.join(__dirname, '../../assets/berry.png');
         berryImg = await loadImage(berryPath);
     } catch {
         // Create simple berry symbol
@@ -434,7 +436,7 @@ async function createWantedPoster(userData, guild) {
 
     // One Piece logo - Size 26, Horiz 50, Vert 4.5
     try {
-        const onePieceLogoPath = path.join(__dirname, '../assets/one-piece-symbol.png');
+        const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
         const onePieceLogo = await loadImage(onePieceLogoPath);
         const logoSize = (26/100) * 200; // Size 26/100 * reasonable max = 52px
         const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
@@ -452,7 +454,7 @@ async function createWantedPoster(userData, guild) {
     // "MARINE" - Size 8, Horiz 96, Vert 2
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = '24px Arial, Times, serif'; // Size 8/100 * 300 = 24px
+    ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
     ctx.fillStyle = '#111';
     
     const marineText = 'M A R I N E';
