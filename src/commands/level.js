@@ -140,7 +140,6 @@ module.exports = {
                 .setAuthor({ 
                     name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                 })
-                .setTitle(`📋 BOUNTY ASSESSMENT REPORT #${String(rank).padStart(4, '0')}`)
                 .setColor(0xFF0000); // Red color
 
             // Intelligence header section
