@@ -1,9 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
-// Get XP tracker instance from global
-const getXPTracker = () => {
-    return global.xpTracker;
-};
 const path = require('path');
 
 // Register custom fonts
@@ -35,12 +31,33 @@ module.exports = {
         console.log('[DEBUG] Leaderboard type:', type);
 
         try {
-            // Get top users from database
+            // Get XP tracker instance from global
+            const xpTracker = global.xpTracker;
+            if (!xpTracker) {
+                console.error('[ERROR] XP Tracker not found in global scope');
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle('❌ Error')
+                    .setDescription('XP Tracker not initialized. Please restart the bot.')
+                    .setColor('#FF0000');
+
+                if (isButton) {
+                    return await interaction.update({ embeds: [errorEmbed], components: [] });
+                } else {
+                    return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                }
+            }
+
             // Get excluded role ID from guild settings
             const settings = global.guildSettings?.get(interaction.guild.id) || {};
             const excludedRoleId = settings.excludedRole;
+            console.log('[DEBUG] Excluded role ID:', excludedRoleId);
+            
+            // Get top users from database using the XP tracker
+            console.log('[DEBUG] Getting leaderboard from XP tracker...');
+            const allUsers = await xpTracker.getLeaderboard(interaction.guild.id);
+            console.log('[DEBUG] Raw users from database:', allUsers?.length || 0);
 
-            if (!topUsers || topUsers.length === 0) {
+            if (!allUsers || allUsers.length === 0) {
                 const embed = new EmbedBuilder()
                     .setTitle('🏴‍☠️ No Bounties Found')
                     .setDescription('No pirates have earned bounties yet!')
@@ -57,18 +74,24 @@ module.exports = {
             const filteredUsers = [];
             let pirateKing = null;
 
-            for (const user of topUsers) {
+            console.log('[DEBUG] Processing users...');
+            for (const user of allUsers) {
                 try {
+                    console.log('[DEBUG] Processing user:', user.userId);
                     const member = await interaction.guild.members.fetch(user.userId).catch(() => null);
-                    if (!member) continue;
+                    if (!member) {
+                        console.log('[DEBUG] Member not found:', user.userId);
+                        continue;
+                    }
 
                     if (excludedRoleId && member.roles.cache.has(excludedRoleId)) {
                         pirateKing = { ...user, member };
+                        console.log('[DEBUG] Found Pirate King:', member.displayName);
                     } else {
                         filteredUsers.push({ ...user, member });
                     }
                 } catch (error) {
-                    console.log('[DEBUG] Error fetching member:', user.userId);
+                    console.log('[DEBUG] Error fetching member:', user.userId, error.message);
                     continue;
                 }
             }
@@ -115,6 +138,8 @@ module.exports = {
                 if (pirateKing) postersToShow.push(pirateKing);
                 postersToShow.push(...filteredUsers.slice(0, 3));
 
+                console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 3');
+
                 // Send each poster with embed
                 for (let i = 0; i < postersToShow.length; i++) {
                     const userData = postersToShow[i];
@@ -140,7 +165,7 @@ module.exports = {
 
                         await interaction.followUp({ embeds: [embed], files: [attachment] });
                     } catch (error) {
-                        console.log('[DEBUG] Error creating poster:', error);
+                        console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
                     }
                 }
@@ -173,6 +198,8 @@ module.exports = {
                 if (pirateKing) postersToShow.push(pirateKing);
                 postersToShow.push(...filteredUsers.slice(0, 10));
 
+                console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 10');
+
                 // Send each poster with embed
                 for (let i = 0; i < postersToShow.length; i++) {
                     const userData = postersToShow[i];
@@ -198,7 +225,7 @@ module.exports = {
 
                         await interaction.followUp({ embeds: [embed], files: [attachment] });
                     } catch (error) {
-                        console.log('[DEBUG] Error creating poster:', error);
+                        console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
                     }
                 }
@@ -243,16 +270,16 @@ module.exports = {
             }
 
         } catch (error) {
-            console.error('Error in leaderboard command:', error);
+            console.error('[ERROR] Error in leaderboard command:', error);
             const errorEmbed = new EmbedBuilder()
                 .setTitle('❌ Error')
-                .setDescription('Failed to load leaderboard. Please try again.')
+                .setDescription(`Failed to load leaderboard: ${error.message}`)
                 .setColor('#FF0000');
 
             if (isButton) {
-                await interaction.update({ embeds: [errorEmbed], components: [] });
+                await interaction.update({ embeds: [errorEmbed], components: [] }).catch(console.error);
             } else {
-                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                await interaction.reply({ embeds: [errorEmbed], ephemeral: true }).catch(console.error);
             }
         }
     }
@@ -317,7 +344,7 @@ async function createWantedPoster(userData, guild) {
         ctx.lineWidth = 3;
         ctx.stroke();
     } catch (error) {
-        console.log('[DEBUG] Could not load user avatar');
+        console.log('[DEBUG] Could not load user avatar for', userData.userId);
         // Fallback avatar
         ctx.fillStyle = '#666';
         ctx.beginPath();
@@ -355,36 +382,4 @@ async function createWantedPoster(userData, guild) {
     ctx.fillText('REPORT IMMEDIATELY', 200, 580);
 
     return canvas;
-}
-
-// Database functions - these now use the XP tracker class
-async function getTopUsers(guildId, limit = 15) {
-    const xpTracker = getXPTracker();
-    if (!xpTracker) {
-        console.error('[ERROR] XP Tracker not initialized');
-        return [];
-    }
-    
-    try {
-        const users = await xpTracker.getLeaderboard(guildId);
-        return users.slice(0, limit); // Limit results
-    } catch (error) {
-        console.error('[ERROR] Failed to get top users:', error);
-        return [];
-    }
-}
-
-async function getUserData(guildId, userId) {
-    const xpTracker = getXPTracker();
-    if (!xpTracker) {
-        console.error('[ERROR] XP Tracker not initialized');
-        return null;
-    }
-    
-    try {
-        return await xpTracker.getUserStats(userId, guildId);
-    } catch (error) {
-        console.error('[ERROR] Failed to get user data:', error);
-        return null;
-    }
 }
