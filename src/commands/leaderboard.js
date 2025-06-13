@@ -67,12 +67,20 @@ module.exports = {
                             if (embed.author?.name?.includes('WORLD GOVERNMENT INTELLIGENCE BUREAU')) return true;
                             if (embed.footer?.text?.includes('Marine Intelligence')) return true;
                             if (embed.title?.includes('Bounties') || embed.title?.includes('BOUNTY')) return true;
+                            if (embed.description?.includes('TOP') && embed.description?.includes('WANTED')) return true;
+                            if (embed.description?.includes('COMPLETE BOUNTY DATABASE')) return true;
                             if (embed.fields?.some(field => 
                                 field.name?.includes('INTELLIGENCE SUMMARY') ||
                                 field.name?.includes('OPERATION BRIEFING') ||
+                                field.name?.includes('EXTENDED OPERATION BRIEFING') ||
                                 field.name?.includes('ACTIVE THREATS') ||
-                                field.name?.includes('DATABASE STATUS')
+                                field.name?.includes('DATABASE STATUS') ||
+                                field.name?.includes('CONTINUED') ||
+                                field.name?.includes('SPECIAL CLASSIFICATION')
                             )) return true;
+                            
+                            // Check for image attachments in embeds (wanted posters)
+                            if (embed.image?.url?.includes('wanted_') || embed.image?.url?.includes('bounty_')) return true;
                         }
                         
                         // Check for wanted poster attachments
@@ -82,6 +90,17 @@ module.exports = {
                                 attachment.name?.includes('bounty_')
                             );
                             if (hasWantedPoster) return true;
+                        }
+                        
+                        // Check if message has navigation buttons (leaderboard buttons)
+                        if (msg.components && msg.components.length > 0) {
+                            const hasLeaderboardButtons = msg.components.some(row => 
+                                row.components?.some(button => 
+                                    button.customId?.includes('leaderboard_') ||
+                                    button.label?.includes('Bounties')
+                                )
+                            );
+                            if (hasLeaderboardButtons) return true;
                         }
                         
                         return false;
@@ -96,6 +115,7 @@ module.exports = {
                             await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
                         } catch (error) {
                             // Silently ignore deletion errors (message might already be deleted)
+                            console.log(`[LEADERBOARD] Could not delete message ${msg.id}:`, error.message);
                         }
                     }
                 } catch (error) {
