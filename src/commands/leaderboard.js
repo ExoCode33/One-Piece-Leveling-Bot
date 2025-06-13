@@ -395,7 +395,7 @@ module.exports = {
             }
             return;
         } else {
-            // All The Bounties - Message format, no canvas or embed, explicitly remove all visual elements
+            // All The Bounties - Text-only format, absolutely NO canvas or embeds
             let text = '🏴‍☠️ **ALL THE BOUNTIES** 🏴‍☠️\n\n';
             let rank = 1;
             
@@ -415,13 +415,12 @@ module.exports = {
             
             const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
             
-            // Reply with ONLY text content and buttons - no embeds, no files
-            return interaction.reply({ 
+            // ONLY send text - no followUp messages, no canvas generation
+            await interaction.reply({ 
                 content: finalText, 
-                components: [row],
-                embeds: [], // Explicitly empty embeds array
-                files: []   // Explicitly empty files array
+                components: [row]
             });
+            return; // Important: return immediately to prevent any canvas generation
         }
     },
 };
