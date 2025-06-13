@@ -1,4 +1,4 @@
-// src/commands/level.js
+=// src/commands/level.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
 const fs = require('fs');
@@ -141,7 +141,6 @@ module.exports = {
                     name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                 })
                 .setTitle(`📋 BOUNTY ASSESSMENT REPORT #${String(rank).padStart(4, '0')}`)
-                .setDescription(`\`\`\`diff\n${isPirateKing ? '+ EMPEROR-CLASS THREAT DETECTED' : '- ACTIVE CRIMINAL SURVEILLANCE'}\n\`\`\``)
                 .setColor(0xFF0000); // Red color
 
             // Intelligence header section
@@ -160,9 +159,8 @@ module.exports = {
                 });
             }
 
-            // Professional footer with case information
+            // Professional footer with case information - REMOVED THUMBNAIL
             embed.setImage(`attachment://wanted_${targetUser.id}.png`)
-                .setThumbnail(targetUser.displayAvatarURL({ size: 128 }))
                 .setFooter({ 
                     text: `⚓ Marine Intelligence Division • Sector Analysis Unit • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(userStats.level)}`
                 })
