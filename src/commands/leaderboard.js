@@ -243,7 +243,21 @@ module.exports = {
             return interaction.reply({ content: "This command can only be used in a server, not in DMs.", ephemeral: true });
         }
 
-        const view = interaction.options.getString('view') || 'posters';
+        // Check if this is a button interaction
+        const isButton = interaction.isButton && interaction.isButton();
+        
+        // Get view parameter
+        let view;
+        if (isButton) {
+            // Extract view from button customId (e.g., 'leaderboard_posters_1_xp' -> 'posters')
+            const customId = interaction.customId;
+            if (customId.includes('posters')) view = 'posters';
+            else if (customId.includes('long')) view = 'long';
+            else if (customId.includes('full')) view = 'full';
+            else view = 'posters';
+        } else {
+            view = interaction.options.getString('view') || 'posters';
+        }
 
         let leaderboard;
         try {
@@ -313,9 +327,6 @@ module.exports = {
                 .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
                 .setTimestamp();
 
-            // Check if this is a button interaction or slash command
-            const isButton = interaction.isButton && interaction.isButton();
-            
             if (isButton) {
                 await interaction.update({ embeds: [headerEmbed], components: [row] });
             } else {
@@ -333,11 +344,7 @@ module.exports = {
                     if (posterBuffer) {
                         const attachment = new AttachmentBuilder(posterBuffer, { name: `wanted_poster_${i + 1}.png` });
                         // Send only the canvas image, no embed
-                        if (isButton) {
-                            await interaction.followUp({ files: [attachment] });
-                        } else {
-                            await interaction.followUp({ files: [attachment] });
-                        }
+                        await interaction.followUp({ files: [attachment] });
                     }
                 } catch (e) { 
                     console.error('Error creating poster:', e);
@@ -361,9 +368,7 @@ module.exports = {
                 .setFooter({ text: 'Marine Intelligence • World Government Bounty Board' })
                 .setTimestamp();
 
-            // Check if this is a button interaction or slash command
-            const isButton = interaction.isButton && interaction.isButton();
-
+            // Show Pirate King if exists
             if (pirateKingUser) {
                 headerEmbed.addFields({
                     name: '👑 PIRATE KING (Excluded Role)',
@@ -431,9 +436,6 @@ module.exports = {
             }
             
             const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
-            
-            // Check if this is a button interaction or slash command
-            const isButton = interaction.isButton && interaction.isButton();
             
             // ONLY send text - no followUp messages, no canvas generation
             if (isButton) {
