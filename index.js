@@ -155,14 +155,20 @@ client.on('interactionCreate', async interaction => {
             const page = parseInt(parts[2]) || 1;
             const type = parts[3] || 'xp';
             
-            await interaction.deferUpdate();
-            
-            // Mock interaction for leaderboard command
+            // Create proper mock interaction with all required methods
             const mockInteraction = {
                 ...interaction,
-                deferReply: async () => {},
-                editReply: async (options) => await interaction.editReply(options),
-                reply: async (options) => await interaction.editReply(options),
+                // Keep the original interaction methods
+                isButton: () => true,
+                isCommand: () => false,
+                deferUpdate: interaction.deferUpdate.bind(interaction),
+                update: interaction.update.bind(interaction),
+                followUp: interaction.followUp.bind(interaction),
+                reply: interaction.reply.bind(interaction),
+                editReply: interaction.editReply.bind(interaction),
+                deleteReply: interaction.deleteReply.bind(interaction),
+                
+                // Mock the options for slash command compatibility
                 options: {
                     getString: (name) => {
                         if (name === 'view') return view;
