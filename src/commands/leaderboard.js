@@ -391,9 +391,9 @@ module.exports = {
                         const globalIndex = chunkIndex * chunkSize + index + 1;
                         const bountyAmount = getBountyForLevel(user.level);
                         const threatLevel = getThreatLevelName(user.level);
-                        chunkValue += `${String(globalIndex).padStart(2, '0')}. ${user.member.displayName}\n`;
-                        chunkValue += `    ฿${bountyAmount.toLocaleString()} | Lv.${user.level}\n`;
-                        chunkValue += `    ${threatLevel.substring(0, 15)}\n\n`;
+                        chunkValue += `- ${String(globalIndex).padStart(2, '0')}. ${user.member.displayName}\n`;
+                        chunkValue += `-     ฿${bountyAmount.toLocaleString()} | Lv.${user.level}\n`;
+                        chunkValue += `-     ${threatLevel.substring(0, 15)}\n\n`;
                     });
                     chunkValue += `\`\`\``;
 
