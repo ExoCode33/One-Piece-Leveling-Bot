@@ -313,7 +313,7 @@ module.exports = {
                             })
                             .setTimestamp();
 
-                        await interaction.followUp({ embeds: [embed], files: [attachment], components: [buttons] });
+                        await interaction.followUp({ embeds: [embed], files: [attachment] });
                     } catch (error) {
                         console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
@@ -403,7 +403,7 @@ module.exports = {
                             })
                             .setTimestamp();
 
-                        await interaction.followUp({ embeds: [embed], files: [attachment], components: [buttons] });
+                        await interaction.followUp({ embeds: [embed], files: [attachment] });
                     } catch (error) {
                         console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
