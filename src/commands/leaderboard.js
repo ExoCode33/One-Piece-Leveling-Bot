@@ -1,6 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
-const { getTopUsers, getUserData } = require('../utils/xpTracker');
+// Get XP tracker instance from global
+const getXPTracker = () => {
+    return global.xpTracker;
+};
 const path = require('path');
 
 // Register custom fonts
@@ -32,12 +35,10 @@ module.exports = {
         console.log('[DEBUG] Leaderboard type:', type);
 
         try {
+            // Get top users from database
             // Get excluded role ID from guild settings
             const settings = global.guildSettings?.get(interaction.guild.id) || {};
             const excludedRoleId = settings.excludedRole;
-            
-            const topUsers = await getTopUsers(interaction.guild.id, 15);
-            console.log('[DEBUG] Raw top users:', topUsers?.length || 0);
 
             if (!topUsers || topUsers.length === 0) {
                 const embed = new EmbedBuilder()
@@ -356,23 +357,34 @@ async function createWantedPoster(userData, guild) {
     return canvas;
 }
 
-// Helper function to format XP as bounty
-function formatBounty(xp) {
-    return `฿${xp.toLocaleString()}`;
+// Database functions - these now use the XP tracker class
+async function getTopUsers(guildId, limit = 15) {
+    const xpTracker = getXPTracker();
+    if (!xpTracker) {
+        console.error('[ERROR] XP Tracker not initialized');
+        return [];
+    }
+    
+    try {
+        const users = await xpTracker.getLeaderboard(guildId);
+        return users.slice(0, limit); // Limit results
+    } catch (error) {
+        console.error('[ERROR] Failed to get top users:', error);
+        return [];
+    }
 }
 
-// Helper function to get user rank display
-function getRankDisplay(index, isPirateKing) {
-    if (isPirateKing) return 'PIRATE KING';
-    return `RANK ${index + 1}`;
-}
-
-// Helper function to get status display
-function getStatusDisplay(isPirateKing) {
-    return isPirateKing ? 'Excluded Role' : 'Notorious Criminal';
-}
-
-// Helper function to get embed color
-function getEmbedColor(isPirateKing) {
-    return isPirateKing ? '#FF0000' : '#FF6B35';
+async function getUserData(guildId, userId) {
+    const xpTracker = getXPTracker();
+    if (!xpTracker) {
+        console.error('[ERROR] XP Tracker not initialized');
+        return null;
+    }
+    
+    try {
+        return await xpTracker.getUserStats(userId, guildId);
+    } catch (error) {
+        console.error('[ERROR] Failed to get user data:', error);
+        return null;
+    }
 }
