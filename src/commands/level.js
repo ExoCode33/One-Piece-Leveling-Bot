@@ -89,8 +89,8 @@ module.exports = {
             const excludedRoleId = settings.excludedRole;
             const isPirateKing = excludedRoleId && targetMember.roles.cache.has(excludedRoleId);
 
-            // Create wanted poster
-            const attachment = await createWantedPoster(userStats, targetUser, interaction.guild);
+            // Create wanted poster using the same function as leaderboard
+            const attachment = await createWantedPoster(userStats, targetMember, interaction.guild);
 
             // Calculate next level progress
             const currentLevel = userStats.level;
@@ -136,7 +136,7 @@ module.exports = {
             const voiceMinutes = Math.floor((userStats.voice_time % 3600) / 60);
             const totalActivity = userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60);
 
-            // Create One Piece themed embed
+            // Create One Piece themed embed with balanced structure
             const embed = new EmbedBuilder()
                 .setTitle('🚨 WORLD GOVERNMENT BOUNTY RECORD 🚨')
                 .setDescription(`**Marine Intelligence Report** • *Classification: ${getThreatLevelName(userStats.level)}*`)
@@ -159,7 +159,7 @@ module.exports = {
                     }
                 );
 
-            // Add progress section for active pirates
+            // Add progress sections with balanced 3-column layout for active pirates
             if (currentLevel < 55 && !isPirateKing) {
                 let nextBounty;
                 try {
@@ -182,20 +182,20 @@ module.exports = {
                     },
                     { 
                         name: '🎯 Threat Level', 
-                        value: `**${getThreatLevelName(currentLevel)}**\n*Escalation: ${getThreatLevelName(currentLevel + 1)}*`, 
+                        value: `**${getThreatLevelName(currentLevel)}**\n*Next: ${getThreatLevelName(currentLevel + 1)}*`, 
                         inline: true 
                     }
                 );
-            } else if (currentLevel >= 55) {
+            } else if (currentLevel >= 55 || isPirateKing) {
                 embed.addFields(
                     { 
-                        name: '👑 Maximum Threat', 
-                        value: '**LEGENDARY STATUS**\n*Beyond Classification*', 
+                        name: '👑 Maximum Status', 
+                        value: isPirateKing ? '**PIRATE KING**\n*Ruler of Grand Line*' : '**LEGENDARY**\n*Beyond Classification*', 
                         inline: true 
                     },
                     { 
                         name: '🌟 Achievement', 
-                        value: '**ULTIMATE PIRATE**\n*Seas Conquered*', 
+                        value: isPirateKing ? '**EXCLUDED ROLE**\n*Special Status*' : '**ULTIMATE PIRATE**\n*Seas Conquered*', 
                         inline: true 
                     },
                     { 
@@ -206,11 +206,11 @@ module.exports = {
                 );
             }
 
-            // Criminal Activity Report
+            // Criminal Activity Report with clearer descriptions
             embed.addFields(
                 { 
                     name: '📊 Criminal Activity Report', 
-                    value: `**Communications:** ${userStats.messages.toLocaleString()} intercepted\n**Social Network:** ${userStats.reactions.toLocaleString()} connections\n**Operations Time:** ${voiceHours}h ${voiceMinutes}m monitored\n**Total Activity:** ${totalActivity.toLocaleString()} incidents`, 
+                    value: `**Messages Sent:** ${userStats.messages.toLocaleString()}\n**Reactions Given:** ${userStats.reactions.toLocaleString()}\n**Voice Chat Time:** ${voiceHours}h ${voiceMinutes}m\n**Total Activities:** ${totalActivity.toLocaleString()}`, 
                     inline: false 
                 }
             );
@@ -249,156 +249,197 @@ module.exports = {
     }
 };
 
-async function createWantedPoster(userStats, user, guild) {
+async function createWantedPoster(userStats, member, guild) {
     console.log(`[CANVAS] Creating wanted poster for level ${userStats.level}`);
     
     const width = 600, height = 900;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Get bounty amount for level instead of XP
-    let bountyAmount;
+    // Load and draw scroll texture background
     try {
-        bountyAmount = getBountyForLevel(userStats.level);
+        const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+        
+        // Draw the texture to fill the entire canvas
+        ctx.drawImage(scrollTexture, 0, 0, width, height);
+        
+        console.log('[DEBUG] Successfully loaded scroll texture background');
     } catch (error) {
-        bountyAmount = calculateBountyForLevel(userStats.level);
+        console.log('[DEBUG] Scroll texture not found, using fallback parchment color');
+        // Fallback to original parchment background if texture fails to load
+        ctx.fillStyle = '#f5e6c5';
+        ctx.fillRect(0, 0, width, height);
     }
     
-    console.log(`[CANVAS] Drawing bounty for level ${userStats.level}: ฿${bountyAmount.toLocaleString()}`);
-
-    // Background - old paper texture
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, '#F4E4BC');
-    gradient.addColorStop(0.5, '#E8D5A3');
-    gradient.addColorStop(1, '#D4C299');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-
-    // Add paper texture with noise
-    for (let i = 0; i < 2000; i++) {
-        ctx.fillStyle = `rgba(139, 119, 101, ${Math.random() * 0.1})`;
-        ctx.fillRect(Math.random() * width, Math.random() * height, 2, 2);
-    }
-
-    // WANTED header
-    ctx.fillStyle = '#8B0000';
-    ctx.font = 'bold 72px CaptainKiddNF, serif';
-    ctx.textAlign = 'center';
-    const wantedWidth = ctx.measureText('WANTED').width;
-    ctx.fillText('WANTED', width / 2, 80);
-
-    // Underline for WANTED
-    ctx.beginPath();
-    ctx.moveTo((width - wantedWidth) / 2, 90);
-    ctx.lineTo((width + wantedWidth) / 2, 90);
-    ctx.strokeStyle = '#8B0000';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-
-    // Main portrait area
-    const portraitSize = 280;
-    const portraitX = (width - portraitSize) / 2;
-    const portraitY = 120;
-
-    // Portrait background (dark frame)
-    ctx.fillStyle = '#2C1810';
-    ctx.fillRect(portraitX - 10, portraitY - 10, portraitSize + 20, portraitSize + 20);
-
-    try {
-        // Load and draw user avatar
-        const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 512 }));
-        
-        // Create circular clipping path
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(portraitX + portraitSize/2, portraitY + portraitSize/2, portraitSize/2, 0, Math.PI * 2);
-        ctx.clip();
-        
-        ctx.drawImage(avatar, portraitX, portraitY, portraitSize, portraitSize);
-        ctx.restore();
-        
-        // Portrait border
-        ctx.beginPath();
-        ctx.arc(portraitX + portraitSize/2, portraitY + portraitSize/2, portraitSize/2, 0, Math.PI * 2);
-        ctx.strokeStyle = '#8B0000';
-        ctx.lineWidth = 6;
-        ctx.stroke();
-        
-    } catch (error) {
-        console.warn('[CANVAS] Could not load avatar, using placeholder');
-        ctx.fillStyle = '#4A4A4A';
-        ctx.fillRect(portraitX, portraitY, portraitSize, portraitSize);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '32px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('NO PHOTO', portraitX + portraitSize/2, portraitY + portraitSize/2);
-    }
-
-    // Pirate name
-    ctx.fillStyle = '#2C1810';
-    ctx.font = 'bold 48px CaptainKiddNF, serif';
-    ctx.textAlign = 'center';
-    const name = user.displayName || user.username;
-    ctx.fillText(name, width / 2, portraitY + portraitSize + 60);
-
-    // Bounty amount background
-    const bountyBgY = portraitY + portraitSize + 100;
-    ctx.fillStyle = '#8B0000';
-    ctx.fillRect(50, bountyBgY, width - 100, 120);
+    // All borders and elements go on top of the texture
+    // All borders now black for consistency
+    ctx.strokeStyle = '#000000'; // Outer border - black
+    ctx.lineWidth = 8;
+    ctx.strokeRect(0, 0, width, height);
     
-    // Bounty border
-    ctx.strokeStyle = '#2C1810';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(50, bountyBgY, width - 100, 120);
+    ctx.strokeStyle = '#000000'; // Middle border - black
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, width - 20, height - 20);
+    
+    ctx.strokeStyle = '#000000'; // Inner border - black
+    ctx.lineWidth = 3;
+    ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // Bounty text
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '32px CaptainKiddNF, serif';
+    // WANTED title - Size 27, Horiz 50, Vert 92
+    ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
-    ctx.fillText('BOUNTY', width / 2, bountyBgY + 35);
+    ctx.textBaseline = 'middle';
+    ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
+    const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
+    const wantedX = (50/100) * width; // Horiz 50: centered
+    ctx.fillText('WANTED', wantedX, wantedY);
 
-    // Bounty amount
-    ctx.font = '54px Cinzel, Georgia, serif';
-    const bountyStr = `฿${bountyAmount.toLocaleString()}`;
+    // Image Box - Size 95, Horiz 50, Vert 65 with slightly wider border
+    const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
+    const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
+    const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
+    
+    // Slightly wider black border
+    ctx.strokeStyle = '#000000'; // Black border
+    ctx.lineWidth = 3; // Increased from 1 to 3 for wider border
+    ctx.strokeRect(photoX, photoY, photoSize, photoSize);
+    
+    // No white background - image goes directly on texture
+
+    const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 }; // Adjusted for wider border
+    if (member) {
+        try {
+            const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
+            const avatar = await loadImage(avatarURL);
+            
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            ctx.clip();
+            
+            // Subtle weathering effect
+            ctx.filter = 'contrast(0.95) sepia(0.05)';
+            ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            ctx.filter = 'none';
+            
+            ctx.restore();
+        } catch {
+            // If no avatar, just leave the texture showing through with border
+            console.log('[DEBUG] No avatar found, texture will show through');
+        }
+    }
+
+    // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 39
+    ctx.fillStyle = '#111';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+    const deadOrAliveY = height * (1 - 39/100); // Vert 39: 39% from bottom
+    const deadOrAliveX = (50/100) * width; // Horiz 50: centered
+    ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
+
+    // Name ("SHANKS") - Size 23, Horiz 50, Vert 30
+    ctx.font = '69px CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
+    let displayName = 'UNKNOWN PIRATE';
+    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+    
+    // Check if name is too long and adjust
+    ctx.textAlign = 'center';
+    let nameWidth = ctx.measureText(displayName).width;
+    if (nameWidth > width - 60) {
+        ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
+    }
+    
+    const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
+    const nameX = (50/100) * width; // Horiz 50: centered
+    ctx.fillText(displayName, nameX, nameY);
+
+    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
+    const berryBountyGap = 5; // Fixed gap in our 1-100 scale
+    
+    // FIXED: Get BOUNTY amount for user's level instead of XP
+    const bountyAmount = getBountyForLevel(userStats.level);
+    const bountyStr = bountyAmount.toLocaleString();
+    
+    console.log(`[LEVEL] Level ${userStats.level} = Bounty ฿${bountyStr}`);
+    
+    ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
     const bountyTextWidth = ctx.measureText(bountyStr).width;
-    const bountyX = width / 2;
-    const bountyY = bountyBgY + 85;
     
-    // Bounty amount shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillText(bountyStr, bountyX + 2, bountyY + 2);
+    // Berry symbol size
+    const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
     
-    // Bounty amount main text
-    ctx.fillStyle = '#FFD700';
+    // Calculate total width of the bounty unit (berry + gap + text)
+    const gapPixels = (berryBountyGap/100) * width; // Convert gap to pixels
+    const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+    
+    // Center the entire bounty unit horizontally
+    const bountyUnitStartX = (width - totalBountyWidth) / 2;
+    
+    // Position berry symbol at the start of the centered unit
+    const berryX = bountyUnitStartX + (berrySize/2); // Center of berry symbol
+    const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
+    
+    let berryImg;
+    try {
+        const berryPath = path.join(__dirname, '../../assets/berry.png');
+        berryImg = await loadImage(berryPath);
+    } catch {
+        // Create simple berry symbol
+        const berryCanvas = createCanvas(berrySize, berrySize);
+        const berryCtx = berryCanvas.getContext('2d');
+        berryCtx.fillStyle = '#111';
+        berryCtx.font = `bold ${berrySize}px serif`;
+        berryCtx.textAlign = 'center';
+        berryCtx.textBaseline = 'middle';
+        berryCtx.fillText('฿', berrySize/2, berrySize/2);
+        berryImg = berryCanvas;
+    }
+    
+    ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
+
+    // Position bounty numbers with fixed gap from berry
+    const bountyX = bountyUnitStartX + berrySize + gapPixels; // Start after berry + gap
+    const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
+    
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyX, bountyY);
 
-    // DEAD OR ALIVE text
-    ctx.fillStyle = '#8B0000';
-    ctx.font = 'bold 36px CaptainKiddNF, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('DEAD OR ALIVE', width / 2, bountyBgY + 160);
+    // One Piece logo - Size 26, Horiz 50, Vert 4.5
+    try {
+        const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
+        const onePieceLogo = await loadImage(onePieceLogoPath);
+        const logoSize = (26/100) * 200; // Size 26/100 * reasonable max = 52px
+        const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
+        const logoY = height * (1 - 4.5/100) - (logoSize/2); // Vert 4.5: 4.5% from bottom
+        
+        ctx.globalAlpha = 0.6;
+        ctx.filter = 'sepia(0.2) brightness(0.9)';
+        ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+        ctx.globalAlpha = 1.0;
+        ctx.filter = 'none';
+    } catch {
+        console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
+    }
 
-    // Marine seal/logo area
-    const sealY = bountyBgY + 200;
-    ctx.fillStyle = '#2C4B8C';
-    ctx.font = '24px TimesNewNormal, Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('MARINE', width / 2, sealY);
+    // "MARINE" - Size 8, Horiz 96, Vert 2
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
+    ctx.fillStyle = '#111';
     
-    ctx.font = '18px TimesNewNormal, Arial, sans-serif';
-    ctx.fillText('WORLD GOVERNMENT', width / 2, sealY + 25);
-
-    // Level indicator
-    ctx.fillStyle = '#8B0000';
-    ctx.font = 'bold 28px CaptainKiddNF, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`THREAT LEVEL: ${userStats.level}`, width / 2, sealY + 60);
+    const marineText = 'M A R I N E';
+    const marineX = (96/100) * width; // Horiz 96: very far right
+    const marineY = height * (1 - 2/100); // Vert 2: 2% from bottom
+    ctx.fillText(marineText, marineX, marineY);
 
     // Create attachment
     const buffer = canvas.toBuffer('image/png');
     const attachment = {
         attachment: buffer,
-        name: `wanted_${user.id}.png`
+        name: `wanted_${member.user.id}.png`
     };
 
     return attachment;
