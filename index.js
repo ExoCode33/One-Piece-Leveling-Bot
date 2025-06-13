@@ -152,10 +152,19 @@ async function registerCommands() {
     const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
     try {
+        // Use CLIENT_ID from env, fallback to bot's application ID
+        const applicationId = process.env.CLIENT_ID || client.application?.id || client.user?.id;
+        
+        if (!applicationId) {
+            console.error('[ERROR] CLIENT_ID not found in environment variables and bot application ID not available');
+            return;
+        }
+
         console.log(`[DEBUG] Registering ${commands.length} slash commands:`, commands.map(c => c.name).join(', '));
+        console.log(`[DEBUG] Using application ID: ${applicationId}`);
         
         await rest.put(
-            Routes.applicationCommands(process.env.CLIENT_ID),
+            Routes.applicationCommands(applicationId),
             { body: commands }
         );
 
