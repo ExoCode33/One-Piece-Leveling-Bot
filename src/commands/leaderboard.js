@@ -258,9 +258,9 @@ module.exports = {
 
                 // Send header first
                 if (isButton) {
-                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                    await interaction.editReply({ embeds: [headerEmbed] });
                 } else {
-                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                    await interaction.editReply({ embeds: [headerEmbed] });
                 }
 
                 // Create posters for Pirate King + Top 3
@@ -313,7 +313,14 @@ module.exports = {
                             })
                             .setTimestamp();
 
-                        await interaction.followUp({ embeds: [embed], files: [attachment] });
+                        // Send individual poster - add buttons only to the last one
+                        const isLastPoster = (i === postersToShow.length - 1);
+                        const messageOptions = { embeds: [embed], files: [attachment] };
+                        if (isLastPoster) {
+                            messageOptions.components = [buttons];
+                        }
+                        
+                        await interaction.followUp(messageOptions);
                     } catch (error) {
                         console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
@@ -346,9 +353,9 @@ module.exports = {
 
                 // Send header first
                 if (isButton) {
-                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                    await interaction.editReply({ embeds: [headerEmbed] });
                 } else {
-                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                    await interaction.editReply({ embeds: [headerEmbed] });
                 }
 
                 // Create posters for Pirate King + Top 10
@@ -403,7 +410,14 @@ module.exports = {
                             })
                             .setTimestamp();
 
-                        await interaction.followUp({ embeds: [embed], files: [attachment] });
+                        // Send individual poster - add buttons only to the last one
+                        const isLastPoster = (i === postersToShow.length - 1);
+                        const messageOptions = { embeds: [embed], files: [attachment] };
+                        if (isLastPoster) {
+                            messageOptions.components = [buttons];
+                        }
+                        
+                        await interaction.followUp(messageOptions);
                     } catch (error) {
                         console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
