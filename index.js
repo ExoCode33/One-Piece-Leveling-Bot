@@ -33,6 +33,9 @@ const db = new Pool({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// Make database globally accessible for commands
+global.db = db;
+
 // Test database connection
 db.query('SELECT NOW()', (err, res) => {
     if (err) {
@@ -70,6 +73,17 @@ async function initializeDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        `);
+
+        // Add indexes for better performance
+        await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_user_levels_guild_xp 
+            ON user_levels(guild_id, total_xp DESC)
+        `);
+        
+        await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_user_levels_user_guild 
+            ON user_levels(user_id, guild_id)
         `);
 
         console.log('[INFO] Database tables initialized successfully');
@@ -111,6 +125,11 @@ async function loadGuildSettings() {
             });
         }
         console.log('[INFO] Loaded settings for', global.guildSettings.size, 'guilds');
+        
+        // Debug: Log each guild's settings
+        for (const [guildId, settings] of global.guildSettings.entries()) {
+            console.log(`[DEBUG] Guild ${guildId}: excludedRole=${settings.excludedRole}, multiplier=${settings.xpMultiplier}`);
+        }
     } catch (error) {
         console.error('[ERROR] Failed to load guild settings:', error);
     }
@@ -195,6 +214,8 @@ client.once('ready', async () => {
     }, 60000);
     
     console.log('[INFO] Discord Leveling Bot is fully operational!');
+    console.log(`[INFO] Bot is in ${client.guilds.cache.size} servers`);
+    console.log(`[INFO] Monitoring ${client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)} total members`);
 });
 
 // Message event for XP tracking
@@ -234,7 +255,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// Slash command interaction handler
+// Slash command interaction handler (UPDATED)
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -245,7 +266,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     try {
-        await command.execute(interaction);
+        // Pass additional parameters that commands might need
+        await command.execute(interaction, client, global.xpTracker);
     } catch (error) {
         console.error(`[ERROR] Error executing command ${interaction.commandName}:`, error);
         
@@ -309,6 +331,8 @@ client.on('guildCreate', async (guild) => {
             levelupChannel: null,
             xpMultiplier: 1.0
         });
+        
+        console.log(`[INFO] Initialized settings for new guild: ${guild.name}`);
     } catch (error) {
         console.error('[ERROR] Failed to initialize settings for new guild:', error);
     }
@@ -320,52 +344,106 @@ client.on('guildDelete', (guild) => {
     global.guildSettings.delete(guild.id);
 });
 
-// Error handling
+// Enhanced error handling with more context
 process.on('unhandledRejection', (reason, promise) => {
     console.error('[ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit on unhandled rejections to keep bot running
 });
 
 process.on('uncaughtException', (error) => {
     console.error('[ERROR] Uncaught Exception:', error);
-    process.exit(1);
+    // Log the error but try to restart gracefully
+    setTimeout(() => {
+        process.exit(1);
+    }, 1000);
 });
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-    console.log('[INFO] Received SIGINT, shutting down gracefully...');
+// Enhanced graceful shutdown
+async function gracefulShutdown(signal) {
+    console.log(`[INFO] Received ${signal}, shutting down gracefully...`);
     
-    if (client) {
-        await client.destroy();
+    try {
+        // Stop processing new voice XP
+        if (global.xpTracker) {
+            console.log('[INFO] Stopping XP tracker...');
+        }
+        
+        // Close Discord connection
+        if (client) {
+            console.log('[INFO] Closing Discord connection...');
+            await client.destroy();
+        }
+        
+        // Close database connection
+        if (db) {
+            console.log('[INFO] Closing database connection...');
+            await db.end();
+        }
+        
+        console.log('[INFO] Graceful shutdown complete');
+        process.exit(0);
+    } catch (error) {
+        console.error('[ERROR] Error during shutdown:', error);
+        process.exit(1);
     }
-    
-    if (db) {
-        await db.end();
-    }
-    
-    process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-    console.log('[INFO] Received SIGTERM, shutting down gracefully...');
-    
-    if (client) {
-        await client.destroy();
-    }
-    
-    if (db) {
-        await db.end();
-    }
-    
-    process.exit(0);
-});
-
-// Login to Discord
-if (!process.env.DISCORD_TOKEN) {
-    console.error('[ERROR] DISCORD_TOKEN is not set in environment variables');
-    process.exit(1);
 }
 
-client.login(process.env.DISCORD_TOKEN).catch(error => {
-    console.error('[ERROR] Failed to login to Discord:', error);
-    process.exit(1);
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Enhanced startup validation
+function validateEnvironment() {
+    const required = ['DISCORD_TOKEN', 'DATABASE_URL'];
+    const missing = required.filter(key => !process.env[key]);
+    
+    if (missing.length > 0) {
+        console.error('[ERROR] Missing required environment variables:', missing.join(', '));
+        process.exit(1);
+    }
+    
+    console.log('[INFO] Environment validation passed');
+}
+
+// Connection monitoring
+db.on('error', (err) => {
+    console.error('[ERROR] Database connection error:', err);
 });
+
+client.on('error', (error) => {
+    console.error('[ERROR] Discord client error:', error);
+});
+
+client.on('warn', (warning) => {
+    console.warn('[WARN] Discord client warning:', warning);
+});
+
+// Rate limiting handling
+client.on('rateLimit', (rateLimitData) => {
+    console.warn('[WARN] Rate limit hit:', {
+        timeout: rateLimitData.timeout,
+        limit: rateLimitData.limit,
+        method: rateLimitData.method,
+        path: rateLimitData.path,
+        route: rateLimitData.route
+    });
+});
+
+// Login to Discord with validation
+async function startBot() {
+    try {
+        console.log('[INFO] Starting Discord Leveling Bot...');
+        
+        // Validate environment
+        validateEnvironment();
+        
+        // Login to Discord
+        await client.login(process.env.DISCORD_TOKEN);
+        
+    } catch (error) {
+        console.error('[ERROR] Failed to start bot:', error);
+        process.exit(1);
+    }
+}
+
+// Start the bot
+startBot();
