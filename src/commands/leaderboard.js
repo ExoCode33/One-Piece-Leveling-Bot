@@ -224,9 +224,9 @@ module.exports = {
                 .setDescription('Leaderboard type')
                 .setRequired(false)
                 .addChoices(
-                    { name: 'Top 3 Wanted Posters', value: 'posters' },
-                    { name: 'Top 10 List', value: 'long' },
-                    { name: 'Full Leaderboard', value: 'full' }
+                    { name: 'Top 3 Bounties', value: 'posters' },
+                    { name: 'Top 10 Bounties', value: 'long' },
+                    { name: 'All The Bounties', value: 'full' }
                 )
         ),
     async execute(interaction, client, xpTracker) {
@@ -255,6 +255,9 @@ module.exports = {
             return interaction.reply({ content: "No leaderboard data available.", ephemeral: true });
         }
 
+        // Filter to only show members level 1 or more
+        leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number' && user.level >= 1);
+
         // Pirate King detection
         let pirateKingUser = null;
         if (LEADERBOARD_EXCLUDE_ROLE) {
@@ -274,7 +277,6 @@ module.exports = {
             leaderboard = leaderboard.slice(1);
         }
 
-        leaderboard = leaderboard.filter(user => user && typeof user.xp === 'number');
         leaderboard.sort((a, b) => b.xp - a.xp);
 
         // Create navigation buttons with red styling
@@ -282,36 +284,57 @@ module.exports = {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('leaderboard_posters_1_xp')
-                .setLabel('🎯 Top 3 Posters')
-                .setStyle(view === 'posters' ? ButtonStyle.Danger : ButtonStyle.Secondary), // Red when active
+                .setLabel('🎯 Top 3 Bounties')
+                .setStyle(view === 'posters' ? ButtonStyle.Danger : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('leaderboard_long_1_xp')
-                .setLabel('📋 Top 10 List')
-                .setStyle(view === 'long' ? ButtonStyle.Danger : ButtonStyle.Secondary), // Red when active
+                .setLabel('📋 Top 10 Bounties')
+                .setStyle(view === 'long' ? ButtonStyle.Danger : ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('leaderboard_full_1_xp')
-                .setLabel('📜 Full Board')
-                .setStyle(view === 'full' ? ButtonStyle.Danger : ButtonStyle.Secondary) // Red when active
+                .setLabel('📜 All The Bounties')
+                .setStyle(view === 'full' ? ButtonStyle.Danger : ButtonStyle.Secondary)
         );
 
         if (view === 'posters') {
-            // Top 3 posters (Pirate King + 3 best)
+            // Top 3 Bounties - All 4 in a single embed with posters
             const topThree = leaderboard.slice(0, 3);
             const allPirates = [];
             if (pirateKingUser) allPirates.push({ user: pirateKingUser, rank: 'KING', isPirateKing: true });
             for (let i = 0; i < topThree.length; i++) {
                 allPirates.push({ user: topThree[i], rank: i + 1, isPirateKing: false });
             }
-            // Header
-            const headerEmbed = new EmbedBuilder()
+
+            // Single combined embed with all information
+            const combinedEmbed = new EmbedBuilder()
                 .setColor(0x8B0000)
-                .setTitle('🏴‍☠️ MOST WANTED PIRATES 🏴‍☠️')
+                .setTitle('🏴‍☠️ TOP 3 BOUNTIES 🏴‍☠️')
                 .setDescription('The World Government has issued these bounties for the most dangerous criminals on the Grand Line.\n\u200B')
                 .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
                 .setTimestamp();
-            await interaction.reply({ embeds: [headerEmbed], components: [row] });
 
-            // Posters
+            // Add fields for each pirate
+            for (let i = 0; i < Math.min(allPirates.length, 4); i++) {
+                const pirate = allPirates[i];
+                const user = pirate.user;
+                const bounty = pirate.isPirateKing ? PIRATE_KING_BOUNTY : getBountyForLevel(user.level);
+                const title = pirate.isPirateKing ? '👑 PIRATE KING' : `${pirateRankEmoji(pirate.rank)} RANK ${pirate.rank}`;
+                const status = pirate.isPirateKing ? 'Ruler of the Grand Line' :
+                    pirate.rank === 1 ? 'Most Dangerous Pirate' : 
+                    pirate.rank === 2 ? 'Rising Star' : 'Notorious Criminal';
+                
+                combinedEmbed.addFields(
+                    { 
+                        name: title, 
+                        value: `🏴‍☠️ **Pirate:** <@${user.userId}>\n💰 **Bounty:** ฿${bounty.toLocaleString()}\n⚔️ **Level:** ${user.level}\n💎 **Total XP:** ${user.xp.toLocaleString()}\n📍 **Status:** ${status}`, 
+                        inline: false 
+                    }
+                );
+            }
+
+            await interaction.reply({ embeds: [combinedEmbed], components: [row] });
+
+            // Generate and send posters
             for (let i = 0; i < Math.min(allPirates.length, 4); i++) {
                 const pirate = allPirates[i];
                 const user = pirate.user;
@@ -321,68 +344,99 @@ module.exports = {
                     const posterBuffer = await createWantedPoster(user, rank, bounty, guild);
                     if (posterBuffer) {
                         const attachment = new AttachmentBuilder(posterBuffer, { name: `wanted_poster_${i + 1}.png` });
-                        const posterEmbed = new EmbedBuilder()
-                            .setColor(pirate.isPirateKing ? 0xFFD700 : 0x8B0000)
-                            .setTitle(pirate.isPirateKing ? '👑 PIRATE KING' : `${pirateRankEmoji(rank)} RANK ${rank}`)
-                            .addFields(
-                                { name: '🏴‍☠️ Pirate', value: `<@${user.userId}>`, inline: true },
-                                { name: '💰 Bounty', value: `${bounty.toLocaleString()}`, inline: true },
-                                { name: '⚔️ Level', value: `${user.level}`, inline: true },
-                                { name: '💎 Total XP', value: `${user.xp.toLocaleString()}`, inline: true },
-                                { name: '📍 Status', value: pirate.isPirateKing ? 'Ruler of the Grand Line' :
-                                    rank === 1 ? 'Most Dangerous Pirate' : 
-                                    rank === 2 ? 'Rising Star' : 'Notorious Criminal', inline: true }
-                            )
-                            .setImage(`attachment://wanted_poster_${i + 1}.png`)
-                            .setFooter({ text: `Marine Intelligence • Report any sightings immediately • Bounty #${String(i + 1).padStart(3, '0')}` });
-                        await interaction.followUp({ embeds: [posterEmbed], files: [attachment] });
+                        await interaction.followUp({ files: [attachment] });
                     }
                 } catch (e) { 
                     console.error('Error creating poster:', e);
                 }
             }
             return;
-        } else if (view === 'full') {
-            // Full text list
-            let text = '🏴‍☠️ **COMPLETE PIRATE REGISTRY** 🏴‍☠️\n\n';
+        } else if (view === 'long') {
+            // Top 10 Bounties - Canvas format like Top 3
+            const topTen = leaderboard.slice(0, 10);
+            const allPirates = [];
+            if (pirateKingUser) allPirates.push({ user: pirateKingUser, rank: 'KING', isPirateKing: true });
+            for (let i = 0; i < topTen.length; i++) {
+                allPirates.push({ user: topTen[i], rank: i + 1, isPirateKing: false });
+            }
+
+            // Single combined embed with all information
+            const combinedEmbed = new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('🏴‍☠️ TOP 10 BOUNTIES 🏴‍☠️')
+                .setDescription('The most notorious criminals on the Grand Line with their wanted posters!\n\u200B')
+                .setFooter({ text: 'Marine Intelligence • World Government Bounty Board' })
+                .setTimestamp();
+
+            // Show Pirate King if exists
+            if (pirateKingUser) {
+                combinedEmbed.addFields({
+                    name: '👑 PIRATE KING (Excluded Role)',
+                    value: `🏴‍☠️ **Pirate:** <@${pirateKingUser.userId}>\n💰 **Bounty:** ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n⚔️ **Level:** ${pirateKingUser.level}\n💎 **Total XP:** ${pirateKingUser.xp.toLocaleString()}\n📍 **Status:** Ruler of the Grand Line`,
+                    inline: false
+                });
+            }
+
+            // Add top 10 fields
+            for (let i = 0; i < topTen.length; i++) {
+                const user = topTen[i];
+                const rank = i + 1;
+                const bounty = getBountyForLevel(user.level);
+                const status = rank === 1 ? 'Most Dangerous Pirate' : 
+                    rank === 2 ? 'Rising Star' : 
+                    rank === 3 ? 'Notorious Criminal' : 'Wanted Pirate';
+                
+                combinedEmbed.addFields({
+                    name: `${pirateRankEmoji(rank)} RANK ${rank}`,
+                    value: `🏴‍☠️ **Pirate:** <@${user.userId}>\n💰 **Bounty:** ฿${bounty.toLocaleString()}\n⚔️ **Level:** ${user.level}\n💎 **Total XP:** ${user.xp.toLocaleString()}\n📍 **Status:** ${status}`,
+                    inline: false
+                });
+            }
+
+            if (topTen.length === 0) {
+                combinedEmbed.setDescription("No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!");
+            }
+
+            await interaction.reply({ embeds: [combinedEmbed], components: [row] });
+
+            // Generate and send wanted posters for all pirates (Pirate King + Top 10)
+            for (let i = 0; i < Math.min(allPirates.length, 11); i++) {
+                const pirate = allPirates[i];
+                const user = pirate.user;
+                const rank = pirate.rank;
+                const bounty = pirate.isPirateKing ? PIRATE_KING_BOUNTY : getBountyForLevel(user.level);
+                try {
+                    const posterBuffer = await createWantedPoster(user, rank, bounty, guild);
+                    if (posterBuffer) {
+                        const attachment = new AttachmentBuilder(posterBuffer, { name: `wanted_poster_${i + 1}.png` });
+                        await interaction.followUp({ files: [attachment] });
+                    }
+                } catch (e) { 
+                    console.error('Error creating poster:', e);
+                }
+            }
+            return;
+        } else {
+            // All The Bounties - Message format, no canvas or embed
+            let text = '🏴‍☠️ **ALL THE BOUNTIES** 🏴‍☠️\n\n';
             let rank = 1;
+            
             if (pirateKingUser) {
                 text += `👑 **PIRATE KING**: <@${pirateKingUser.userId}> - Level ${pirateKingUser.level} - ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
             }
+            
             for (const user of leaderboard) {
                 const bounty = getBountyForLevel(user.level);
                 text += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}> — Level **${user.level}** — ฿**${bounty.toLocaleString()}**\n`;
                 rank++;
             }
+            
             if (leaderboard.length === 0) {
                 text += "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
             }
+            
             const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
-            return interaction.reply({ content: finalText, components: [row], embeds: [] });
-        } else {
-            // Top 10 embed
-            const embed = new EmbedBuilder()
-                .setColor(0x8B0000)
-                .setTitle('🏴‍☠️ Top 10 Most Wanted Pirates')
-                .setDescription('The most notorious criminals on the Grand Line!')
-                .setFooter({ text: 'Marine Intelligence • World Government Bounty Board' })
-                .setTimestamp();
-            let description = '';
-            if (pirateKingUser) {
-                description += `👑 **PIRATE KING**: <@${pirateKingUser.userId}>\nLevel ${pirateKingUser.level} • ฿${PIRATE_KING_BOUNTY.toLocaleString()}\n\n`;
-            }
-            const topTen = leaderboard.slice(0, 10);
-            for (let i = 0; i < topTen.length; i++) {
-                const user = topTen[i];
-                const rank = i + 1;
-                const bounty = getBountyForLevel(user.level);
-                description += `${pirateRankEmoji(rank)} **${rank}.** <@${user.userId}>\nLevel ${user.level} • ฿${bounty.toLocaleString()}\n\n`;
-            }
-            if (topTen.length === 0) {
-                description = "No pirates have earned any bounty yet! Set sail and make your mark on the Grand Line!";
-            }
-            embed.setDescription(description);
-            return interaction.reply({ embeds: [embed], components: [row] });
+            return interaction.reply({ content: finalText, components: [row] });
         }
     },
 };
