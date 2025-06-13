@@ -1,4 +1,4 @@
-=// src/commands/level.js
+// src/commands/level.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
 const fs = require('fs');
@@ -159,7 +159,7 @@ module.exports = {
                 });
             }
 
-            // Professional footer with case information - REMOVED THUMBNAIL
+            // Professional footer with case information - NO THUMBNAIL
             embed.setImage(`attachment://wanted_${targetUser.id}.png`)
                 .setFooter({ 
                     text: `⚓ Marine Intelligence Division • Sector Analysis Unit • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(userStats.level)}`
