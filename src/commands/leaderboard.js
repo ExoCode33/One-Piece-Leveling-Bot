@@ -48,6 +48,9 @@ module.exports = {
 
         // If this is a button interaction, delete previous messages in background (don't await)
         if (isButton) {
+            // Store the current interaction timestamp to avoid deleting new messages
+            const interactionTime = interaction.createdTimestamp;
+            
             // Run cleanup asynchronously without blocking
             setTimeout(async () => {
                 try {
@@ -56,10 +59,8 @@ module.exports = {
                         // Check if message is from our bot
                         if (msg.author.id !== interaction.client.user.id) return false;
                         
-                        // For button interactions, we want to delete ALL previous leaderboard messages
-                        // including the original interaction message, but we'll exclude messages that are too new
-                        const messageAge = Date.now() - msg.createdTimestamp;
-                        if (messageAge < 2000) return false; // Don't delete messages newer than 2 seconds
+                        // Don't delete messages created after this button interaction started
+                        if (msg.createdTimestamp >= interactionTime) return false;
                         
                         // Check if it's a leaderboard-related message
                         if (msg.embeds.length > 0) {
@@ -108,7 +109,7 @@ module.exports = {
                         return false;
                     });
                     
-                    console.log(`[LEADERBOARD] Deleting ${toDelete.size} previous leaderboard messages`);
+                    console.log(`[LEADERBOARD] Deleting ${toDelete.size} previous leaderboard messages (before ${new Date(interactionTime).toLocaleTimeString()})`);
                     
                     // Delete messages one by one with small delay to avoid rate limits
                     for (const msg of toDelete.values()) {
@@ -123,7 +124,7 @@ module.exports = {
                 } catch (error) {
                     console.log('[LEADERBOARD] Could not clean up previous messages:', error.message);
                 }
-            }, 2500); // Wait 2.5 seconds before cleanup to ensure all new messages are sent
+            }, 1000); // Reduced to 1 second since we're using interaction timestamp
         }
 
         try {
