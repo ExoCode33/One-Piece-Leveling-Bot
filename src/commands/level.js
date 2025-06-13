@@ -50,8 +50,8 @@ module.exports = {
             const targetUser = interaction.options.getUser('user') || interaction.user;
             const targetMember = await interaction.guild.members.fetch(targetUser.id);
 
-            // Get XP tracker
-            const xpTracker = interaction.client.xpTracker;
+            // Get XP tracker from global
+            const xpTracker = global.xpTracker;
             if (!xpTracker) {
                 return await interaction.editReply({ 
                     content: '❌ XP tracking system is not available.', 
@@ -60,7 +60,7 @@ module.exports = {
             }
 
             // Get user stats
-            const userStats = await xpTracker.getUserStats(targetUser.id, interaction.guild.id);
+            const userStats = await xpTracker.getUserStats(interaction.guild.id, targetUser.id);
             if (!userStats) {
                 return await interaction.editReply({ 
                     content: '❌ No bounty record found for this pirate.', 
@@ -82,10 +82,12 @@ module.exports = {
 
             // Get leaderboard position
             const leaderboard = await xpTracker.getLeaderboard(interaction.guild.id, 100);
-            const rank = leaderboard.findIndex(user => user.user_id === targetUser.id) + 1;
+            const rank = leaderboard.findIndex(user => user.userId === targetUser.id) + 1;
 
             // Check for Pirate King status
-            const isPirateKing = userStats.level >= 50;
+            const settings = global.guildSettings?.get(interaction.guild.id) || {};
+            const excludedRoleId = settings.excludedRole;
+            const isPirateKing = excludedRoleId && targetMember.roles.cache.has(excludedRoleId);
 
             // Create wanted poster
             const attachment = await createWantedPoster(userStats, targetUser, interaction.guild);
