@@ -313,7 +313,14 @@ module.exports = {
                 .setFooter({ text: 'World Government • Marine Headquarters • Justice Will Prevail' })
                 .setTimestamp();
 
-            await interaction.reply({ embeds: [headerEmbed], components: [row] });
+            // Check if this is a button interaction or slash command
+            const isButton = interaction.isButton && interaction.isButton();
+            
+            if (isButton) {
+                await interaction.update({ embeds: [headerEmbed], components: [row] });
+            } else {
+                await interaction.reply({ embeds: [headerEmbed], components: [row] });
+            }
 
             // Generate and send canvas posters only (no individual embeds)
             for (let i = 0; i < Math.min(allPirates.length, 4); i++) {
@@ -326,7 +333,11 @@ module.exports = {
                     if (posterBuffer) {
                         const attachment = new AttachmentBuilder(posterBuffer, { name: `wanted_poster_${i + 1}.png` });
                         // Send only the canvas image, no embed
-                        await interaction.followUp({ files: [attachment] });
+                        if (isButton) {
+                            await interaction.followUp({ files: [attachment] });
+                        } else {
+                            await interaction.followUp({ files: [attachment] });
+                        }
                     }
                 } catch (e) { 
                     console.error('Error creating poster:', e);
@@ -350,7 +361,9 @@ module.exports = {
                 .setFooter({ text: 'Marine Intelligence • World Government Bounty Board' })
                 .setTimestamp();
 
-            // Show Pirate King if exists
+            // Check if this is a button interaction or slash command
+            const isButton = interaction.isButton && interaction.isButton();
+
             if (pirateKingUser) {
                 headerEmbed.addFields({
                     name: '👑 PIRATE KING (Excluded Role)',
@@ -359,7 +372,11 @@ module.exports = {
                 });
             }
 
-            await interaction.reply({ embeds: [headerEmbed], components: [row] });
+            if (isButton) {
+                await interaction.update({ embeds: [headerEmbed], components: [row] });
+            } else {
+                await interaction.reply({ embeds: [headerEmbed], components: [row] });
+            }
 
             // Generate and send wanted posters with individual embeds for each pirate
             for (let i = 0; i < Math.min(allPirates.length, 11); i++) {
@@ -415,11 +432,23 @@ module.exports = {
             
             const finalText = text.length > 1900 ? text.slice(0, 1900) + '\n... (truncated)' : text;
             
+            // Check if this is a button interaction or slash command
+            const isButton = interaction.isButton && interaction.isButton();
+            
             // ONLY send text - no followUp messages, no canvas generation
-            await interaction.reply({ 
-                content: finalText, 
-                components: [row]
-            });
+            if (isButton) {
+                await interaction.update({ 
+                    content: finalText, 
+                    components: [row],
+                    embeds: [],
+                    files: []
+                });
+            } else {
+                await interaction.reply({ 
+                    content: finalText, 
+                    components: [row]
+                });
+            }
             return; // Important: return immediately to prevent any canvas generation
         }
     },
