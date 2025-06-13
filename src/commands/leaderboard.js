@@ -45,6 +45,32 @@ module.exports = {
             return;
         }
 
+        // If this is a button interaction, delete all previous messages except the original
+        if (isButton) {
+            try {
+                // Fetch recent messages in the channel
+                const messages = await interaction.channel.messages.fetch({ limit: 20 });
+                
+                // Filter for bot messages that are embeds (poster messages)
+                const botMessages = messages.filter(msg => 
+                    msg.author.id === interaction.client.user.id && 
+                    msg.embeds.length > 0 &&
+                    msg.id !== interaction.message.id // Don't delete the message with buttons
+                );
+                
+                // Delete the poster messages
+                for (const [_, msg] of botMessages) {
+                    try {
+                        await msg.delete();
+                    } catch (err) {
+                        console.log('[DEBUG] Could not delete message:', err.message);
+                    }
+                }
+            } catch (error) {
+                console.log('[DEBUG] Error cleaning up messages:', error.message);
+            }
+        }
+
         try {
             // Get XP tracker instance from global
             const xpTracker = global.xpTracker;
@@ -112,18 +138,15 @@ module.exports = {
                     new ButtonBuilder()
                         .setCustomId('leaderboard_posters_1_xp')
                         .setLabel('Top 3 Bounties')
-                        .setStyle(ButtonStyle.Primary)
-                        .setEmoji('🏆'),
+                        .setStyle(ButtonStyle.Danger),
                     new ButtonBuilder()
                         .setCustomId('leaderboard_long_1_xp')
                         .setLabel('Top 10 Bounties')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setEmoji('📊'),
+                        .setStyle(ButtonStyle.Danger),
                     new ButtonBuilder()
                         .setCustomId('leaderboard_full_1_xp')
                         .setLabel('All The Bounties')
-                        .setStyle(ButtonStyle.Success)
-                        .setEmoji('📜')
+                        .setStyle(ButtonStyle.Danger)
                 );
 
             if (type === 'posters') {
@@ -134,7 +157,12 @@ module.exports = {
                     .setColor('#FFD700');
 
                 // Send header first
-                await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                if (isButton) {
+                    // Update the existing message with buttons
+                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                } else {
+                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                }
 
                 // Create posters for Pirate King + Top 3
                 const postersToShow = [];
@@ -191,7 +219,12 @@ module.exports = {
                 }
 
                 // Send header first
-                await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                if (isButton) {
+                    // Update the existing message with buttons
+                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                } else {
+                    await interaction.editReply({ embeds: [headerEmbed], components: [buttons] });
+                }
 
                 // Create posters for Pirate King + Top 10
                 const postersToShow = [];
@@ -255,12 +288,20 @@ module.exports = {
                 content += `Total Pirates: ${level1Plus.length + (pirateKing ? 1 : 0)}\n`;
                 content += '```';
 
-                await interaction.editReply({ 
-                    content: content, 
-                    embeds: [], 
-                    files: [], 
-                    components: [buttons] 
-                });
+                if (isButton) {
+                    // Update the existing message
+                    await interaction.editReply({ 
+                        content: content, 
+                        embeds: [], 
+                        files: [], 
+                        components: [buttons] 
+                    });
+                } else {
+                    await interaction.editReply({ 
+                        content: content, 
+                        components: [buttons] 
+                    });
+                }
             }
 
         } catch (error) {
