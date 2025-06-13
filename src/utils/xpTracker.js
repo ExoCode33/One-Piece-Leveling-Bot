@@ -1,10 +1,22 @@
-// src/utils/xpTracker.js - Fixed for multiple role assignments
+// src/utils/xpTracker.js - With role removal and canvas level up messages
 
 const { getBountyForLevel, getLevelUpMessage, createLevelUpEmbed } = require('./bountySystem');
 const { getMessageXP } = require('./messageXP');
 const { getReactionXP } = require('./reactionXP');
 const { getVoiceXP } = require('./voiceXP');
 const { sendXPLog } = require('./xpLogger');
+const { createCanvas, loadImage, registerFont } = require('canvas');
+const { AttachmentBuilder } = require('discord.js');
+const path = require('path');
+
+// Register custom fonts for wanted posters
+try {
+    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+} catch (error) {
+    console.log('[XP_TRACKER] Custom fonts not found, using system fonts');
+}
 
 class XPTracker {
     constructor(client, db) {
@@ -264,7 +276,7 @@ class XPTracker {
         }
     }
 
-    // === XP & LEVELING DATABASE OPS === (FIXED FOR EXISTING SCHEMA)
+    // === XP & LEVELING DATABASE OPS ===
 
     async addXP(userId, guildId, amount, stats = {}) {
         try {
@@ -273,7 +285,16 @@ class XPTracker {
             const multiplier = settings.xpMultiplier || 1.0;
             const finalAmount = Math.floor(amount * multiplier);
             
-            // FIXED: Use existing database schema without updated_at
+            // Get current user data first
+            const currentUser = await this.db.query(
+                `SELECT * FROM user_levels WHERE user_id = $1 AND guild_id = $2`,
+                [userId, guildId]
+            );
+            
+            const oldLevel = currentUser.rows[0]?.level || 0;
+            const oldXP = currentUser.rows[0]?.total_xp || 0;
+            
+            // Update XP in database
             const res = await this.db.query(
                 `INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -295,24 +316,31 @@ class XPTracker {
                 ]
             );
             
-            // Update level and check for level up
+            // Calculate new level
             const user = res.rows[0];
-            const oldLevel = user.level;
             const newLevel = this.calculateLevel(user.total_xp);
+            const newXP = user.total_xp;
             
-            if (newLevel > oldLevel) {
+            // Update level in database
+            if (newLevel !== user.level) {
                 await this.db.query(
                     `UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3`,
                     [newLevel, userId, guildId]
                 );
-                
-                // Handle level up - FIXED: Pass both old and new levels
-                await this._handleLevelUp(userId, guildId, oldLevel, newLevel, user.total_xp);
-                
-                return { ...user, level: newLevel };
             }
             
-            return user;
+            // Handle level changes (up or down)
+            if (newLevel !== oldLevel) {
+                if (newLevel > oldLevel) {
+                    // Level up - assign roles
+                    await this._handleLevelUp(userId, guildId, oldLevel, newLevel, newXP);
+                } else if (newLevel < oldLevel) {
+                    // Level down - remove roles
+                    await this._handleLevelDown(userId, guildId, oldLevel, newLevel, newXP);
+                }
+            }
+            
+            return { ...user, level: newLevel };
         } catch (err) {
             console.error('[XP_TRACKER] Error in addXP:', err);
             throw err;
@@ -382,7 +410,7 @@ class XPTracker {
         }
     }
 
-    // FIXED: Handle multiple level ups and assign all intermediate roles
+    // Handle level ups - assign all intermediate roles
     async _handleLevelUp(userId, guildId, oldLevel, newLevel, totalXP) {
         try {
             console.log(`[XP_TRACKER] Level up: User ${userId} went from level ${oldLevel} to level ${newLevel}`);
@@ -398,8 +426,8 @@ class XPTracker {
                 }
             }
             
-            // Send level up message for the final level reached
-            await this._sendLevelUp(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned);
+            // Send level up message with wanted poster
+            await this._sendLevelUpWithPoster(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned);
             
             // Send level up log
             if (process.env.XP_LOG_ENABLED === 'true') {
@@ -417,6 +445,31 @@ class XPTracker {
             }
         } catch (error) {
             console.error('[XP_TRACKER] Error in _handleLevelUp:', error);
+        }
+    }
+
+    // NEW: Handle level downs - remove roles that are no longer earned
+    async _handleLevelDown(userId, guildId, oldLevel, newLevel, totalXP) {
+        try {
+            console.log(`[XP_TRACKER] Level down: User ${userId} went from level ${oldLevel} to level ${newLevel}`);
+            
+            // Remove roles for levels no longer achieved
+            const rolesRemoved = [];
+            
+            // Check each level from newLevel+1 to oldLevel
+            for (let level = newLevel + 1; level <= oldLevel; level++) {
+                const roleRemoved = await this._removeLevelRole(userId, guildId, level);
+                if (roleRemoved) {
+                    rolesRemoved.push({ level, roleName: roleRemoved });
+                }
+            }
+            
+            if (rolesRemoved.length > 0) {
+                console.log(`[XP_TRACKER] Removed ${rolesRemoved.length} roles from user ${userId} due to level decrease`);
+            }
+            
+        } catch (error) {
+            console.error('[XP_TRACKER] Error in _handleLevelDown:', error);
         }
     }
 
@@ -457,7 +510,113 @@ class XPTracker {
         }
     }
 
-    // UPDATED: Handle multiple roles in level up message
+    // NEW: Remove level role when user loses levels
+    async _removeLevelRole(userId, guildId, level) {
+        try {
+            // Check for level role in environment variables
+            const roleEnvVar = `LEVEL_${level}_ROLE`;
+            const roleId = process.env[roleEnvVar];
+            
+            if (!roleId || roleId === 'role_id' || roleId === 'your_role_id_here') {
+                return null;
+            }
+            
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return null;
+            
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (!member) return null;
+            
+            const role = guild.roles.cache.get(roleId);
+            if (!role) {
+                console.log(`[XP_TRACKER] Role ${roleId} not found for level ${level}`);
+                return null;
+            }
+            
+            if (member.roles.cache.has(roleId)) {
+                await member.roles.remove(role);
+                console.log(`[XP_TRACKER] Removed role ${role.name} from ${member.displayName} (no longer level ${level})`);
+                return role.name;
+            }
+            
+            return null;
+            
+        } catch (error) {
+            console.error(`[XP_TRACKER] Error removing level role for level ${level}:`, error);
+            return null;
+        }
+    }
+
+    // NEW: Enhanced level up message with wanted poster canvas
+    async _sendLevelUpWithPoster(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned) {
+        try {
+            if (process.env.LEVELUP_ENABLED !== 'true') return;
+            
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+            
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (!member) return;
+            
+            // Get level up channel
+            let channelId = process.env.LEVELUP_CHANNEL;
+            
+            // If no specific channel, try to use a general channel
+            if (!channelId || channelId === 'your_levelup_channel_id') {
+                // Try to find a suitable channel
+                const channels = guild.channels.cache.filter(c => 
+                    c.isTextBased() && 
+                    (c.name.includes('level') || c.name.includes('general') || c.name.includes('chat'))
+                );
+                const channel = channels.first();
+                if (channel) channelId = channel.id;
+            }
+            
+            if (!channelId) return;
+            
+            const channel = guild.channels.cache.get(channelId);
+            if (!channel || !channel.isTextBased()) return;
+
+            // Create wanted poster canvas
+            const canvas = await this.createWantedPoster({ xp: totalXP, level: newLevel }, member);
+            const attachment = new AttachmentBuilder(canvas, { name: `bounty_update_${userId}.png` });
+
+            // Create level up embed using bounty system
+            const embed = createLevelUpEmbed(member.user, oldLevel, newLevel);
+            
+            // Enhanced embed for multi-level jumps
+            if (newLevel - oldLevel > 1) {
+                embed.setDescription(`**${member.user.username}** has made a massive leap in infamy!\n*🚀 Jumped ${newLevel - oldLevel} levels and earned ${rolesAssigned.length} new titles! 🚀*`);
+            }
+            
+            // Add multiple roles if assigned
+            if (rolesAssigned && rolesAssigned.length > 0) {
+                const roleText = rolesAssigned.map(r => `Level ${r.level}: ${r.roleName}`).join('\n');
+                embed.addFields({
+                    name: `🏆 New Titles Earned (${rolesAssigned.length})`,
+                    value: roleText,
+                    inline: false
+                });
+            }
+
+            // Add the wanted poster image
+            embed.setImage(`attachment://bounty_update_${userId}.png`);
+            embed.setFooter({ text: 'Marine Intelligence • BOUNTY INCREASE CONFIRMED' });
+
+            await channel.send({ 
+                content: process.env.LEVELUP_PING_USER === 'true' ? `<@${userId}>` : null,
+                embeds: [embed],
+                files: [attachment]
+            });
+            
+        } catch (error) {
+            console.error('[XP_TRACKER] Error sending level up message with poster:', error);
+            // Fallback to text-only message
+            await this._sendLevelUp(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned);
+        }
+    }
+
+    // Fallback level up message without canvas
     async _sendLevelUp(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned) {
         try {
             if (process.env.LEVELUP_ENABLED !== 'true') return;
@@ -513,6 +672,170 @@ class XPTracker {
         } catch (error) {
             console.error('[XP_TRACKER] Error sending level up message:', error);
         }
+    }
+
+    // Create wanted poster canvas for level up messages
+    async createWantedPoster(userStats, member) {
+        const width = 600, height = 900;
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+
+        // Load and draw scroll texture background
+        try {
+            const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+            ctx.drawImage(scrollTexture, 0, 0, width, height);
+        } catch (error) {
+            // Fallback to parchment color
+            ctx.fillStyle = '#f5e6c5';
+            ctx.fillRect(0, 0, width, height);
+        }
+        
+        // All borders black
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(0, 0, width, height);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(10, 10, width - 20, height - 20);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(18, 18, width - 36, height - 36);
+
+        // WANTED title
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '81px CaptainKiddNF, Arial, sans-serif';
+        const wantedY = height * (1 - 92/100);
+        const wantedX = (50/100) * width;
+        ctx.fillText('WANTED', wantedX, wantedY);
+
+        // Image Box
+        const photoSize = (95/100) * 400;
+        const photoX = ((50/100) * width) - (photoSize/2);
+        const photoY = height * (1 - 65/100) - (photoSize/2);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(photoX, photoY, photoSize, photoSize);
+
+        // Avatar
+        const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
+        if (member) {
+            try {
+                const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
+                const avatar = await loadImage(avatarURL);
+                
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.clip();
+                
+                ctx.filter = 'contrast(0.95) sepia(0.05)';
+                ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.filter = 'none';
+                
+                ctx.restore();
+            } catch {
+                console.log('[DEBUG] No avatar found, texture will show through');
+            }
+        }
+
+        // DEAD OR ALIVE
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '57px CaptainKiddNF, Arial, sans-serif';
+        const deadOrAliveY = height * (1 - 39/100);
+        const deadOrAliveX = (50/100) * width;
+        ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
+
+        // Name
+        ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
+        let displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+        
+        ctx.textAlign = 'center';
+        let nameWidth = ctx.measureText(displayName).width;
+        if (nameWidth > width - 60) {
+            ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
+        }
+        
+        const nameY = height * (1 - 30/100);
+        const nameX = (50/100) * width;
+        ctx.fillText(displayName, nameX, nameY);
+
+        // Berry Symbol and Bounty
+        const berryBountyGap = 5;
+        const bountyStr = userStats.xp.toLocaleString();
+        ctx.font = '54px Cinzel, Georgia, serif';
+        const bountyTextWidth = ctx.measureText(bountyStr).width;
+        
+        const berrySize = (32/100) * 150;
+        const gapPixels = (berryBountyGap/100) * width;
+        const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+        const bountyUnitStartX = (width - totalBountyWidth) / 2;
+        
+        const berryX = bountyUnitStartX + (berrySize/2);
+        const berryY = height * (1 - 22/100) - (berrySize/2);
+        
+        // Berry symbol
+        let berryImg;
+        try {
+            const berryPath = path.join(__dirname, '../../assets/berry.png');
+            berryImg = await loadImage(berryPath);
+        } catch {
+            const berryCanvas = createCanvas(berrySize, berrySize);
+            const berryCtx = berryCanvas.getContext('2d');
+            berryCtx.fillStyle = '#111';
+            berryCtx.font = `bold ${berrySize}px serif`;
+            berryCtx.textAlign = 'center';
+            berryCtx.textBaseline = 'middle';
+            berryCtx.fillText('฿', berrySize/2, berrySize/2);
+            berryImg = berryCanvas;
+        }
+        
+        ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
+
+        // Bounty numbers
+        const bountyX = bountyUnitStartX + berrySize + gapPixels;
+        const bountyY = height * (1 - 22/100);
+        
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#111';
+        ctx.fillText(bountyStr, bountyX, bountyY);
+
+        // One Piece logo
+        try {
+            const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
+            const onePieceLogo = await loadImage(onePieceLogoPath);
+            const logoSize = (26/100) * 200;
+            const logoX = ((50/100) * width) - (logoSize/2);
+            const logoY = height * (1 - 4.5/100) - (logoSize/2);
+            
+            ctx.globalAlpha = 0.6;
+            ctx.filter = 'sepia(0.2) brightness(0.9)';
+            ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+            ctx.globalAlpha = 1.0;
+            ctx.filter = 'none';
+        } catch {
+            console.log('[DEBUG] One Piece logo not found');
+        }
+
+        // MARINE text
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.font = '24px TimesNewNormal, Times, serif';
+        ctx.fillStyle = '#111';
+        
+        const marineText = 'M A R I N E';
+        const marineX = (96/100) * width;
+        const marineY = height * (1 - 2/100);
+        ctx.fillText(marineText, marineX, marineY);
+
+        return canvas.toBuffer();
     }
 
     // Utility method to manually update user XP (for admin commands)
