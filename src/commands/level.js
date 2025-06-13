@@ -136,106 +136,67 @@ module.exports = {
             const voiceMinutes = Math.floor((userStats.voice_time % 3600) / 60);
             const totalActivity = userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60);
 
-            // Create One Piece themed embed with balanced structure
+            // Create professional Marine Intelligence Report embed
             const embed = new EmbedBuilder()
-                .setTitle('🚨 WORLD GOVERNMENT BOUNTY RECORD 🚨')
-                .setDescription(`**Marine Intelligence Report** • *Classification: ${getThreatLevelName(userStats.level)}*`)
-                .setColor(isPirateKing ? '#FF0000' : userStats.level >= 40 ? '#FF4500' : userStats.level >= 25 ? '#FF8C00' : userStats.level >= 10 ? '#FFD700' : '#4169E1')
-                .addFields(
-                    { 
-                        name: '🏴‍☠️ Criminal Identity', 
-                        value: `**${targetMember.displayName}**\n*Alias: ${targetUser.username}*`, 
-                        inline: true 
-                    },
-                    { 
-                        name: '🏆 Current Standing', 
-                        value: isPirateKing ? '**PIRATE KING**\n*Ruler of Grand Line*' : `**Rank #${rank}**\n*Most Wanted List*`, 
-                        inline: true 
-                    },
-                    { 
-                        name: '💰 Active Bounty', 
-                        value: `**฿${bountyAmount.toLocaleString()}**\n*Level ${userStats.level} Threat*`, 
-                        inline: true 
-                    }
-                );
+                .setAuthor({ 
+                    name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU',
+                    iconURL: interaction.guild.iconURL() || undefined
+                })
+                .setTitle(`📋 BOUNTY ASSESSMENT REPORT #${String(rank).padStart(4, '0')}`)
+                .setDescription(`\`\`\`diff\n${isPirateKing ? '+ EMPEROR-CLASS THREAT DETECTED' : '- ACTIVE CRIMINAL SURVEILLANCE'}\n\`\`\``)
+                .setColor(isPirateKing ? 0xFF0000 : userStats.level >= 40 ? 0xFF4500 : userStats.level >= 25 ? 0xFF8C00 : userStats.level >= 10 ? 0xFFD700 : 0x1E40AF);
 
-            // Add progress sections with balanced 3-column layout for active pirates
-            if (currentLevel < 55 && !isPirateKing) {
-                let nextBounty;
-                try {
-                    nextBounty = getBountyForLevel(currentLevel + 1);
-                } catch (error) {
-                    nextBounty = calculateBountyForLevel(currentLevel + 1);
-                }
-                const bountyIncrease = nextBounty - bountyAmount;
-                
-                embed.addFields(
-                    { 
-                        name: '📈 Threat Assessment', 
-                        value: `**Next Bounty:** ฿${nextBounty.toLocaleString()}\n**Increase:** +฿${bountyIncrease.toLocaleString()}`, 
-                        inline: true 
-                    },
-                    { 
-                        name: '⚡ Criminal Progress', 
-                        value: `**${progressPercentage}%** to Level ${currentLevel + 1}\n**${xpNeeded.toLocaleString()}** XP remaining`, 
-                        inline: true 
-                    },
-                    { 
-                        name: '🎯 Threat Level', 
-                        value: `**${getThreatLevelName(currentLevel)}**\n*Next: ${getThreatLevelName(currentLevel + 1)}*`, 
-                        inline: true 
-                    }
-                );
-            } else if (currentLevel >= 55 || isPirateKing) {
-                embed.addFields(
-                    { 
-                        name: '👑 Maximum Status', 
-                        value: isPirateKing ? '**PIRATE KING**\n*Ruler of Grand Line*' : '**LEGENDARY**\n*Beyond Classification*', 
-                        inline: true 
-                    },
-                    { 
-                        name: '🌟 Achievement', 
-                        value: isPirateKing ? '**EXCLUDED ROLE**\n*Special Status*' : '**ULTIMATE PIRATE**\n*Seas Conquered*', 
-                        inline: true 
-                    },
-                    { 
-                        name: '⚠️ Warning Level', 
-                        value: '**EXTREME CAUTION**\n*Fleet Response Required*', 
-                        inline: true 
-                    }
-                );
-            }
+            // Intelligence header section
+            embed.addFields({
+                name: '📊 INTELLIGENCE SUMMARY',
+                value: `\`\`\`yaml\nSubject: ${targetMember.displayName}\nAlias: ${targetUser.username}\nThreat Classification: ${getThreatLevelName(userStats.level)}\nBounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\n\`\`\``,
+                inline: false
+            });
 
-            // Criminal Activity Report with clearer descriptions
+            // Core metrics in professional layout
             embed.addFields(
-                { 
-                    name: '📊 Criminal Activity Report', 
-                    value: `**Messages Sent:** ${userStats.messages.toLocaleString()}\n**Reactions Given:** ${userStats.reactions.toLocaleString()}\n**Voice Chat Time:** ${voiceHours}h ${voiceMinutes}m\n**Total Activities:** ${totalActivity.toLocaleString()}`, 
-                    inline: false 
+                {
+                    name: '💀 BOUNTY ASSESSMENT',
+                    value: `**Current Bounty**\n\`฿${bountyAmount.toLocaleString()}\`\n\n**Threat Level**\n\`Level ${userStats.level}\`\n\n**Global Ranking**\n\`#${rank} Most Wanted\``,
+                    inline: true
+                },
+                {
+                    name: '⚔️ THREAT ANALYSIS',
+                    value: `**Classification**\n\`${getThreatLevelName(userStats.level)}\`\n\n**Status**\n\`${isPirateKing ? 'EMPEROR CLASS' : 'ACTIVE TARGET'}\`\n\n**Priority Level**\n\`${userStats.level >= 40 ? 'MAXIMUM' : userStats.level >= 25 ? 'HIGH' : userStats.level >= 10 ? 'ELEVATED' : 'STANDARD'}\``,
+                    inline: true
+                },
+                {
+                    name: '📈 PROGRESSION DATA',
+                    value: currentLevel >= 55 || isPirateKing ? 
+                        `**Status**\n\`MAXIMUM THREAT\`\n\n**Classification**\n\`BEYOND SCALE\`\n\n**Action Required**\n\`FLEET RESPONSE\`` :
+                        `**Progress to L${currentLevel + 1}**\n\`${progressPercentage}% Complete\`\n\n**XP Required**\n\`${xpNeeded.toLocaleString()}\`\n\n**Next Bounty**\n\`฿${getBountyForLevel(currentLevel + 1).toLocaleString()}\``,
+                    inline: true
                 }
             );
 
-            // Special status for Pirate King
+            // Activity surveillance report
+            embed.addFields({
+                name: '🔍 SURVEILLANCE REPORT',
+                value: `\`\`\`ini\n[Communication Intercepts]\nMessages = ${userStats.messages.toLocaleString()}\nReactions = ${userStats.reactions.toLocaleString()}\n\n[Operational Monitoring]\nVoice Activity = ${voiceHours}h ${voiceMinutes}m\nTotal Incidents = ${totalActivity.toLocaleString()}\n\n[Behavioral Analysis]\nActivity Level = ${totalActivity > 1000 ? 'HIGH' : totalActivity > 500 ? 'MODERATE' : totalActivity > 100 ? 'LOW' : 'MINIMAL'}\nThreat Assessment = ${getThreatLevelName(userStats.level)}\n\`\`\``,
+                inline: false
+            });
+
+            // Special classifications
             if (isPirateKing) {
                 embed.addFields({
-                    name: '👑 Special Classification',
-                    value: '**PIRATE KING STATUS**\n*Ruler of the Grand Line • Excluded from Active Bounty Tracking*\n⚠️ *Approach with Ultimate Caution* ⚠️',
+                    name: '👑 SPECIAL CLASSIFICATION',
+                    value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
                     inline: false
                 });
             }
 
-            // Add Marine footer
+            // Professional footer with case information
             embed.setImage(`attachment://wanted_${targetUser.id}.png`)
                 .setThumbnail(targetUser.displayAvatarURL({ size: 128 }))
                 .setFooter({ 
-                    text: `⚓ Marine Headquarters • Intelligence Division • ${isPirateKing ? 'EMPEROR THREAT' : `Case #${String(rank).padStart(4, '0')}`}` 
+                    text: `⚓ Marine Intelligence Division • Sector Analysis Unit • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(userStats.level)}`
                 })
                 .setTimestamp();
-
-            // Add author field for official look
-            embed.setAuthor({ 
-                name: isPirateKing ? 'PIRATE KING MONITORING REPORT' : 'BOUNTY ASSESSMENT REPORT'
-            });
 
             await interaction.editReply({ embeds: [embed], files: [attachment] });
 
