@@ -143,13 +143,6 @@ module.exports = {
                 .setTitle(`📋 BOUNTY ASSESSMENT REPORT #${String(rank).padStart(4, '0')}`)
                 .setColor(0xFF0000); // Red color
 
-            // Intelligence header section
-            embed.addFields({
-                name: '📊 INTELLIGENCE SUMMARY',
-                value: `\`\`\`diff\n- Username: ${targetUser.username}\n- Alias: ${targetMember.displayName}\n- Threat Classification: ${getThreatLevelName(userStats.level)}\n- Bounty Status: ${isPirateKing ? 'EMPEROR EXCLUSION' : 'ACTIVE SURVEILLANCE'}\n- Bounty Amount: ฿${bountyAmount.toLocaleString()}\n- Progress to Next Level: ${progressText}\n- Threat Level: Level ${userStats.level}\n- Ranking: #${rank}\n\n- [Communication Intercepts]\n- Messages = ${userStats.messages.toLocaleString()}\n- Reactions = ${userStats.reactions.toLocaleString()}\n\n- [Operational Monitoring]\n- Voice Activity = ${voiceHours}h ${voiceMinutes}m\n\n- [Behavioral Analysis]\n- Activity Level = ${userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 1000 ? 'HIGH' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 500 ? 'MODERATE' : userStats.messages + userStats.reactions + Math.floor(userStats.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n- Threat Assessment = ${getThreatLevelName(userStats.level)}\n\`\`\``,
-                inline: false
-            });
-
             // Special classifications
             if (isPirateKing) {
                 embed.addFields({
