@@ -49,20 +49,59 @@ module.exports = {
         // If this is a button interaction, delete previous messages in background (don't await)
         if (isButton) {
             // Run cleanup asynchronously without blocking
-            interaction.channel.messages.fetch({ limit: 50 })
-                .then(messages => {
-                    const toDelete = messages.filter(msg => 
-                        msg.author.id === interaction.client.user.id && 
-                        msg.embeds.length > 0 &&
-                        msg.id !== interaction.message.id &&
-                        (msg.embeds[0]?.author?.name?.includes('WORLD GOVERNMENT INTELLIGENCE BUREAU') ||
-                         msg.embeds[0]?.footer?.text?.includes('Marine Intelligence'))
-                    );
+            setTimeout(async () => {
+                try {
+                    const messages = await interaction.channel.messages.fetch({ limit: 100 });
+                    const toDelete = messages.filter(msg => {
+                        // Check if message is from our bot
+                        if (msg.author.id !== interaction.client.user.id) return false;
+                        
+                        // Don't delete the current interaction message
+                        if (msg.id === interaction.message.id) return false;
+                        
+                        // Check if it's a leaderboard-related message
+                        if (msg.embeds.length > 0) {
+                            const embed = msg.embeds[0];
+                            
+                            // Check for leaderboard embeds
+                            if (embed.author?.name?.includes('WORLD GOVERNMENT INTELLIGENCE BUREAU')) return true;
+                            if (embed.footer?.text?.includes('Marine Intelligence')) return true;
+                            if (embed.title?.includes('Bounties') || embed.title?.includes('BOUNTY')) return true;
+                            if (embed.fields?.some(field => 
+                                field.name?.includes('INTELLIGENCE SUMMARY') ||
+                                field.name?.includes('OPERATION BRIEFING') ||
+                                field.name?.includes('ACTIVE THREATS') ||
+                                field.name?.includes('DATABASE STATUS')
+                            )) return true;
+                        }
+                        
+                        // Check for wanted poster attachments
+                        if (msg.attachments.size > 0) {
+                            const hasWantedPoster = msg.attachments.some(attachment => 
+                                attachment.name?.includes('wanted_') || 
+                                attachment.name?.includes('bounty_')
+                            );
+                            if (hasWantedPoster) return true;
+                        }
+                        
+                        return false;
+                    });
                     
-                    // Delete messages in background
-                    toDelete.forEach(msg => msg.delete().catch(() => {}));
-                })
-                .catch(() => {});
+                    console.log(`[LEADERBOARD] Deleting ${toDelete.size} previous leaderboard messages`);
+                    
+                    // Delete messages one by one with small delay to avoid rate limits
+                    for (const msg of toDelete.values()) {
+                        try {
+                            await msg.delete();
+                            await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
+                        } catch (error) {
+                            // Silently ignore deletion errors (message might already be deleted)
+                        }
+                    }
+                } catch (error) {
+                    console.log('[LEADERBOARD] Could not clean up previous messages:', error.message);
+                }
+            }, 500); // Wait 500ms before cleanup to ensure current message is sent
         }
 
         try {
