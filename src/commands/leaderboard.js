@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
+const { getBountyForLevel } = require('../utils/bountySystem'); // ADDED: Import bounty system
 const path = require('path');
 
 // Register custom fonts
@@ -187,13 +188,16 @@ module.exports = {
                         const canvas = await createWantedPoster(userData, interaction.guild);
                         const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${userData.userId}.png` });
                         
+                        // Get bounty amount for embed
+                        const bountyAmount = getBountyForLevel(userData.level);
+                        
                         // Create detailed embed for each poster
                         const embed = new EmbedBuilder()
                             .setColor(isPirateKing ? '#FF0000' : '#FF6B35')
                             .addFields(
                                 { name: '🏴‍☠️ Rank', value: rank, inline: true },
                                 { name: '🏴‍☠️ Pirate', value: userData.member.displayName, inline: true },
-                                { name: '💰 Bounty', value: `฿${userData.xp.toLocaleString()}`, inline: true },
+                                { name: '💰 Bounty', value: `฿${bountyAmount.toLocaleString()}`, inline: true },
                                 { name: '⚔️ Level', value: userData.level.toString(), inline: true },
                                 { name: '💎 Total XP', value: userData.xp.toLocaleString(), inline: true },
                                 { name: '⚡ Status', value: isPirateKing ? 'Excluded Role' : 'Notorious Criminal', inline: true }
@@ -217,9 +221,10 @@ module.exports = {
 
                 // Add Pirate King info to header if exists
                 if (pirateKing) {
+                    const pirateKingBounty = getBountyForLevel(pirateKing.level);
                     headerEmbed.addFields({
                         name: '👑 Pirate King',
-                        value: `${pirateKing.member.displayName} - ฿${pirateKing.xp.toLocaleString()} (Level ${pirateKing.level}) - **Excluded Role**`,
+                        value: `${pirateKing.member.displayName} - ฿${pirateKingBounty.toLocaleString()} (Level ${pirateKing.level}) - **Excluded Role**`,
                         inline: false
                     });
                 }
@@ -249,13 +254,16 @@ module.exports = {
                         const canvas = await createWantedPoster(userData, interaction.guild);
                         const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${userData.userId}.png` });
                         
+                        // Get bounty amount for embed
+                        const bountyAmount = getBountyForLevel(userData.level);
+                        
                         // Create detailed embed for each poster
                         const embed = new EmbedBuilder()
                             .setColor(isPirateKing ? '#FF0000' : '#FF6B35')
                             .addFields(
                                 { name: '🏴‍☠️ Rank', value: rank, inline: true },
                                 { name: '🏴‍☠️ Pirate', value: userData.member.displayName, inline: true },
-                                { name: '💰 Bounty', value: `฿${userData.xp.toLocaleString()}`, inline: true },
+                                { name: '💰 Bounty', value: `฿${bountyAmount.toLocaleString()}`, inline: true },
                                 { name: '⚔️ Level', value: userData.level.toString(), inline: true },
                                 { name: '💎 Total XP', value: userData.xp.toLocaleString(), inline: true },
                                 { name: '⚡ Status', value: isPirateKing ? 'Excluded Role' : 'Notorious Criminal', inline: true }
@@ -278,16 +286,18 @@ module.exports = {
                 content += '═══════════════════════════════════════\n\n';
 
                 if (pirateKing) {
+                    const pirateKingBounty = getBountyForLevel(pirateKing.level);
                     content += `👑 PIRATE KING: ${pirateKing.member.displayName}\n`;
-                    content += `   ฿${pirateKing.xp.toLocaleString()} | Level ${pirateKing.level} | Excluded Role\n\n`;
+                    content += `   ฿${pirateKingBounty.toLocaleString()} | Level ${pirateKing.level} | Excluded Role\n\n`;
                 }
 
                 content += '🏴‍☠️ NOTORIOUS PIRATES:\n';
                 content += '───────────────────────────────────────\n';
 
                 level1Plus.forEach((user, index) => {
+                    const bountyAmount = getBountyForLevel(user.level);
                     content += `${index + 1}. ${user.member.displayName}\n`;
-                    content += `   ฿${user.xp.toLocaleString()} | Level ${user.level}\n`;
+                    content += `   ฿${bountyAmount.toLocaleString()} | Level ${user.level}\n`;
                 });
 
                 content += '\n═══════════════════════════════════════\n';
@@ -322,6 +332,7 @@ module.exports = {
     }
 };
 
+// FIXED: Canvas function now uses bounty amounts instead of XP
 async function createWantedPoster(userData, guild) {
     const width = 600, height = 900;
     const canvas = createCanvas(width, height);
@@ -431,12 +442,15 @@ async function createWantedPoster(userData, guild) {
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol and Bounty Numbers - Dynamic centering with fixed distance
-    // Calculate the fixed distance between berry and numbers (22 - 17 = 5 in our scale)
+    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
     const berryBountyGap = 5; // Fixed gap in our 1-100 scale
     
-    // Measure bounty text width to calculate total unit width
-    const bountyStr = userData.xp.toLocaleString();
+    // FIXED: Get BOUNTY amount for user's level instead of XP
+    const bountyAmount = getBountyForLevel(userData.level);
+    const bountyStr = bountyAmount.toLocaleString();
+    
+    console.log(`[LEADERBOARD] Level ${userData.level} = Bounty ฿${bountyStr}`);
+    
     ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     
