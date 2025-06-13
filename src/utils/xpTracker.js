@@ -1,6 +1,6 @@
-// src/utils/xpTracker.js - Clean version without duplicate declarations
+// src/utils/xpTracker.js - Complete clean version with all fixes
 
-const { getBountyForLevel, getLevelUpMessage, createLevelUpEmbed, getThreatLevelMessage } = require('./bountySystem');
+const { getBountyForLevel, getThreatLevelMessage, createLevelUpEmbed } = require('./bountySystem');
 const { getMessageXP } = require('./messageXP');
 const { getReactionXP } = require('./reactionXP');
 const { getVoiceXP } = require('./voiceXP');
