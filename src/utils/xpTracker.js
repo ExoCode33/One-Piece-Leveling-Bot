@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Fixed for existing database schema
+// src/utils/xpTracker.js - Fixed for multiple role assignments
 
 const { getBountyForLevel, getLevelUpMessage, createLevelUpEmbed } = require('./bountySystem');
 const { getMessageXP } = require('./messageXP');
@@ -297,15 +297,17 @@ class XPTracker {
             
             // Update level and check for level up
             const user = res.rows[0];
+            const oldLevel = user.level;
             const newLevel = this.calculateLevel(user.total_xp);
-            if (newLevel > user.level) {
+            
+            if (newLevel > oldLevel) {
                 await this.db.query(
                     `UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3`,
                     [newLevel, userId, guildId]
                 );
                 
-                // Handle level up
-                await this._handleLevelUp(userId, guildId, user.level, newLevel, user.total_xp);
+                // Handle level up - FIXED: Pass both old and new levels
+                await this._handleLevelUp(userId, guildId, oldLevel, newLevel, user.total_xp);
                 
                 return { ...user, level: newLevel };
             }
@@ -380,15 +382,24 @@ class XPTracker {
         }
     }
 
+    // FIXED: Handle multiple level ups and assign all intermediate roles
     async _handleLevelUp(userId, guildId, oldLevel, newLevel, totalXP) {
         try {
-            console.log(`[XP_TRACKER] Level up: User ${userId} reached level ${newLevel}`);
+            console.log(`[XP_TRACKER] Level up: User ${userId} went from level ${oldLevel} to level ${newLevel}`);
             
-            // Assign level role if configured
-            const roleReward = await this._assignLevelRole(userId, guildId, newLevel);
+            // Assign all intermediate level roles that were skipped
+            const rolesAssigned = [];
             
-            // Send level up message
-            await this._sendLevelUp(userId, guildId, oldLevel, newLevel, totalXP, roleReward);
+            // Check each level from oldLevel+1 to newLevel
+            for (let level = oldLevel + 1; level <= newLevel; level++) {
+                const roleReward = await this._assignLevelRole(userId, guildId, level);
+                if (roleReward) {
+                    rolesAssigned.push({ level, roleName: roleReward });
+                }
+            }
+            
+            // Send level up message for the final level reached
+            await this._sendLevelUp(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned);
             
             // Send level up log
             if (process.env.XP_LOG_ENABLED === 'true') {
@@ -399,7 +410,8 @@ class XPTracker {
                         oldLevel,
                         newLevel,
                         totalXP,
-                        roleReward
+                        roleReward: rolesAssigned.length > 0 ? rolesAssigned.map(r => r.roleName).join(', ') : null,
+                        rolesAssigned: rolesAssigned.length
                     });
                 }
             }
@@ -434,16 +446,19 @@ class XPTracker {
                 await member.roles.add(role);
                 console.log(`[XP_TRACKER] Assigned role ${role.name} to ${member.displayName} for reaching level ${level}`);
                 return role.name;
+            } else {
+                console.log(`[XP_TRACKER] User ${member.displayName} already has role ${role.name} for level ${level}`);
+                return null; // Already has the role
             }
             
-            return null;
         } catch (error) {
             console.error(`[XP_TRACKER] Error assigning level role for level ${level}:`, error);
             return null;
         }
     }
 
-    async _sendLevelUp(userId, guildId, oldLevel, newLevel, totalXP, roleReward) {
+    // UPDATED: Handle multiple roles in level up message
+    async _sendLevelUp(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned) {
         try {
             if (process.env.LEVELUP_ENABLED !== 'true') return;
             
@@ -475,13 +490,19 @@ class XPTracker {
             // Create level up embed using bounty system
             const embed = createLevelUpEmbed(member.user, oldLevel, newLevel);
             
-            // Add role reward if one was assigned
-            if (roleReward) {
+            // Add multiple roles if assigned
+            if (rolesAssigned && rolesAssigned.length > 0) {
+                const roleText = rolesAssigned.map(r => `Level ${r.level}: ${r.roleName}`).join('\n');
                 embed.addFields({
-                    name: '🏆 New Title Earned',
-                    value: roleReward,
+                    name: `🏆 New Titles Earned (${rolesAssigned.length})`,
+                    value: roleText,
                     inline: false
                 });
+                
+                // Update embed description for multiple level jumps
+                if (newLevel - oldLevel > 1) {
+                    embed.setDescription(`**${member.user.username}** has made a massive leap in infamy!\n*🚀 Jumped ${newLevel - oldLevel} levels and earned ${rolesAssigned.length} new titles! 🚀*`);
+                }
             }
 
             await channel.send({ 
