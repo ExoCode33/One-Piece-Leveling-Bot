@@ -1,4 +1,4 @@
-// src/commands/admin.js - With auto-dismiss for ephemeral messages
+// src/commands/admin.js - Complete file with auto-dismiss and voice cap command
 
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { autoDissmissEphemeralMessage } = require('../utils/bountySystem');
@@ -36,6 +36,11 @@ module.exports = {
                 .setDescription('View detailed admin stats for a user')
                 .addUserOption(option => option.setName('user').setDescription('User to view stats for').setRequired(true))
         )
+        .addSubcommand(sub =>
+            sub.setName('voicecap')
+                .setDescription('Check daily voice XP cap status for a user')
+                .addUserOption(option => option.setName('user').setDescription('User to check voice XP cap for').setRequired(true))
+        )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
@@ -71,17 +76,20 @@ module.exports = {
                 return;
             }
 
-            // Verify user is in the guild
-            const targetMember = await interaction.guild.members.fetch(user.id).catch(() => null);
-            if (!targetMember) {
-                const embed = new EmbedBuilder()
-                    .setTitle('❌ User Not Found')
-                    .setDescription(`${user.username} is not a member of this server.`)
-                    .setColor('#FF0000');
-                
-                await interaction.editReply({ embeds: [embed] });
-                autoDissmissEphemeralMessage(interaction, 20000);
-                return;
+            // Verify user is in the guild (except for voicecap which doesn't need member)
+            let targetMember = null;
+            if (subcommand !== 'voicecap') {
+                targetMember = await interaction.guild.members.fetch(user.id).catch(() => null);
+                if (!targetMember) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('❌ User Not Found')
+                        .setDescription(`${user.username} is not a member of this server.`)
+                        .setColor('#FF0000');
+                    
+                    await interaction.editReply({ embeds: [embed] });
+                    autoDissmissEphemeralMessage(interaction, 20000);
+                    return;
+                }
             }
 
             switch (subcommand) {
@@ -358,6 +366,45 @@ module.exports = {
                     }
                 }
 
+                case 'voicecap': {
+                    try {
+                        const dailyVoiceXPCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+                        const usedXP = xpTracker.getDailyVoiceXPUsed(user.id, guildId);
+                        const remainingXP = xpTracker.getRemainingDailyVoiceXP(user.id, guildId);
+                        const percentage = Math.floor((usedXP / dailyVoiceXPCap) * 100);
+                        
+                        const embed = new EmbedBuilder()
+                            .setTitle('🎙️ Daily Voice XP Status')
+                            .setDescription(`Voice XP cap status for ${user.username}`)
+                            .addFields(
+                                { name: '🎯 Target', value: user.username, inline: true },
+                                { name: '📊 Daily Cap', value: `${dailyVoiceXPCap.toLocaleString()} XP`, inline: true },
+                                { name: '✅ Used Today', value: `${usedXP.toLocaleString()} XP (${percentage}%)`, inline: true },
+                                { name: '⏳ Remaining', value: `${remainingXP.toLocaleString()} XP`, inline: true },
+                                { name: '🔄 Resets', value: 'Daily at midnight', inline: true },
+                                { name: '⚠️ Status', value: remainingXP === 0 ? '🔴 Cap Reached' : remainingXP < 100 ? '🟡 Near Cap' : '🟢 Available', inline: true }
+                            )
+                            .setColor(remainingXP === 0 ? '#FF0000' : remainingXP < 100 ? '#FFA500' : '#00FF00')
+                            .setThumbnail(user.displayAvatarURL())
+                            .setFooter({ text: `Admin check by ${interaction.user.username}` })
+                            .setTimestamp();
+
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
+                    } catch (error) {
+                        console.error('[ADMIN] Error checking voice cap:', error);
+                        const embed = new EmbedBuilder()
+                            .setTitle('❌ Error Checking Voice Cap')
+                            .setDescription('Failed to check voice XP cap status.')
+                            .setColor('#FF0000');
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
+                    }
+                }
+
                 default: {
                     const embed = new EmbedBuilder()
                         .setTitle('❌ Invalid Subcommand')
@@ -381,4 +428,5 @@ module.exports = {
             autoDissmissEphemeralMessage(interaction, 20000);
         }
     }
+};
 };
