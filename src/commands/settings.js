@@ -1,4 +1,4 @@
-// src/commands/settings.js
+// src/commands/settings.js - Fixed for existing database schema
 
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 
@@ -78,6 +78,9 @@ module.exports = {
 
             const db = xpTracker.db;
 
+            // First, ensure the guild_settings table has the columns we need
+            await this.ensureGuildSettingsColumns(db);
+
             switch (subcommand) {
                 case 'view': {
                     try {
@@ -149,7 +152,7 @@ module.exports = {
                                 `INSERT INTO guild_settings (guild_id, excluded_role, xp_multiplier) 
                                  VALUES ($1, $2, $3) 
                                  ON CONFLICT (guild_id) 
-                                 DO UPDATE SET excluded_role = $2, updated_at = CURRENT_TIMESTAMP`,
+                                 DO UPDATE SET excluded_role = $2`,
                                 [guildId, role.id, 1.0]
                             );
 
@@ -176,7 +179,7 @@ module.exports = {
                             // Remove excluded role
                             await db.query(
                                 `UPDATE guild_settings 
-                                 SET excluded_role = NULL, updated_at = CURRENT_TIMESTAMP 
+                                 SET excluded_role = NULL 
                                  WHERE guild_id = $1`,
                                 [guildId]
                             );
@@ -266,7 +269,7 @@ module.exports = {
                             `INSERT INTO guild_settings (guild_id, xp_multiplier) 
                              VALUES ($1, $2) 
                              ON CONFLICT (guild_id) 
-                             DO UPDATE SET xp_multiplier = $2, updated_at = CURRENT_TIMESTAMP`,
+                             DO UPDATE SET xp_multiplier = $2`,
                             [guildId, multiplier]
                         );
 
@@ -314,7 +317,7 @@ module.exports = {
                         // Reset settings in database
                         await db.query(
                             `UPDATE guild_settings 
-                             SET excluded_role = NULL, xp_multiplier = 1.0, updated_at = CURRENT_TIMESTAMP 
+                             SET excluded_role = NULL, xp_multiplier = 1.0 
                              WHERE guild_id = $1`,
                             [guildId]
                         );
@@ -364,6 +367,46 @@ module.exports = {
                 .setDescription('An unexpected error occurred while executing the settings command.')
                 .setColor('#FF0000');
             return interaction.editReply({ embeds: [embed] });
+        }
+    },
+
+    // Helper function to ensure the guild_settings table has required columns
+    async ensureGuildSettingsColumns(db) {
+        try {
+            // Check if excluded_role column exists
+            const checkExcludedRoleCol = await db.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'guild_settings' AND column_name = 'excluded_role'
+            `);
+            
+            if (checkExcludedRoleCol.rows.length === 0) {
+                console.log('[SETTINGS] Adding excluded_role column to guild_settings table...');
+                await db.query(`
+                    ALTER TABLE guild_settings 
+                    ADD COLUMN excluded_role VARCHAR(20)
+                `);
+                console.log('[SETTINGS] ✅ Added excluded_role column');
+            }
+
+            // Check if levelup_channel column exists  
+            const checkLevelupChannelCol = await db.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'guild_settings' AND column_name = 'levelup_channel'
+            `);
+            
+            if (checkLevelupChannelCol.rows.length === 0) {
+                console.log('[SETTINGS] Adding levelup_channel column to guild_settings table...');
+                await db.query(`
+                    ALTER TABLE guild_settings 
+                    ADD COLUMN levelup_channel VARCHAR(20)
+                `);
+                console.log('[SETTINGS] ✅ Added levelup_channel column');
+            }
+
+        } catch (error) {
+            console.error('[SETTINGS] Error ensuring guild_settings columns:', error);
         }
     }
 };
