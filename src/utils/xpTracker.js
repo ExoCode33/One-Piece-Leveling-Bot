@@ -25,6 +25,7 @@ class XPTracker {
         this.voiceSessions = new Map();
         this.messageCooldowns = new Map();
         this.reactionCooldowns = new Map();
+        this.dailyVoiceXP = new Map(); // Track daily voice XP per user
         console.log('[XP_TRACKER] Initialized with database connection');
     }
 
@@ -140,19 +141,27 @@ class XPTracker {
                         }
                         
                         if (totalXP > 0) {
-                            const result = await this.addXP(userId, guildId, totalXP, { voice_time: duration });
+                            // Apply daily voice XP cap
+                            const cappedXP = this.applyDailyVoiceXPCap(userId, guildId, totalXP);
                             
-                            if (process.env.XP_LOG_ENABLED === 'true') {
-                                await sendXPLog(this.client, 'voice', newState.member.user, totalXP, {
-                                    channelName: session.channelName,
-                                    sessionDuration: minutes,
-                                    memberCount: oldState.channel?.members?.filter(m => !m.user.bot).size || 0,
-                                    totalXP: result.total_xp,
-                                    level: result.level
-                                });
+                            if (cappedXP > 0) {
+                                const result = await this.addXP(userId, guildId, cappedXP, { voice_time: duration });
+                                
+                                if (process.env.XP_LOG_ENABLED === 'true') {
+                                    await sendXPLog(this.client, 'voice', newState.member.user, cappedXP, {
+                                        channelName: session.channelName,
+                                        sessionDuration: minutes,
+                                        memberCount: oldState.channel?.members?.filter(m => !m.user.bot).size || 0,
+                                        totalXP: result.total_xp,
+                                        level: result.level,
+                                        dailyCapped: cappedXP < totalXP
+                                    });
+                                }
+                                
+                                console.log(`[XP_TRACKER] Voice XP: ${newState.member.displayName} gained ${cappedXP} XP for ${minutes} minutes${cappedXP < totalXP ? ' (daily capped)' : ''}`);
+                            } else {
+                                console.log(`[XP_TRACKER] Voice XP: ${newState.member.displayName} hit daily voice XP cap`);
                             }
-                            
-                            console.log(`[XP_TRACKER] Voice XP: ${newState.member.displayName} gained ${totalXP} XP for ${minutes} minutes`);
                         }
                     }
                     
@@ -174,8 +183,13 @@ class XPTracker {
                         }
                         
                         if (totalXP > 0) {
-                            await this.addXP(userId, guildId, totalXP, { voice_time: duration });
-                            console.log(`[XP_TRACKER] Voice switch XP: ${newState.member.displayName} gained ${totalXP} XP`);
+                            // Apply daily voice XP cap
+                            const cappedXP = this.applyDailyVoiceXPCap(userId, guildId, totalXP);
+                            
+                            if (cappedXP > 0) {
+                                await this.addXP(userId, guildId, cappedXP, { voice_time: duration });
+                                console.log(`[XP_TRACKER] Voice switch XP: ${newState.member.displayName} gained ${cappedXP} XP${cappedXP < totalXP ? ' (daily capped)' : ''}`);
+                            }
                         }
                     }
                 }
@@ -228,9 +242,16 @@ class XPTracker {
                         
                         if (memberCount >= minMembers) {
                             const xpGain = getVoiceXP();
-                            const result = await this.addXP(userId, session.guildId, xpGain, { voice_time: 60 });
                             
-                            console.log(`[XP_TRACKER] Interval Voice XP: ${member.displayName} gained ${xpGain} XP`);
+                            // Apply daily voice XP cap
+                            const cappedXP = this.applyDailyVoiceXPCap(userId, session.guildId, xpGain);
+                            
+                            if (cappedXP > 0) {
+                                const result = await this.addXP(userId, session.guildId, cappedXP, { voice_time: 60 });
+                                console.log(`[XP_TRACKER] Interval Voice XP: ${member.displayName} gained ${cappedXP} XP${cappedXP < xpGain ? ' (daily capped)' : ''}`);
+                            } else {
+                                console.log(`[XP_TRACKER] Interval Voice XP: ${member.displayName} hit daily voice XP cap`);
+                            }
                             
                             this.voiceSessions.set(userId, { 
                                 ...session, 
@@ -787,7 +808,62 @@ class XPTracker {
         return canvas.toBuffer();
     }
 
+    // === UTILITY METHODS ===
+    
     // Utility method to manually update user XP (for admin commands)
+    applyDailyVoiceXPCap(userId, guildId, xpGain) {
+        const dailyVoiceXPCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500; // Default 1500 XP per day
+        const today = new Date().toDateString(); // Get current date as string
+        const key = `${guildId}:${userId}:${today}`;
+        
+        // Get current daily voice XP for this user
+        const currentDailyXP = this.dailyVoiceXP.get(key) || 0;
+        
+        // Calculate how much XP can still be earned today
+        const remainingCap = Math.max(0, dailyVoiceXPCap - currentDailyXP);
+        
+        // Cap the XP gain to the remaining daily allowance
+        const cappedXP = Math.min(xpGain, remainingCap);
+        
+        // Update the daily voice XP tracker
+        if (cappedXP > 0) {
+            this.dailyVoiceXP.set(key, currentDailyXP + cappedXP);
+        }
+        
+        return cappedXP;
+    }
+
+    // Clean up old daily voice XP data (call this daily)
+    cleanupDailyVoiceXP() {
+        const today = new Date().toDateString();
+        
+        // Remove entries that are not from today
+        for (const [key, value] of this.dailyVoiceXP.entries()) {
+            if (!key.endsWith(today)) {
+                this.dailyVoiceXP.delete(key);
+            }
+        }
+        
+        console.log('[XP_TRACKER] Cleaned up old daily voice XP data');
+    }
+
+    // Get remaining daily voice XP for a user
+    getRemainingDailyVoiceXP(userId, guildId) {
+        const dailyVoiceXPCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+        const today = new Date().toDateString();
+        const key = `${guildId}:${userId}:${today}`;
+        
+        const currentDailyXP = this.dailyVoiceXP.get(key) || 0;
+        return Math.max(0, dailyVoiceXPCap - currentDailyXP);
+    }
+
+    // Get daily voice XP used for a user
+    getDailyVoiceXPUsed(userId, guildId) {
+        const today = new Date().toDateString();
+        const key = `${guildId}:${userId}:${today}`;
+        
+        return this.dailyVoiceXP.get(key) || 0;
+    }
     async updateUserLevel(userId, guildId, xpAmount, source = 'admin') {
         try {
             console.log(`[XP_TRACKER] Manual XP update: ${userId} ${xpAmount > 0 ? '+' : ''}${xpAmount} XP (${source})`);
