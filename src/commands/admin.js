@@ -1,6 +1,7 @@
-// src/commands/admin.js
+// src/commands/admin.js - With auto-dismiss for ephemeral messages
 
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { autoDissmissEphemeralMessage } = require('../utils/bountySystem');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,7 +23,7 @@ module.exports = {
             sub.setName('setlevel')
                 .setDescription('Set a user\'s level directly')
                 .addUserOption(option => option.setName('user').setDescription('User to set level for').setRequired(true))
-                .addIntegerOption(option => option.setName('level').setDescription('Level to set').setRequired(true).setMinValue(0).setMaxValue(50))
+                .addIntegerOption(option => option.setName('level').setDescription('Level to set').setRequired(true).setMinValue(0).setMaxValue(55))
         )
         .addSubcommand(sub =>
             sub.setName('reset')
@@ -44,7 +45,10 @@ module.exports = {
                 .setTitle('❌ Access Denied')
                 .setDescription('You need Administrator permissions to use this command.')
                 .setColor('#FF0000');
-            return interaction.reply({ embeds: [embed], ephemeral: true });
+            
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+            autoDissmissEphemeralMessage(interaction, 20000);
+            return;
         }
 
         await interaction.deferReply({ ephemeral: true });
@@ -61,7 +65,10 @@ module.exports = {
                     .setTitle('❌ System Error')
                     .setDescription('XP Tracker is not initialized. Please restart the bot.')
                     .setColor('#FF0000');
-                return interaction.editReply({ embeds: [embed] });
+                
+                await interaction.editReply({ embeds: [embed] });
+                autoDissmissEphemeralMessage(interaction, 20000);
+                return;
             }
 
             // Verify user is in the guild
@@ -71,7 +78,10 @@ module.exports = {
                     .setTitle('❌ User Not Found')
                     .setDescription(`${user.username} is not a member of this server.`)
                     .setColor('#FF0000');
-                return interaction.editReply({ embeds: [embed] });
+                
+                await interaction.editReply({ embeds: [embed] });
+                autoDissmissEphemeralMessage(interaction, 20000);
+                return;
             }
 
             switch (subcommand) {
@@ -95,14 +105,19 @@ module.exports = {
                             .setFooter({ text: `Admin action by ${interaction.user.username}` })
                             .setTimestamp();
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[ADMIN] Error adding XP:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Adding XP')
                             .setDescription('Failed to add XP. Please try again.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -126,14 +141,19 @@ module.exports = {
                             .setFooter({ text: `Admin action by ${interaction.user.username}` })
                             .setTimestamp();
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[ADMIN] Error removing XP:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Removing XP')
                             .setDescription('Failed to remove XP. Please try again.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -141,10 +161,9 @@ module.exports = {
                     const targetLevel = interaction.options.getInteger('level');
                     
                     try {
-                        // Calculate XP needed for target level
+                        // Calculate XP needed for target level using exponential formula
                         let xpNeeded = 0;
                         if (targetLevel > 0) {
-                            // Use the same formula as XP tracker
                             const curve = process.env.FORMULA_CURVE || 'exponential';
                             const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
                             
@@ -181,14 +200,19 @@ module.exports = {
                             .setFooter({ text: `Admin action by ${interaction.user.username}` })
                             .setTimestamp();
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[ADMIN] Error setting level:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Setting Level')
                             .setDescription('Failed to set level. Please try again.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -200,7 +224,10 @@ module.exports = {
                             .setTitle('❌ Reset Cancelled')
                             .setDescription('You must confirm the reset by setting the confirm option to `True`.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
 
                     try {
@@ -210,7 +237,7 @@ module.exports = {
                         // Reset user stats in the database
                         await db.query(
                             `UPDATE user_levels 
-                             SET total_xp = 0, level = 0, messages = 0, reactions = 0, voice_time = 0, updated_at = CURRENT_TIMESTAMP
+                             SET total_xp = 0, level = 0, messages = 0, reactions = 0, voice_time = 0
                              WHERE user_id = $1 AND guild_id = $2`,
                             [user.id, guildId]
                         );
@@ -228,14 +255,19 @@ module.exports = {
                             .setFooter({ text: `Admin action by ${interaction.user.username}` })
                             .setTimestamp();
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[ADMIN] Error resetting user:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Resetting User')
                             .setDescription('Failed to reset user stats. Please try again.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -248,7 +280,10 @@ module.exports = {
                                 .setTitle('📊 User Stats')
                                 .setDescription(`${user.username} hasn't started their pirate journey yet!`)
                                 .setColor('#FFA500');
-                            return interaction.editReply({ embeds: [embed] });
+                            
+                            await interaction.editReply({ embeds: [embed] });
+                            autoDissmissEphemeralMessage(interaction, 20000);
+                            return;
                         }
 
                         // Get user's rank
@@ -283,14 +318,13 @@ module.exports = {
                                 { name: '👤 Pirate', value: targetMember.displayName, inline: true },
                                 { name: '🏆 Rank', value: `#${rank}`, inline: true },
                                 { name: '⭐ Level', value: userStats.level.toString(), inline: true },
-                                { name: '💰 Total Bounty', value: userStats.xp.toLocaleString(), inline: true },
-                                { name: '📈 XP to Next Level', value: currentLevel >= 50 ? 'MAX LEVEL' : xpNeeded.toLocaleString(), inline: true },
-                                { name: '🎯 Progress', value: currentLevel >= 50 ? '100%' : `${Math.floor((currentXP / nextLevelXP) * 100)}%`, inline: true },
+                                { name: '💰 Total XP', value: userStats.xp.toLocaleString(), inline: true },
+                                { name: '📈 XP to Next Level', value: currentLevel >= 55 ? 'MAX LEVEL' : xpNeeded.toLocaleString(), inline: true },
+                                { name: '🎯 Progress', value: currentLevel >= 55 ? '100%' : `${Math.floor((currentXP / nextLevelXP) * 100)}%`, inline: true },
                                 { name: '💬 Messages Sent', value: userStats.messages.toLocaleString(), inline: true },
                                 { name: '😄 Reactions Added', value: userStats.reactions.toLocaleString(), inline: true },
                                 { name: '🎙️ Voice Time', value: `${voiceHours}h ${voiceMinutes}m`, inline: true },
                                 { name: '📅 First Seen', value: `<t:${Math.floor(new Date(userStats.created_at).getTime() / 1000)}:R>`, inline: true },
-                                { name: '🕒 Last Activity', value: `<t:${Math.floor(new Date(userStats.updated_at).getTime() / 1000)}:R>`, inline: true },
                                 { name: '📊 Account Age', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true }
                             )
                             .setColor('#4169E1')
@@ -308,14 +342,19 @@ module.exports = {
                             });
                         }
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[ADMIN] Error getting user stats:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Getting Stats')
                             .setDescription('Failed to retrieve user statistics.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -324,7 +363,10 @@ module.exports = {
                         .setTitle('❌ Invalid Subcommand')
                         .setDescription('Please use a valid subcommand.')
                         .setColor('#FF0000');
-                    return interaction.editReply({ embeds: [embed] });
+                    
+                    await interaction.editReply({ embeds: [embed] });
+                    autoDissmissEphemeralMessage(interaction, 20000);
+                    return;
                 }
             }
 
@@ -334,7 +376,9 @@ module.exports = {
                 .setTitle('❌ Command Error')
                 .setDescription('An unexpected error occurred while executing the admin command.')
                 .setColor('#FF0000');
-            return interaction.editReply({ embeds: [embed] });
+            
+            await interaction.editReply({ embeds: [embed] });
+            autoDissmissEphemeralMessage(interaction, 20000);
         }
     }
 };
