@@ -45,30 +45,22 @@ module.exports = {
             return;
         }
 
-        // If this is a button interaction, delete all previous messages except the original
+        // If this is a button interaction, delete previous messages in background (don't await)
         if (isButton) {
-            try {
-                // Fetch recent messages in the channel
-                const messages = await interaction.channel.messages.fetch({ limit: 20 });
-                
-                // Filter for bot messages that are embeds (poster messages)
-                const botMessages = messages.filter(msg => 
-                    msg.author.id === interaction.client.user.id && 
-                    msg.embeds.length > 0 &&
-                    msg.id !== interaction.message.id // Don't delete the message with buttons
-                );
-                
-                // Delete the poster messages
-                for (const [_, msg] of botMessages) {
-                    try {
-                        await msg.delete();
-                    } catch (err) {
-                        console.log('[DEBUG] Could not delete message:', err.message);
-                    }
-                }
-            } catch (error) {
-                console.log('[DEBUG] Error cleaning up messages:', error.message);
-            }
+            // Run cleanup asynchronously without blocking
+            interaction.channel.messages.fetch({ limit: 10 })
+                .then(messages => {
+                    const toDelete = messages.filter(msg => 
+                        msg.author.id === interaction.client.user.id && 
+                        msg.embeds.length > 0 &&
+                        msg.id !== interaction.message.id &&
+                        msg.embeds[0]?.footer?.text?.includes('Marine Intelligence')
+                    );
+                    
+                    // Delete messages in background
+                    toDelete.forEach(msg => msg.delete().catch(() => {}));
+                })
+                .catch(() => {});
         }
 
         try {
@@ -108,24 +100,38 @@ module.exports = {
             let pirateKing = null;
 
             console.log('[DEBUG] Processing users...');
-            for (const user of allUsers) {
-                try {
-                    console.log('[DEBUG] Processing user:', user.userId);
-                    const member = await interaction.guild.members.fetch(user.userId).catch(() => null);
-                    if (!member) {
-                        console.log('[DEBUG] Member not found:', user.userId);
-                        continue;
+            
+            // Batch fetch members for better performance
+            const userIds = allUsers.map(u => u.userId);
+            const members = new Map();
+            
+            try {
+                // Try to fetch all members at once
+                const fetchedMembers = await interaction.guild.members.fetch({ user: userIds });
+                fetchedMembers.forEach(member => members.set(member.id, member));
+            } catch (error) {
+                console.log('[DEBUG] Batch fetch failed, falling back to individual fetches');
+                // Fallback to individual fetches if batch fails
+                for (const user of allUsers) {
+                    try {
+                        const member = await interaction.guild.members.fetch(user.userId).catch(() => null);
+                        if (member) members.set(user.userId, member);
+                    } catch (err) {
+                        console.log('[DEBUG] Could not fetch member:', user.userId);
                     }
+                }
+            }
 
-                    if (excludedRoleId && member.roles.cache.has(excludedRoleId)) {
-                        pirateKing = { ...user, member };
-                        console.log('[DEBUG] Found Pirate King:', member.displayName);
-                    } else {
-                        filteredUsers.push({ ...user, member });
-                    }
-                } catch (error) {
-                    console.log('[DEBUG] Error fetching member:', user.userId, error.message);
-                    continue;
+            // Process users with cached members
+            for (const user of allUsers) {
+                const member = members.get(user.userId);
+                if (!member) continue;
+
+                if (excludedRoleId && member.roles.cache.has(excludedRoleId)) {
+                    pirateKing = { ...user, member };
+                    console.log('[DEBUG] Found Pirate King:', member.displayName);
+                } else {
+                    filteredUsers.push({ ...user, member });
                 }
             }
 
