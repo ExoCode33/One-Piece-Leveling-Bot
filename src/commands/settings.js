@@ -1,6 +1,7 @@
-// src/commands/settings.js - Fixed for existing database schema
+// src/commands/settings.js - With auto-dismiss for ephemeral messages
 
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { autoDissmissEphemeralMessage } = require('../utils/bountySystem');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -57,7 +58,10 @@ module.exports = {
                 .setTitle('❌ Access Denied')
                 .setDescription('You need Administrator permissions to use this command.')
                 .setColor('#FF0000');
-            return interaction.reply({ embeds: [embed], ephemeral: true });
+            
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+            autoDissmissEphemeralMessage(interaction, 20000);
+            return;
         }
 
         await interaction.deferReply({ ephemeral: true });
@@ -73,7 +77,10 @@ module.exports = {
                     .setTitle('❌ System Error')
                     .setDescription('XP Tracker is not initialized. Please restart the bot.')
                     .setColor('#FF0000');
-                return interaction.editReply({ embeds: [embed] });
+                
+                await interaction.editReply({ embeds: [embed] });
+                autoDissmissEphemeralMessage(interaction, 20000);
+                return;
             }
 
             const db = xpTracker.db;
@@ -131,14 +138,19 @@ module.exports = {
                             { name: '🎙️ Voice XP', value: `${process.env.VOICE_XP_MIN || 45}-${process.env.VOICE_XP_MAX || 55}/min`, inline: true }
                         );
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[SETTINGS] Error viewing settings:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Loading Settings')
                             .setDescription('Failed to load server settings.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -174,7 +186,9 @@ module.exports = {
                                 .setColor('#FFD700')
                                 .setFooter({ text: 'Members will need to rejoin voice channels for changes to take effect' });
 
-                            return interaction.editReply({ embeds: [embed] });
+                            await interaction.editReply({ embeds: [embed] });
+                            autoDissmissEphemeralMessage(interaction, 20000);
+                            return;
                         } else {
                             // Remove excluded role
                             await db.query(
@@ -196,7 +210,9 @@ module.exports = {
                                 .setDescription('No role is now excluded from XP tracking. All members will gain XP normally.')
                                 .setColor('#00FF00');
 
-                            return interaction.editReply({ embeds: [embed] });
+                            await interaction.editReply({ embeds: [embed] });
+                            autoDissmissEphemeralMessage(interaction, 20000);
+                            return;
                         }
                     } catch (error) {
                         console.error('[SETTINGS] Error setting excluded role:', error);
@@ -204,7 +220,10 @@ module.exports = {
                             .setTitle('❌ Error Setting Role')
                             .setDescription('Failed to update excluded role setting.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -218,12 +237,11 @@ module.exports = {
                                     .setTitle('❌ Invalid Channel')
                                     .setDescription('Please select a text channel for level up announcements.')
                                     .setColor('#FF0000');
-                                return interaction.editReply({ embeds: [embed] });
+                                
+                                await interaction.editReply({ embeds: [embed] });
+                                autoDissmissEphemeralMessage(interaction, 20000);
+                                return;
                             }
-
-                            // Note: This setting is controlled by environment variables
-                            // In a production environment, you'd want to store this in the database
-                            // For now, we'll just show what needs to be set in the environment
 
                             const embed = new EmbedBuilder()
                                 .setTitle('📝 Level Up Channel Setting')
@@ -237,7 +255,9 @@ module.exports = {
                                 .setColor('#FFA500')
                                 .setFooter({ text: 'This requires server restart after environment update' });
 
-                            return interaction.editReply({ embeds: [embed] });
+                            await interaction.editReply({ embeds: [embed] });
+                            autoDissmissEphemeralMessage(interaction, 20000);
+                            return;
                         } else {
                             const embed = new EmbedBuilder()
                                 .setTitle('📢 Current Level Up Channel')
@@ -248,7 +268,9 @@ module.exports = {
                                 )
                                 .setColor('#4169E1');
 
-                            return interaction.editReply({ embeds: [embed] });
+                            await interaction.editReply({ embeds: [embed] });
+                            autoDissmissEphemeralMessage(interaction, 20000);
+                            return;
                         }
                     } catch (error) {
                         console.error('[SETTINGS] Error with levelup channel:', error);
@@ -256,7 +278,10 @@ module.exports = {
                             .setTitle('❌ Error Setting Channel')
                             .setDescription('Failed to process levelup channel setting.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -291,14 +316,19 @@ module.exports = {
                             .setColor(multiplier > 1 ? '#00FF00' : multiplier < 1 ? '#FFA500' : '#4169E1')
                             .setFooter({ text: 'This affects all message, reaction, and voice XP gains' });
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[SETTINGS] Error setting XP multiplier:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Setting Multiplier')
                             .setDescription('Failed to update XP multiplier.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -310,7 +340,10 @@ module.exports = {
                             .setTitle('❌ Reset Cancelled')
                             .setDescription('You must confirm the reset by setting the confirm option to `True`.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
 
                     try {
@@ -340,14 +373,19 @@ module.exports = {
                             .setColor('#4169E1')
                             .setFooter({ text: 'All members will now gain XP normally' });
 
-                        return interaction.editReply({ embeds: [embed] });
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     } catch (error) {
                         console.error('[SETTINGS] Error resetting settings:', error);
                         const embed = new EmbedBuilder()
                             .setTitle('❌ Error Resetting Settings')
                             .setDescription('Failed to reset server settings.')
                             .setColor('#FF0000');
-                        return interaction.editReply({ embeds: [embed] });
+                        
+                        await interaction.editReply({ embeds: [embed] });
+                        autoDissmissEphemeralMessage(interaction, 20000);
+                        return;
                     }
                 }
 
@@ -356,7 +394,10 @@ module.exports = {
                         .setTitle('❌ Invalid Subcommand')
                         .setDescription('Please use a valid subcommand.')
                         .setColor('#FF0000');
-                    return interaction.editReply({ embeds: [embed] });
+                    
+                    await interaction.editReply({ embeds: [embed] });
+                    autoDissmissEphemeralMessage(interaction, 20000);
+                    return;
                 }
             }
 
@@ -366,7 +407,9 @@ module.exports = {
                 .setTitle('❌ Command Error')
                 .setDescription('An unexpected error occurred while executing the settings command.')
                 .setColor('#FF0000');
-            return interaction.editReply({ embeds: [embed] });
+            
+            await interaction.editReply({ embeds: [embed] });
+            autoDissmissEphemeralMessage(interaction, 20000);
         }
     },
 
