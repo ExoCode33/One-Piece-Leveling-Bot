@@ -1,5 +1,8 @@
+// src/commands/level.js - COMPLETE FILE
+
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
+const { getBountyForLevel } = require('../utils/bountySystem');
 const path = require('path');
 
 // Register custom fonts
@@ -87,7 +90,7 @@ module.exports = {
             let xpNeeded = 0;
             let progressPercentage = 100;
 
-            if (currentLevel < 50) {
+            if (currentLevel < 55) {
                 const curve = process.env.FORMULA_CURVE || 'exponential';
                 const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
                 
@@ -104,10 +107,13 @@ module.exports = {
                 progressPercentage = nextLevelXP > 0 ? Math.floor((currentXP / nextLevelXP) * 100) : 100;
             }
 
-            // Create the wanted poster
+            // Create the wanted poster - FIXED: Show bounty amounts
             console.log('[LEVEL] Creating wanted poster...');
             const canvas = await createWantedPoster(userStats, targetMember);
             const attachment = new AttachmentBuilder(canvas, { name: `wanted_${targetUser.id}.png` });
+
+            // Get bounty amount for display
+            const bountyAmount = getBountyForLevel(userStats.level);
 
             // Create the embed with all the information
             const embed = new EmbedBuilder()
@@ -116,11 +122,11 @@ module.exports = {
                 .addFields(
                     { name: '🏆 Rank', value: isPirateKing ? 'PIRATE KING' : `#${rank}`, inline: true },
                     { name: '⭐ Level', value: userStats.level.toString(), inline: true },
-                    { name: '💰 Total Bounty', value: `฿${userStats.xp.toLocaleString()}`, inline: true }
+                    { name: '💰 Current Bounty', value: `฿${bountyAmount.toLocaleString()}`, inline: true }
                 );
 
             // Add progress information if not max level
-            if (currentLevel < 50) {
+            if (currentLevel < 55) {
                 embed.addFields(
                     { name: '📈 Next Level', value: `${xpNeeded.toLocaleString()} XP needed`, inline: true },
                     { name: '📊 Progress', value: `${progressPercentage}%`, inline: true },
@@ -271,9 +277,13 @@ async function createWantedPoster(userStats, member) {
     const nameX = (50/100) * width;
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol and Bounty
+    // Berry Symbol and BOUNTY (FIXED: Use bounty amount, not XP)
     const berryBountyGap = 5;
-    const bountyStr = userStats.xp.toLocaleString();
+    
+    // FIXED: Get bounty amount for the user's level
+    const bountyAmount = getBountyForLevel(userStats.level);
+    const bountyStr = bountyAmount.toLocaleString();
+    
     ctx.font = '54px Cinzel, Georgia, serif';
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     
@@ -303,7 +313,7 @@ async function createWantedPoster(userStats, member) {
     
     ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
 
-    // Bounty numbers
+    // BOUNTY numbers (FIXED: Show bounty amount, not XP)
     const bountyX = bountyUnitStartX + berrySize + gapPixels;
     const bountyY = height * (1 - 22/100);
     
