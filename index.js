@@ -152,16 +152,16 @@ async function registerCommands() {
     const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
     try {
-        // Use CLIENT_ID from env, fallback to bot's application ID
-        const applicationId = process.env.CLIENT_ID || client.application?.id || client.user?.id;
+        // Use the bot's own application ID (most reliable)
+        const applicationId = client.application?.id;
         
         if (!applicationId) {
-            console.error('[ERROR] CLIENT_ID not found in environment variables and bot application ID not available');
+            console.error('[ERROR] Could not get bot application ID. Make sure bot is ready.');
             return;
         }
 
         console.log(`[DEBUG] Registering ${commands.length} slash commands:`, commands.map(c => c.name).join(', '));
-        console.log(`[DEBUG] Using application ID: ${applicationId}`);
+        console.log(`[DEBUG] Using bot application ID: ${applicationId}`);
         
         await rest.put(
             Routes.applicationCommands(applicationId),
@@ -273,21 +273,7 @@ client.on('interactionCreate', async (interaction) => {
         if (!command) return;
 
         try {
-            // Create mock interaction for button handling
-            const mockInteraction = {
-                ...interaction,
-                options: null,
-                isButton: () => true,
-                reply: interaction.reply.bind(interaction),
-                update: interaction.update.bind(interaction),
-                followUp: interaction.followUp.bind(interaction),
-                deferUpdate: interaction.deferUpdate.bind(interaction),
-                editReply: interaction.editReply.bind(interaction),
-                deleteReply: interaction.deleteReply.bind(interaction),
-                fetchReply: interaction.fetchReply.bind(interaction)
-            };
-
-            await command.execute(mockInteraction);
+            await command.execute(interaction);
         } catch (error) {
             console.error('[ERROR] Button interaction failed:', error);
             
