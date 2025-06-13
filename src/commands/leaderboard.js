@@ -49,13 +49,14 @@ module.exports = {
         // If this is a button interaction, delete previous messages in background (don't await)
         if (isButton) {
             // Run cleanup asynchronously without blocking
-            interaction.channel.messages.fetch({ limit: 10 })
+            interaction.channel.messages.fetch({ limit: 50 })
                 .then(messages => {
                     const toDelete = messages.filter(msg => 
                         msg.author.id === interaction.client.user.id && 
                         msg.embeds.length > 0 &&
                         msg.id !== interaction.message.id &&
-                        msg.embeds[0]?.footer?.text?.includes('Marine Intelligence')
+                        (msg.embeds[0]?.author?.name?.includes('WORLD GOVERNMENT INTELLIGENCE BUREAU') ||
+                         msg.embeds[0]?.footer?.text?.includes('Marine Intelligence'))
                     );
                     
                     // Delete messages in background
@@ -320,8 +321,8 @@ module.exports = {
                             })
                             .setColor(0xFF0000);
 
-                        // Detailed intelligence summary for top 10
-                        let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${getThreatLevelName(userData.level)}\n- Messages: ${userData.messages.toLocaleString()}\n- Voice: ${voiceHours}h ${voiceMinutes}m\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
+                        // Intelligence summary for this pirate - SAME AS TOP 3
+                        let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
                         embed.addFields({
                             name: '📊 INTELLIGENCE SUMMARY',
@@ -374,8 +375,8 @@ module.exports = {
                     chunks.push(level1Plus.slice(i, i + chunkSize));
                 }
 
-                // First field with header info
-                let headerInfo = `\`\`\`yaml\nCOMPLETE SURVEILLANCE DATABASE\nActive Threats: ${level1Plus.length + (pirateKing ? 1 : 0)}\nLast Updated: ${new Date().toLocaleString()}\n\`\`\``;
+                // First field with header info - ALL IN RED
+                let headerInfo = `\`\`\`diff\n- COMPLETE SURVEILLANCE DATABASE\n- Active Threats: ${level1Plus.length + (pirateKing ? 1 : 0)}\n- Last Updated: ${new Date().toLocaleString()}\n\`\`\``;
                 
                 embed.addFields({
                     name: '📊 DATABASE STATUS',
