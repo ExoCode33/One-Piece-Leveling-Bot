@@ -56,8 +56,10 @@ module.exports = {
                         // Check if message is from our bot
                         if (msg.author.id !== interaction.client.user.id) return false;
                         
-                        // Don't delete the current interaction message
-                        if (msg.id === interaction.message.id) return false;
+                        // For button interactions, we want to delete ALL previous leaderboard messages
+                        // including the original interaction message, but we'll exclude messages that are too new
+                        const messageAge = Date.now() - msg.createdTimestamp;
+                        if (messageAge < 2000) return false; // Don't delete messages newer than 2 seconds
                         
                         // Check if it's a leaderboard-related message
                         if (msg.embeds.length > 0) {
@@ -121,7 +123,7 @@ module.exports = {
                 } catch (error) {
                     console.log('[LEADERBOARD] Could not clean up previous messages:', error.message);
                 }
-            }, 500); // Wait 500ms before cleanup to ensure current message is sent
+            }, 2500); // Wait 2.5 seconds before cleanup to ensure all new messages are sent
         }
 
         try {
