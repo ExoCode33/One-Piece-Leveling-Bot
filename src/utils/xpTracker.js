@@ -1,6 +1,6 @@
-// src/utils/xpTracker.js - With role removal and canvas level up messages
+// src/utils/xpTracker.js - With bounty amounts on canvas and threat messages
 
-const { getBountyForLevel, getLevelUpMessage, createLevelUpEmbed } = require('./bountySystem');
+const { getBountyForLevel, getLevelUpMessage, createLevelUpEmbed, getThreatLevelMessage } = require('./bountySystem');
 const { getMessageXP } = require('./messageXP');
 const { getReactionXP } = require('./reactionXP');
 const { getVoiceXP } = require('./voiceXP');
@@ -448,7 +448,7 @@ class XPTracker {
         }
     }
 
-    // NEW: Handle level downs - remove roles that are no longer earned
+    // Handle level downs - remove roles that are no longer earned
     async _handleLevelDown(userId, guildId, oldLevel, newLevel, totalXP) {
         try {
             console.log(`[XP_TRACKER] Level down: User ${userId} went from level ${oldLevel} to level ${newLevel}`);
@@ -510,7 +510,7 @@ class XPTracker {
         }
     }
 
-    // NEW: Remove level role when user loses levels
+    // Remove level role when user loses levels
     async _removeLevelRole(userId, guildId, level) {
         try {
             // Check for level role in environment variables
@@ -547,7 +547,7 @@ class XPTracker {
         }
     }
 
-    // NEW: Enhanced level up message with wanted poster canvas
+    // Enhanced level up message with wanted poster canvas and threat messages
     async _sendLevelUpWithPoster(userId, guildId, oldLevel, newLevel, totalXP, rolesAssigned) {
         try {
             if (process.env.LEVELUP_ENABLED !== 'true') return;
@@ -577,8 +577,8 @@ class XPTracker {
             const channel = guild.channels.cache.get(channelId);
             if (!channel || !channel.isTextBased()) return;
 
-            // Create wanted poster canvas
-            const canvas = await this.createWantedPoster({ xp: totalXP, level: newLevel }, member);
+            // Create wanted poster canvas with BOUNTY amounts
+            const canvas = await this.createWantedPoster({ level: newLevel }, member);
             const attachment = new AttachmentBuilder(canvas, { name: `bounty_update_${userId}.png` });
 
             // Create level up embed using bounty system
@@ -587,6 +587,16 @@ class XPTracker {
             // Enhanced embed for multi-level jumps
             if (newLevel - oldLevel > 1) {
                 embed.setDescription(`**${member.user.username}** has made a massive leap in infamy!\n*🚀 Jumped ${newLevel - oldLevel} levels and earned ${rolesAssigned.length} new titles! 🚀*`);
+            }
+            
+            // Add threat level message for milestone levels
+            const threatMessage = getThreatLevelMessage(newLevel);
+            if (threatMessage !== "Bounty increased. Threat level rising.") {
+                embed.addFields({
+                    name: '🚨 Marine Intelligence Report',
+                    value: `*${threatMessage}*`,
+                    inline: false
+                });
             }
             
             // Add multiple roles if assigned
@@ -649,6 +659,16 @@ class XPTracker {
             // Create level up embed using bounty system
             const embed = createLevelUpEmbed(member.user, oldLevel, newLevel);
             
+            // Add threat level message for milestone levels
+            const threatMessage = getThreatLevelMessage(newLevel);
+            if (threatMessage !== "Bounty increased. Threat level rising.") {
+                embed.addFields({
+                    name: '🚨 Marine Intelligence Report',
+                    value: `*${threatMessage}*`,
+                    inline: false
+                });
+            }
+            
             // Add multiple roles if assigned
             if (rolesAssigned && rolesAssigned.length > 0) {
                 const roleText = rolesAssigned.map(r => `Level ${r.level}: ${r.roleName}`).join('\n');
@@ -674,7 +694,7 @@ class XPTracker {
         }
     }
 
-    // Create wanted poster canvas for level up messages
+    // Create wanted poster canvas for level up messages - DISPLAYS BOUNTY AMOUNTS
     async createWantedPoster(userStats, member) {
         const width = 600, height = 900;
         const canvas = createCanvas(width, height);
@@ -766,9 +786,13 @@ class XPTracker {
         const nameX = (50/100) * width;
         ctx.fillText(displayName, nameX, nameY);
 
-        // Berry Symbol and Bounty
+        // Berry Symbol and BOUNTY (not XP) - FIXED: Use bounty amounts
         const berryBountyGap = 5;
-        const bountyStr = userStats.xp.toLocaleString();
+        
+        // Get BOUNTY amount for level instead of XP
+        const bountyAmount = getBountyForLevel(userStats.level);
+        const bountyStr = bountyAmount.toLocaleString();
+        
         ctx.font = '54px Cinzel, Georgia, serif';
         const bountyTextWidth = ctx.measureText(bountyStr).width;
         
@@ -798,7 +822,7 @@ class XPTracker {
         
         ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
 
-        // Bounty numbers
+        // BOUNTY numbers (not XP)
         const bountyX = bountyUnitStartX + berrySize + gapPixels;
         const bountyY = height * (1 - 22/100);
         
@@ -850,4 +874,7 @@ class XPTracker {
     }
 }
 
-module.exports = XPTracker;
+module.exports = XPTracker;// src/utils/xpTracker.js - With bounty amounts on canvas and threat messages
+
+const { getBountyForLevel, getLevelUpMessage, createLevelUpEmbed, getThreatLevelMessage } = require('./bountySystem');
+const { getMessageXP } = require('./messageXP');
