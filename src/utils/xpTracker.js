@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Replace your existing xpTracker.js with this file
+// src/utils/xpTracker.js
 const { EmbedBuilder } = require('discord.js');
 
 class XPTracker {
