@@ -383,8 +383,6 @@ module.exports = {
                         
                         // Get bounty amount for embed
                         const bountyAmount = getBountyForLevel(userData.level);
-                        const voiceHours = Math.floor(userData.voice_time / 3600);
-                        const voiceMinutes = Math.floor((userData.voice_time % 3600) / 60);
                         
                         // Create detailed red intelligence embed for each poster
                         const embed = new EmbedBuilder()
@@ -707,3 +705,33 @@ async function createWantedPoster(userData, guild) {
 
     return canvas;
 }
+
+// Handle button interactions for leaderboard navigation
+module.exports.handleButtonInteraction = async function(interaction, xpTracker) {
+    if (!interaction.customId.startsWith('leaderboard_')) return;
+
+    try {
+        // Extract type from button customId (leaderboard_posters_1_xp -> posters)
+        const parts = interaction.customId.split('_');
+        const type = parts[1]; // posters, long, full
+        
+        console.log(`[DEBUG] Button interaction for type: ${type}`);
+        
+        // Call the main execute function with the button interaction
+        await module.exports.execute(interaction);
+        
+    } catch (error) {
+        console.error('[ERROR] Button interaction error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setTitle('❌ Error')
+            .setDescription('Failed to process button interaction.')
+            .setColor('#FF0000');
+
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ embeds: [errorEmbed], ephemeral: true }).catch(console.error);
+        } else {
+            await interaction.reply({ embeds: [errorEmbed], ephemeral: true }).catch(console.error);
+        }
+    }
+};
