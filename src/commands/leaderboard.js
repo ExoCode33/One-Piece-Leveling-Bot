@@ -51,7 +51,9 @@ module.exports = {
             // Store the current interaction timestamp to avoid deleting new messages
             const interactionTime = interaction.createdTimestamp;
             
-            // Run cleanup asynchronously without blocking
+            // Run cleanup asynchronously without blocking - but wait longer for "full" type
+            const cleanupDelay = type === 'full' ? 5000 : 1000; // 5 seconds for "All The Bounties", 1 second for others
+            
             setTimeout(async () => {
                 try {
                     const messages = await interaction.channel.messages.fetch({ limit: 100 });
@@ -61,6 +63,19 @@ module.exports = {
                         
                         // Don't delete messages created after this button interaction started
                         if (msg.createdTimestamp >= interactionTime) return false;
+                        
+                        // Don't delete the current type - if switching to "full", don't delete "full" messages
+                        if (type === 'full' && msg.embeds.length > 0) {
+                            const embed = msg.embeds[0];
+                            // Don't delete "All The Bounties" messages when switching to "All The Bounties"
+                            if (embed.fields?.some(field => 
+                                field.name?.includes('DATABASE STATUS') ||
+                                field.name?.includes('ACTIVE THREATS') ||
+                                field.name?.includes('CONTINUED')
+                            )) {
+                                return false; // Don't delete "full" type messages
+                            }
+                        }
                         
                         // Check if it's a leaderboard-related message
                         if (msg.embeds.length > 0) {
@@ -76,9 +91,6 @@ module.exports = {
                                 field.name?.includes('INTELLIGENCE SUMMARY') ||
                                 field.name?.includes('OPERATION BRIEFING') ||
                                 field.name?.includes('EXTENDED OPERATION BRIEFING') ||
-                                field.name?.includes('ACTIVE THREATS') ||
-                                field.name?.includes('DATABASE STATUS') ||
-                                field.name?.includes('CONTINUED') ||
                                 field.name?.includes('SPECIAL CLASSIFICATION')
                             )) return true;
                             
@@ -95,7 +107,7 @@ module.exports = {
                             if (hasWantedPoster) return true;
                         }
                         
-                        // Check if message has navigation buttons (leaderboard buttons)
+                        // Check if message has navigation buttons (leaderboard buttons) but keep current type
                         if (msg.components && msg.components.length > 0) {
                             const hasLeaderboardButtons = msg.components.some(row => 
                                 row.components?.some(button => 
@@ -103,7 +115,10 @@ module.exports = {
                                     button.label?.includes('Bounties')
                                 )
                             );
-                            if (hasLeaderboardButtons) return true;
+                            // Only delete button messages if they're not the current type we're showing
+                            if (hasLeaderboardButtons && msg.createdTimestamp < interactionTime - 2000) {
+                                return true;
+                            }
                         }
                         
                         return false;
@@ -124,7 +139,7 @@ module.exports = {
                 } catch (error) {
                     console.log('[LEADERBOARD] Could not clean up previous messages:', error.message);
                 }
-            }, 1000); // Reduced to 1 second since we're using interaction timestamp
+            }, cleanupDelay);
         }
 
         try {
