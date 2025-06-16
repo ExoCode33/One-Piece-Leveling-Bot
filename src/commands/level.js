@@ -28,10 +28,29 @@ module.exports = {
                 });
             }
 
-            // Get user stats from XP tracker
-            const userStats = await global.xpTracker.getUserStats(targetUser.id, interaction.guild.id);
+            // Check if xpTracker exists
+            if (!global.xpTracker) {
+                console.error('[ERROR] XP Tracker not initialized');
+                return await interaction.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor(0xFF0000)
+                        .setTitle('MARINE INTELLIGENCE BUREAU')
+                        .setDescription('```diff\n- INTELLIGENCE SYSTEM OFFLINE\n- XP TRACKER NOT INITIALIZED\n```')
+                        .setFooter({ text: 'World Government Intelligence Division' })
+                        .setTimestamp()],
+                    ephemeral: true
+                });
+            }
+
+            // Get user stats from database directly
+            console.log(`[DEBUG] Getting stats for user ${targetUser.id} in guild ${interaction.guild.id}`);
             
-            if (!userStats) {
+            const userStats = await global.xpTracker.db.query(
+                'SELECT * FROM user_stats WHERE user_id = $1 AND guild_id = $2',
+                [targetUser.id, interaction.guild.id]
+            );
+            
+            if (!userStats.rows || userStats.rows.length === 0) {
                 return await interaction.reply({
                     embeds: [new EmbedBuilder()
                         .setColor(0xFF0000)
@@ -43,8 +62,9 @@ module.exports = {
                 });
             }
 
-            const currentLevel = userStats.level;
-            const totalXP = userStats.total_xp;
+            const userData = userStats.rows[0];
+            const currentLevel = global.xpTracker.calculateLevel(userData.total_xp);
+            const totalXP = userData.total_xp;
             const currentBounty = getBountyForLevel(currentLevel);
             const nextBounty = getBountyForLevel(currentLevel + 1);
             
@@ -56,8 +76,11 @@ module.exports = {
             const progressPercent = Math.round((progressXP / (nextLevelXP - currentLevelXP)) * 100);
 
             // Get user rank
-            const rankData = await global.xpTracker.getUserRank(targetUser.id, interaction.guild.id);
-            const userRank = rankData?.rank || 'Unknown';
+            const rankQuery = await global.xpTracker.db.query(
+                'SELECT COUNT(*) + 1 as rank FROM user_stats WHERE guild_id = $1 AND total_xp > $2',
+                [interaction.guild.id, totalXP]
+            );
+            const userRank = rankQuery.rows[0]?.rank || 'Unknown';
 
             // Create Marine Intelligence report
             const embed = new EmbedBuilder()
