@@ -272,7 +272,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// Slash command interaction handler (UPDATED)
+// Slash command interaction handler
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -308,13 +308,13 @@ client.on('interactionCreate', async (interaction) => {
     
     // Handle leaderboard button interactions
     if (interaction.customId.startsWith('leaderboard_')) {
-        const command = client.commands.get('leaderboard');
-        if (!command) return;
+        const leaderboardCommand = client.commands.get('leaderboard');
+        if (!leaderboardCommand || !leaderboardCommand.handleButtonInteraction) return;
 
         try {
-            await command.execute(interaction);
+            await leaderboardCommand.handleButtonInteraction(interaction, global.xpTracker);
         } catch (error) {
-            console.error('[ERROR] Button interaction failed:', error);
+            console.error('[ERROR] Leaderboard button interaction failed:', error);
             
             const errorEmbed = new EmbedBuilder()
                 .setTitle('❌ Error')
