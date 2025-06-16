@@ -227,39 +227,36 @@ class XPTracker {
     }
 
     createCleanMarineEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP) {
-        const oldBounty = oldTotalXP * 1000;
-        const newBounty = newTotalXP * 1000;
-        const bountyIncrease = (newTotalXP - oldTotalXP) * 1000;
+        const { getBountyForLevel } = require('./bountySystem');
+        
+        const oldBounty = getBountyForLevel(oldLevel);
+        const newBounty = getBountyForLevel(newLevel);
+        const bountyIncrease = newBounty - oldBounty;
 
         const embed = new EmbedBuilder()
-            .setColor('#DC143C') // Crimson red
-            .setTitle('**WORLD GOVERNMENT BOUNTY UPDATE**')
-            .setDescription(`**${user.username}** has reached a new level of infamy!\n\n*Subject has crossed into Grand Line territory. Enhanced surveillance required.*`)
+            .setColor('#DC143C')
+            .setTitle('WORLD GOVERNMENT BOUNTY UPDATE')
+            .setDescription(`**${user.username}** has reached a new level of infamy!\n\nSubject has crossed into Grand Line territory. Enhanced surveillance required.`)
             .setThumbnail(user.displayAvatarURL({ size: 128 }))
             .addFields(
                 {
                     name: 'Previous Bounty',
-                    value: `**Level ${oldLevel}**\n฿${oldBounty.toLocaleString()}`,
+                    value: `Level ${oldLevel}\n฿${oldBounty.toLocaleString()}`,
                     inline: true
                 },
                 {
-                    name: '**NEW BOUNTY**',
-                    value: `**Level ${newLevel}**\n฿${newBounty.toLocaleString()}`,
+                    name: 'NEW BOUNTY',
+                    value: `Level ${newLevel}\n฿${newBounty.toLocaleString()}`,
                     inline: true
                 },
                 {
                     name: 'Bounty Increase',
-                    value: `**+฿${bountyIncrease.toLocaleString()}**`,
+                    value: `+฿${bountyIncrease.toLocaleString()}`,
                     inline: true
                 },
                 {
                     name: 'Marine Intelligence Report',
-                    value: `*Multiple incidents involving Marine personnel. Elevated threat status.*`,
-                    inline: false
-                },
-                {
-                    name: 'New Titles Earned (1)',
-                    value: `**Level ${newLevel}:** Level-${newLevel}`,
+                    value: `Multiple incidents involving Marine personnel. Elevated threat status.`,
                     inline: false
                 }
             )
@@ -294,7 +291,6 @@ class XPTracker {
         }
     }
 
-    // MISSING METHOD - Add this to fix the leaderboard error
     async getLeaderboard(guildId, page = 1, limit = 10) {
         try {
             const offset = (page - 1) * limit;
@@ -341,7 +337,6 @@ class XPTracker {
         }
     }
 
-    // Additional helper method for getting user rank
     async getUserRank(userId, guildId) {
         try {
             const result = await this.db.query(`
@@ -360,7 +355,6 @@ class XPTracker {
         }
     }
 
-    // Additional helper method for getting user stats
     async getUserStats(userId, guildId) {
         try {
             const result = await this.db.query(`
@@ -381,7 +375,7 @@ class XPTracker {
         }
     }
 
-    // MISSING METHOD - This is what was causing the error!
+    // MISSING METHOD - This fixes the error!
     getXPForLevel(level) {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
