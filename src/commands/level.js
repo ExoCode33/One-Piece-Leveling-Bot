@@ -87,36 +87,36 @@ module.exports = {
                 .setColor(0xFF0000)
                 .setTitle('MARINE INTELLIGENCE BUREAU')
                 .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
-                .setDescription(`\`\`\`diff\n+ CRIMINAL PROFILE: ${member.displayName.toUpperCase()}\n+ THREAT ASSESSMENT COMPLETE\n\`\`\``)
+                .setDescription(`\`\`\`diff\n- CRIMINAL PROFILE: ${member.displayName.toUpperCase()}\n- THREAT ASSESSMENT COMPLETE\n\`\`\``)
                 .addFields(
                     {
                         name: 'CURRENT BOUNTY',
-                        value: `\`\`\`diff\n+ ${currentBounty.toLocaleString()} BERRIES\n\`\`\``,
+                        value: `\`\`\`diff\n- ${currentBounty.toLocaleString()} BERRIES\n\`\`\``,
                         inline: true
                     },
                     {
                         name: 'THREAT LEVEL',
-                        value: `\`\`\`diff\n+ LEVEL ${currentLevel}\n\`\`\``,
+                        value: `\`\`\`diff\n- LEVEL ${currentLevel}\n\`\`\``,
                         inline: true
                     },
                     {
                         name: 'FLEET RANKING',
-                        value: `\`\`\`diff\n+ RANK #${userRank}\n\`\`\``,
+                        value: `\`\`\`diff\n- RANK #${userRank}\n\`\`\``,
                         inline: true
                     },
                     {
                         name: 'TOTAL CRIMINAL ACTIVITY',
-                        value: `\`\`\`diff\n+ ${totalXP.toLocaleString()} XP ACCUMULATED\n\`\`\``,
+                        value: `\`\`\`diff\n- ${totalXP.toLocaleString()} XP ACCUMULATED\n\`\`\``,
                         inline: true
                     },
                     {
                         name: 'ADVANCEMENT PROGRESS',
-                        value: `\`\`\`diff\n+ ${progressPercent}% TO NEXT LEVEL\n+ ${neededXP.toLocaleString()} XP REQUIRED\n\`\`\``,
+                        value: `\`\`\`diff\n- ${neededXP.toLocaleString()} XP REQUIRED\n\`\`\``,
                         inline: true
                     },
                     {
                         name: 'NEXT BOUNTY INCREASE',
-                        value: `\`\`\`diff\n+ ${nextBounty.toLocaleString()} BERRIES\n\`\`\``,
+                        value: `\`\`\`diff\n- ${nextBounty.toLocaleString()} BERRIES\n\`\`\``,
                         inline: true
                     }
                 )
