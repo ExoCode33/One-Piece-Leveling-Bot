@@ -381,6 +381,22 @@ class XPTracker {
         }
     }
 
+    // MISSING METHOD - This is what was causing the error!
+    getXPForLevel(level) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        
+        if (curve === 'exponential') {
+            return Math.floor(100 * Math.pow(level, multiplier));
+        } else if (curve === 'linear') {
+            return 100 * level * multiplier;
+        } else if (curve === 'logarithmic') {
+            return Math.floor(100 * Math.log(level + 1) * multiplier * 10);
+        }
+        
+        return Math.floor(100 * Math.pow(level, multiplier));
+    }
+
     getRandomXP(type) {
         const min = parseInt(process.env[`${type.toUpperCase()}_XP_MIN`]) || 25;
         const max = parseInt(process.env[`${type.toUpperCase()}_XP_MAX`]) || 35;
