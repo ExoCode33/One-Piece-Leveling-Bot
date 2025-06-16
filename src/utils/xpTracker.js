@@ -294,6 +294,93 @@ class XPTracker {
         }
     }
 
+    // MISSING METHOD - Add this to fix the leaderboard error
+    async getLeaderboard(guildId, page = 1, limit = 10) {
+        try {
+            const offset = (page - 1) * limit;
+            
+            const result = await this.db.query(`
+                SELECT user_id, total_xp, level, messages, reactions, voice_time
+                FROM user_levels 
+                WHERE guild_id = $1 
+                ORDER BY total_xp DESC 
+                LIMIT $2 OFFSET $3
+            `, [guildId, limit, offset]);
+
+            // Get total count for pagination
+            const countResult = await this.db.query(
+                'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
+                [guildId]
+            );
+
+            const totalUsers = parseInt(countResult.rows[0].count);
+            const totalPages = Math.ceil(totalUsers / limit);
+
+            return {
+                users: result.rows.map((row, index) => ({
+                    userId: row.user_id,
+                    totalXP: row.total_xp,
+                    level: row.level,
+                    messages: row.messages,
+                    reactions: row.reactions,
+                    voiceTime: row.voice_time,
+                    rank: offset + index + 1
+                })),
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    totalUsers,
+                    hasNextPage: page < totalPages,
+                    hasPreviousPage: page > 1
+                }
+            };
+
+        } catch (error) {
+            console.error('Error getting leaderboard:', error);
+            throw error;
+        }
+    }
+
+    // Additional helper method for getting user rank
+    async getUserRank(userId, guildId) {
+        try {
+            const result = await this.db.query(`
+                SELECT COUNT(*) + 1 as rank
+                FROM user_levels 
+                WHERE guild_id = $1 AND total_xp > (
+                    SELECT total_xp FROM user_levels 
+                    WHERE user_id = $2 AND guild_id = $1
+                )
+            `, [guildId, userId]);
+            
+            return parseInt(result.rows[0].rank);
+        } catch (error) {
+            console.error('Error getting user rank:', error);
+            return null;
+        }
+    }
+
+    // Additional helper method for getting user stats
+    async getUserStats(userId, guildId) {
+        try {
+            const result = await this.db.query(`
+                SELECT user_id, guild_id, total_xp, level, messages, reactions, voice_time, 
+                       created_at, updated_at
+                FROM user_levels 
+                WHERE user_id = $1 AND guild_id = $2
+            `, [userId, guildId]);
+            
+            if (result.rows.length === 0) {
+                return null;
+            }
+            
+            return result.rows[0];
+        } catch (error) {
+            console.error('Error getting user stats:', error);
+            throw error;
+        }
+    }
+
     getRandomXP(type) {
         const min = parseInt(process.env[`${type.toUpperCase()}_XP_MIN`]) || 25;
         const max = parseInt(process.env[`${type.toUpperCase()}_XP_MAX`]) || 35;
