@@ -46,7 +46,7 @@ module.exports = {
             console.log(`[DEBUG] Getting stats for user ${targetUser.id} in guild ${interaction.guild.id}`);
             
             const userStats = await global.xpTracker.db.query(
-                'SELECT * FROM user_stats WHERE user_id = $1 AND guild_id = $2',
+                'SELECT * FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                 [targetUser.id, interaction.guild.id]
             );
             
@@ -77,7 +77,7 @@ module.exports = {
 
             // Get user rank
             const rankQuery = await global.xpTracker.db.query(
-                'SELECT COUNT(*) + 1 as rank FROM user_stats WHERE guild_id = $1 AND total_xp > $2',
+                'SELECT COUNT(*) + 1 as rank FROM user_levels WHERE guild_id = $1 AND total_xp > $2',
                 [interaction.guild.id, totalXP]
             );
             const userRank = rankQuery.rows[0]?.rank || 'Unknown';
