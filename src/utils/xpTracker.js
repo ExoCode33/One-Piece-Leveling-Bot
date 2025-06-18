@@ -1,244 +1,135 @@
-// src/utils/xpTracker.js
-const { EmbedBuilder } = require('discord.js');
+// src/utils/xpTracker.js - Enhanced with Marine Level-Up System
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { createCanvas, loadImage, registerFont } = require('canvas');
+const { getBountyForLevel } = require('./bountySystem');
+const path = require('path');
+
+// Register fonts for level-up posters
+try {
+    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+    console.log('[XP-TRACKER] Successfully registered fonts for level-up system');
+} catch (error) {
+    console.log('[XP-TRACKER] Font registration failed, using fallback fonts');
+}
 
 class XPTracker {
-    constructor(client, database) {
+    constructor(client, db) {
         this.client = client;
-        this.db = database;
-        this.voiceSessions = new Map();
-        this.cooldowns = new Map();
-        this.dailyVoiceXP = new Map();
+        this.db = db;
+        this.voiceSessions = new Map(); // userId -> { guildId, channelId, joinTime, lastActivity }
+        this.messageCooldowns = new Map(); // userId_guildId -> timestamp
+        this.reactionCooldowns = new Map(); // userId_guildId -> timestamp
+        this.dailyVoiceXP = new Map(); // userId_guildId -> { xp, date }
     }
 
-    async handleMessageXP(message) {
-        if (message.author.bot || !message.guild) return;
+    // Enhanced level-up handler with Marine theming
+    async handleLevelUp(member, oldLevel, newLevel, newXP, guildId) {
+        try {
+            console.log(`[LEVELUP] ${member.displayName} leveled up: ${oldLevel} → ${newLevel}`);
 
-        const userId = message.author.id;
-        const guildId = message.guild.id;
-        const cooldownKey = `${userId}_${guildId}_message`;
-
-        // Check cooldown
-        if (this.isOnCooldown(cooldownKey, parseInt(process.env.MESSAGE_COOLDOWN) || 60000)) {
-            return;
-        }
-
-        // Calculate XP
-        const xpGain = this.getRandomXP('message');
-
-        // Award XP and check for level up
-        await this.awardXP(userId, guildId, xpGain, 'message', message.author);
-        this.setCooldown(cooldownKey);
-    }
-
-    async handleReactionXP(reaction, user) {
-        if (user.bot || !reaction.message.guild) return;
-
-        const userId = user.id;
-        const guildId = reaction.message.guild.id;
-        const cooldownKey = `${userId}_${guildId}_reaction`;
-
-        // Check cooldown
-        if (this.isOnCooldown(cooldownKey, parseInt(process.env.REACTION_COOLDOWN) || 300000)) {
-            return;
-        }
-
-        // Calculate XP
-        const xpGain = this.getRandomXP('reaction');
-
-        // Award XP and check for level up
-        await this.awardXP(userId, guildId, xpGain, 'reaction', user);
-        this.setCooldown(cooldownKey);
-    }
-
-    async handleVoiceStateUpdate(oldState, newState) {
-        const userId = newState.id || oldState.id;
-        const guildId = newState.guild?.id || oldState.guild?.id;
-        
-        if (!guildId) return;
-
-        // User joined voice channel
-        if (!oldState.channelId && newState.channelId) {
-            this.voiceSessions.set(userId, {
-                guildId,
-                channelId: newState.channelId,
-                joinTime: Date.now(),
-                lastXPTime: Date.now()
-            });
-        }
-        // User left voice channel
-        else if (oldState.channelId && !newState.channelId) {
-            this.voiceSessions.delete(userId);
-        }
-        // User changed channels
-        else if (oldState.channelId !== newState.channelId) {
-            if (this.voiceSessions.has(userId)) {
-                const session = this.voiceSessions.get(userId);
-                session.channelId = newState.channelId;
-                session.joinTime = Date.now();
+            // Get level-up channel
+            const levelupChannelId = process.env.LEVELUP_CHANNEL;
+            if (!levelupChannelId || levelupChannelId === 'your_levelup_channel_id') {
+                console.log('[LEVELUP] No level-up channel configured');
+                return;
             }
-        }
-    }
 
-    async processVoiceXP() {
-        const now = Date.now();
-        const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 180000;
-        const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
-        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+            const channel = member.guild.channels.cache.get(levelupChannelId);
+            if (!channel) {
+                console.log('[LEVELUP] Level-up channel not found:', levelupChannelId);
+                return;
+            }
 
-        for (const [userId, session] of this.voiceSessions.entries()) {
+            // Create user data for wanted poster
+            const userData = {
+                userId: member.id,
+                level: newLevel,
+                total_xp: newXP,
+                messages: 0, // We'll get real stats if needed
+                reactions: 0,
+                voice_time: 0,
+                member: member
+            };
+
+            // Try to get real user stats for activity assessment
             try {
-                // Check if enough time has passed
-                if (now - session.lastXPTime < voiceXPCooldown) continue;
-
-                // Get voice channel
-                const guild = this.client.guilds.cache.get(session.guildId);
-                if (!guild) continue;
-
-                const channel = guild.channels.cache.get(session.channelId);
-                if (!channel) {
-                    this.voiceSessions.delete(userId);
-                    continue;
-                }
-
-                // Check minimum members requirement
-                const memberCount = channel.members.filter(m => !m.user.bot).size;
-                if (memberCount < minMembers) continue;
-
-                // Check daily voice XP cap
-                const today = new Date().toDateString();
-                const dailyKey = `${userId}_${today}`;
-                const dailyXP = this.dailyVoiceXP.get(dailyKey) || 0;
-                
-                if (dailyXP >= dailyCap) continue;
-
-                // Calculate XP
-                const xpGain = this.getRandomXP('voice');
-                const newDailyXP = dailyXP + xpGain;
-                
-                // Cap the XP gain if it would exceed daily limit
-                const actualXPGain = Math.min(xpGain, dailyCap - dailyXP);
-                
-                if (actualXPGain <= 0) continue;
-
-                // Update daily tracking
-                this.dailyVoiceXP.set(dailyKey, newDailyXP);
-
-                // Award XP
-                const user = await this.client.users.fetch(userId).catch(() => null);
-                if (user) {
-                    await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user);
-                }
-                
-                session.lastXPTime = now;
-
-            } catch (error) {
-                console.error(`Error processing voice XP for user ${userId}:`, error);
-            }
-        }
-    }
-
-    async awardXP(userId, guildId, xpAmount, source, user) {
-        try {
-            // Get current user stats
-            const currentResult = await this.db.query(
-                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                [userId, guildId]
-            );
-
-            const oldLevel = currentResult.rows.length > 0 ? currentResult.rows[0].level : 0;
-            const oldTotalXP = currentResult.rows.length > 0 ? currentResult.rows[0].total_xp : 0;
-
-            // Update user stats
-            const result = await this.db.query(`
-                INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (user_id, guild_id)
-                DO UPDATE SET
-                    total_xp = user_levels.total_xp + $3,
-                    messages = user_levels.messages + $4,
-                    reactions = user_levels.reactions + $5,
-                    voice_time = user_levels.voice_time + $6,
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING total_xp, level
-            `, [
-                userId, guildId, xpAmount,
-                source === 'message' ? 1 : 0,
-                source === 'reaction' ? 1 : 0,
-                source === 'voice' ? 1 : 0
-            ]);
-
-            const userStats = result.rows[0];
-            const newLevel = this.calculateLevel(userStats.total_xp);
-
-            // Check for level up
-            if (newLevel > oldLevel) {
-                await this.handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, userStats.total_xp, user);
-            }
-
-            // Update level in database if it changed
-            if (newLevel !== userStats.level) {
-                await this.db.query(
-                    'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
-                    [newLevel, userId, guildId]
+                const stats = await this.db.query(
+                    'SELECT messages, reactions, voice_time FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                    [member.id, guildId]
                 );
+                if (stats.rows.length > 0) {
+                    userData.messages = stats.rows[0].messages || 0;
+                    userData.reactions = stats.rows[0].reactions || 0;
+                    userData.voice_time = stats.rows[0].voice_time || 0;
+                }
+            } catch (error) {
+                console.log('[LEVELUP] Could not fetch user stats for level-up');
             }
 
-        } catch (error) {
-            console.error('Error awarding XP:', error);
-        }
-    }
+            // Create wanted poster canvas
+            const canvas = await this.createLevelUpPoster(userData, member.guild, oldLevel, newLevel);
+            const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `levelup_${member.id}.png` });
 
-    async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user) {
-        try {
-            // Award level roles
-            await this.awardLevelRoles(userId, guildId, newLevel);
+            // Get bounty amounts
+            const oldBounty = getBountyForLevel(oldLevel);
+            const newBounty = getBountyForLevel(newLevel);
+            const bountyIncrease = newBounty - oldBounty;
 
-            // Send Marine-themed level up notification
-            await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user);
+            // Helper function for threat level
+            function getThreatLevelName(level) {
+                if (level >= 55) return "LEGENDARY THREAT";
+                if (level >= 50) return "EMPEROR CLASS";
+                if (level >= 45) return "EXTRAORDINARY";
+                if (level >= 40) return "ELITE LEVEL";
+                if (level >= 35) return "TERRITORIAL";
+                if (level >= 30) return "ADVANCED COMBATANT";
+                if (level >= 25) return "HIGH PRIORITY";
+                if (level >= 20) return "DANGEROUS";
+                if (level >= 15) return "GRAND LINE";
+                if (level >= 10) return "ELEVATED";
+                if (level >= 5) return "CONFIRMED CRIMINAL";
+                return "MONITORING";
+            }
 
-        } catch (error) {
-            console.error('Error handling level up:', error);
-        }
-    }
+            // Get threat level upgrade message
+            function getThreatUpgradeMessage(oldLevel, newLevel) {
+                const oldThreat = getThreatLevelName(oldLevel);
+                const newThreat = getThreatLevelName(newLevel);
+                
+                if (oldThreat !== newThreat) {
+                    return `\n- THREAT CLASSIFICATION UPGRADED\n- FROM: ${oldThreat}\n- TO: ${newThreat}`;
+                }
+                return `\n- THREAT LEVEL: ${newThreat}`;
+            }
 
-    async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user) {
-        try {
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) return;
+            // Check if user has excluded role (Pirate King)
+            const settings = global.guildSettings?.get(guildId) || {};
+            const excludedRoleId = settings.excludedRole;
+            const isPirateKing = excludedRoleId && member.roles.cache.has(excludedRoleId);
 
-            // Get notification channel
-            const guildSettings = global.guildSettings?.get(guildId) || {};
-            const channelId = guildSettings.levelupChannel || process.env.LEVELUP_CHANNEL;
+            // Create Marine Intelligence level-up embed
+            const embed = new EmbedBuilder()
+                .setAuthor({ 
+                    name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                })
+                .setColor(0xFF0000)
+                .setTitle('🚨 WORLD GOVERNMENT BOUNTY UPDATE')
+                .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+                .setDescription(`**${member.displayName}** has reached a new level of infamy!`);
+
+            // Main intelligence briefing
+            let briefingValue = `Subject has crossed into ${newLevel >= 50 ? 'Emperor' : newLevel >= 30 ? 'Grand Line' : newLevel >= 15 ? 'Paradise' : newLevel >= 5 ? 'East Blue' : 'civilian'} territory. Enhanced surveillance required.`;
             
-            if (!channelId) return;
+            embed.addFields({
+                name: '📋 INTELLIGENCE BRIEFING',
+                value: briefingValue,
+                inline: false
+            });
 
-            const channel = guild.channels.cache.get(channelId);
-            if (!channel) return;
-
-            // Create clean Marine notification
-            const embed = this.createCleanMarineEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP);
-
-            // Send the notification
-            await channel.send({ embeds: [embed] });
-
-        } catch (error) {
-            console.error('Error sending Marine level up notification:', error);
-        }
-    }
-
-    createCleanMarineEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP) {
-        const { getBountyForLevel } = require('./bountySystem');
-        
-        const oldBounty = getBountyForLevel(oldLevel);
-        const newBounty = getBountyForLevel(newLevel);
-        const bountyIncrease = newBounty - oldBounty;
-
-        const embed = new EmbedBuilder()
-            .setColor('#DC143C')
-            .setTitle('WORLD GOVERNMENT BOUNTY UPDATE')
-            .setDescription(`**${user.username}** has reached a new level of infamy!\n\nSubject has crossed into Grand Line territory. Enhanced surveillance required.`)
-            .setThumbnail(user.displayAvatarURL({ size: 128 }))
-            .addFields(
+            // Bounty information in organized layout
+            embed.addFields(
                 {
                     name: 'Previous Bounty',
                     value: `Level ${oldLevel}\n฿${oldBounty.toLocaleString()}`,
@@ -253,195 +144,244 @@ class XPTracker {
                     name: 'Bounty Increase',
                     value: `+฿${bountyIncrease.toLocaleString()}`,
                     inline: true
-                },
-                {
-                    name: 'Marine Intelligence Report',
-                    value: `Multiple incidents involving Marine personnel. Elevated threat status.`,
-                    inline: false
                 }
-            )
-            .setFooter({ 
-                text: `Marine Intelligence • BOUNTY INCREASE CONFIRMED • ${new Date().toLocaleDateString()}` 
-            })
-            .setTimestamp();
-
-        return embed;
-    }
-
-    async awardLevelRoles(userId, guildId, level) {
-        try {
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) return;
-
-            const member = await guild.members.fetch(userId).catch(() => null);
-            if (!member) return;
-
-            // Check for level-specific roles
-            const levelRoleId = process.env[`LEVEL_${level}_ROLE`];
-            if (levelRoleId) {
-                const role = guild.roles.cache.get(levelRoleId);
-                if (role && !member.roles.cache.has(levelRoleId)) {
-                    await member.roles.add(role);
-                    console.log(`[LEVEL ROLE] Awarded ${role.name} to ${member.user.username}`);
-                }
-            }
-
-        } catch (error) {
-            console.error('Error awarding level roles:', error);
-        }
-    }
-
-    async getLeaderboard(guildId, page = 1, limit = 10) {
-        try {
-            const offset = (page - 1) * limit;
-            
-            const result = await this.db.query(`
-                SELECT user_id, total_xp, level, messages, reactions, voice_time
-                FROM user_levels 
-                WHERE guild_id = $1 
-                ORDER BY total_xp DESC 
-                LIMIT $2 OFFSET $3
-            `, [guildId, limit, offset]);
-
-            // Get total count for pagination
-            const countResult = await this.db.query(
-                'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
-                [guildId]
             );
 
-            const totalUsers = parseInt(countResult.rows[0].count);
-            const totalPages = Math.ceil(totalUsers / limit);
+            // Marine Intelligence Report
+            let reportValue = `Multiple incidents involving Marine personnel. Elevated threat status.${getThreatUpgradeMessage(oldLevel, newLevel)}`;
+            
+            embed.addFields({
+                name: '📊 Marine Intelligence Report',
+                value: `\`\`\`diff\n- ${reportValue}\n\`\`\``,
+                inline: false
+            });
 
-            return {
-                users: result.rows.map((row, index) => ({
-                    userId: row.user_id,
-                    totalXP: row.total_xp,
-                    level: row.level,
-                    messages: row.messages,
-                    reactions: row.reactions,
-                    voiceTime: row.voice_time,
-                    rank: offset + index + 1
-                })),
-                pagination: {
-                    currentPage: page,
-                    totalPages,
-                    totalUsers,
-                    hasNextPage: page < totalPages,
-                    hasPreviousPage: page > 1
+            // Add special classification for Pirate King
+            if (isPirateKing) {
+                embed.addFields({
+                    name: '👑 SPECIAL CLASSIFICATION',
+                    value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
+                    inline: false
+                });
+            }
+
+            // Set the wanted poster image
+            embed.setImage(`attachment://levelup_${member.id}.png`)
+                .setFooter({ 
+                    text: `Marine Intelligence • BOUNTY INCREASE CONFIRMED • ${new Date().toLocaleDateString()} • Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                })
+                .setTimestamp();
+
+            // Send the level-up message
+            await channel.send({ 
+                embeds: [embed], 
+                files: [attachment]
+            });
+
+            // Handle role rewards if configured
+            await this.handleRoleRewards(member, newLevel);
+
+            console.log(`[LEVELUP] Marine bounty update sent for ${member.displayName} (Level ${newLevel})`);
+
+        } catch (error) {
+            console.error('[LEVELUP] Error sending Marine level-up message:', error);
+        }
+    }
+
+    // Create level-up wanted poster (enhanced version of the level command poster)
+    async createLevelUpPoster(userData, guild, oldLevel, newLevel) {
+        const width = 600, height = 900;
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+
+        // Load and draw scroll texture background
+        try {
+            const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+            ctx.drawImage(scrollTexture, 0, 0, width, height);
+        } catch (error) {
+            // Fallback to parchment background
+            ctx.fillStyle = '#f5e6c5';
+            ctx.fillRect(0, 0, width, height);
+        }
+        
+        // All borders black
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(0, 0, width, height);
+        
+        ctx.lineWidth = 2;
+        ctx.strokeRect(10, 10, width - 20, height - 20);
+        
+        ctx.lineWidth = 3;
+        ctx.strokeRect(18, 18, width - 36, height - 36);
+
+        // "BOUNTY UPDATE" title instead of "WANTED"
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '65px CaptainKiddNF, Arial, sans-serif'; // Slightly smaller to fit
+        const titleY = height * (1 - 92/100);
+        const titleX = (50/100) * width;
+        ctx.fillText('BOUNTY UPDATE', titleX, titleY);
+
+        // Image Box - same as original
+        const photoSize = (95/100) * 400;
+        const photoX = ((50/100) * width) - (photoSize/2);
+        const photoY = height * (1 - 65/100) - (photoSize/2);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(photoX, photoY, photoSize, photoSize);
+
+        // Draw avatar
+        const member = userData.member;
+        const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
+        if (member) {
+            try {
+                const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
+                const avatar = await loadImage(avatarURL);
+                
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.clip();
+                ctx.filter = 'contrast(0.95) sepia(0.05)';
+                ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.filter = 'none';
+                ctx.restore();
+            } catch {
+                console.log('[LEVELUP] No avatar found for level-up poster');
+            }
+        }
+
+        // "LEVEL UP!" instead of "DEAD OR ALIVE"
+        ctx.font = '57px CaptainKiddNF, Arial, sans-serif';
+        const levelUpY = height * (1 - 39/100);
+        const levelUpX = (50/100) * width;
+        ctx.fillText('LEVEL UP!', levelUpX, levelUpY);
+
+        // Name
+        ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
+        let displayName = 'UNKNOWN PIRATE';
+        if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+        else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
+        
+        ctx.textAlign = 'center';
+        let nameWidth = ctx.measureText(displayName).width;
+        if (nameWidth > width - 60) {
+            ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
+        }
+        
+        const nameY = height * (1 - 30/100);
+        const nameX = (50/100) * width;
+        ctx.fillText(displayName, nameX, nameY);
+
+        // New bounty amount
+        const berryBountyGap = 5;
+        const bountyAmount = getBountyForLevel(userData.level);
+        const bountyStr = bountyAmount.toLocaleString();
+        
+        ctx.font = '54px Cinzel, Georgia, serif';
+        const bountyTextWidth = ctx.measureText(bountyStr).width;
+        
+        // Berry symbol
+        const berrySize = (32/100) * 150;
+        const gapPixels = (berryBountyGap/100) * width;
+        const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+        const bountyUnitStartX = (width - totalBountyWidth) / 2;
+        
+        const berryX = bountyUnitStartX + (berrySize/2);
+        const berryY = height * (1 - 22/100) - (berrySize/2);
+        
+        let berryImg;
+        try {
+            berryImg = await loadImage(path.join(__dirname, '../../assets/berry.png'));
+        } catch {
+            const berryCanvas = createCanvas(berrySize, berrySize);
+            const berryCtx = berryCanvas.getContext('2d');
+            berryCtx.fillStyle = '#111';
+            berryCtx.font = `bold ${berrySize}px serif`;
+            berryCtx.textAlign = 'center';
+            berryCtx.textBaseline = 'middle';
+            berryCtx.fillText('฿', berrySize/2, berrySize/2);
+            berryImg = berryCanvas;
+        }
+        
+        ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
+
+        // Bounty amount
+        const bountyX = bountyUnitStartX + berrySize + gapPixels;
+        const bountyY = height * (1 - 22/100);
+        
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#111';
+        ctx.fillText(bountyStr, bountyX, bountyY);
+
+        // Level progression indicator (NEW FEATURE)
+        ctx.font = '24px TimesNewNormal, Times, serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#444';
+        const progressY = height * (1 - 14/100);
+        ctx.fillText(`LEVEL ${oldLevel} → ${newLevel}`, width/2, progressY);
+
+        // One Piece logo
+        try {
+            const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
+            const onePieceLogo = await loadImage(onePieceLogoPath);
+            const logoSize = (26/100) * 200;
+            const logoX = ((50/100) * width) - (logoSize/2);
+            const logoY = height * (1 - 4.5/100) - (logoSize/2);
+            
+            ctx.globalAlpha = 0.6;
+            ctx.filter = 'sepia(0.2) brightness(0.9)';
+            ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+            ctx.globalAlpha = 1.0;
+            ctx.filter = 'none';
+        } catch {
+            console.log('[LEVELUP] One Piece logo not found');
+        }
+
+        // "MARINE" watermark
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.font = '24px TimesNewNormal, Times, serif';
+        ctx.fillStyle = '#111';
+        
+        const marineText = 'M A R I N E';
+        const marineX = (96/100) * width;
+        const marineY = height * (1 - 2/100);
+        ctx.fillText(marineText, marineX, marineY);
+
+        return canvas;
+    }
+
+    // Handle role rewards for level-ups
+    async handleRoleRewards(member, level) {
+        try {
+            const roleVarName = `LEVEL_${level}_ROLE`;
+            const roleId = process.env[roleVarName];
+            
+            if (roleId && roleId !== 'role_id_' + level) {
+                const role = member.guild.roles.cache.get(roleId);
+                if (role) {
+                    try {
+                        await member.roles.add(role);
+                        console.log(`[LEVELUP] Added role ${role.name} to ${member.displayName} for reaching level ${level}`);
+                    } catch (error) {
+                        console.error(`[LEVELUP] Failed to add role ${role.name}:`, error);
+                    }
+                } else {
+                    console.log(`[LEVELUP] Role ${roleId} not found for level ${level}`);
                 }
-            };
-
+            }
         } catch (error) {
-            console.error('Error getting leaderboard:', error);
-            throw error;
+            console.error('[LEVELUP] Error handling role rewards:', error);
         }
     }
 
-    async getUserRank(userId, guildId) {
-        try {
-            const result = await this.db.query(`
-                SELECT COUNT(*) + 1 as rank
-                FROM user_levels 
-                WHERE guild_id = $1 AND total_xp > (
-                    SELECT total_xp FROM user_levels 
-                    WHERE user_id = $2 AND guild_id = $1
-                )
-            `, [guildId, userId]);
-            
-            return parseInt(result.rows[0].rank);
-        } catch (error) {
-            console.error('Error getting user rank:', error);
-            return null;
-        }
-    }
-
-    async getUserStats(userId, guildId) {
-        try {
-            const result = await this.db.query(`
-                SELECT user_id, guild_id, total_xp, level, messages, reactions, voice_time, 
-                       created_at, updated_at
-                FROM user_levels 
-                WHERE user_id = $1 AND guild_id = $2
-            `, [userId, guildId]);
-            
-            if (result.rows.length === 0) {
-                return null;
-            }
-            
-            return result.rows[0];
-        } catch (error) {
-            console.error('Error getting user stats:', error);
-            throw error;
-        }
-    }
-
-    // MISSING METHOD - This fixes the error!
-    getXPForLevel(level) {
-        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
-        const curve = process.env.FORMULA_CURVE || 'exponential';
-        
-        if (curve === 'exponential') {
-            return Math.floor(100 * Math.pow(level, multiplier));
-        } else if (curve === 'linear') {
-            return 100 * level * multiplier;
-        } else if (curve === 'logarithmic') {
-            return Math.floor(100 * Math.log(level + 1) * multiplier * 10);
-        }
-        
-        return Math.floor(100 * Math.pow(level, multiplier));
-    }
-
-    getRandomXP(type) {
-        const min = parseInt(process.env[`${type.toUpperCase()}_XP_MIN`]) || 25;
-        const max = parseInt(process.env[`${type.toUpperCase()}_XP_MAX`]) || 35;
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-
-    calculateLevel(totalXP) {
-        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
-        const curve = process.env.FORMULA_CURVE || 'exponential';
-        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
-
-        for (let level = 1; level <= maxLevel; level++) {
-            let requiredXP;
-            
-            if (curve === 'exponential') {
-                requiredXP = Math.floor(100 * Math.pow(level, multiplier));
-            } else if (curve === 'linear') {
-                requiredXP = 100 * level * multiplier;
-            } else if (curve === 'logarithmic') {
-                requiredXP = Math.floor(100 * Math.log(level + 1) * multiplier * 10);
-            }
-
-            if (totalXP < requiredXP) {
-                return level - 1;
-            }
-        }
-
-        return maxLevel;
-    }
-
-    isOnCooldown(key, cooldownMs) {
-        const now = Date.now();
-        const lastUse = this.cooldowns.get(key);
-        return lastUse && (now - lastUse) < cooldownMs;
-    }
-
-    setCooldown(key) {
-        this.cooldowns.set(key, Date.now());
-    }
-
-    cleanupDailyVoiceXP() {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayString = yesterday.toDateString();
-
-        for (const [key] of this.dailyVoiceXP.entries()) {
-            if (key.includes(yesterdayString)) {
-                this.dailyVoiceXP.delete(key);
-            }
-        }
-    }
+    // [Keep all existing XP tracking methods - handleMessageXP, handleReactionXP, etc.]
+    // ... [rest of your existing XPTracker methods would go here]
 }
 
 module.exports = XPTracker;
