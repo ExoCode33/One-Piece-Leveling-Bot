@@ -1,4 +1,5 @@
-// src/commands/admin.js - Enhanced with Marine Level-Up Integration
+// src/commands/admin.js - Complete Red Marine Admin Command
+
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const XPTracker = require('../utils/xpTracker');
 
@@ -90,7 +91,7 @@ module.exports = {
             console.error('Error in admin command:', error);
             const errorEmbed = new EmbedBuilder()
                 .setColor('#FF0000')
-                .setTitle('❌ Command Error')
+                .setTitle('❌ MARINE COMMAND FAILED')
                 .setDescription('An error occurred while executing the admin command.')
                 .setTimestamp();
 
@@ -106,51 +107,78 @@ module.exports = {
         const targetUser = interaction.options.getUser('user');
         const amount = interaction.options.getInteger('amount');
 
-        // Get current level before adding XP
-        const currentData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
-        const currentLevel = xpTracker.calculateLevel(currentData.total_xp);
+        try {
+            // Get current level before adding XP
+            const currentData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
+            const currentLevel = xpTracker.calculateLevel(currentData.total_xp);
 
-        // Add XP
-        await xpTracker.addXP(targetUser.id, interaction.guild.id, amount, 'admin');
+            // Add XP
+            await xpTracker.addXP(targetUser.id, interaction.guild.id, amount, 'admin');
 
-        // Get new level after adding XP
-        const newData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
-        const newLevel = xpTracker.calculateLevel(newData.total_xp);
+            // Get new level after adding XP
+            const newData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
+            const newLevel = xpTracker.calculateLevel(newData.total_xp);
 
-        // Admin confirmation embed (green theme)
-        const confirmEmbed = new EmbedBuilder()
-            .setColor('#00FF00')
-            .setTitle('✅ XP Added Successfully')
-            .setDescription(`Added **${amount.toLocaleString()} XP** to ${targetUser}`)
-            .addFields([
-                {
-                    name: '📊 Updated Stats',
-                    value: `**Total XP:** ${newData.total_xp.toLocaleString()}\n**Level:** ${newLevel}`,
-                    inline: true
-                }
-            ])
-            .setTimestamp()
-            .setFooter({ text: `Admin: ${interaction.user.tag}` });
+            // RED Marine admin confirmation embed
+            const confirmEmbed = new EmbedBuilder()
+                .setColor('#DC143C') // Red like Marine theme
+                .setTitle('🚨 MARINE COMMAND EXECUTED 🚨')
+                .setDescription(`**MARINE INTELLIGENCE BUREAU - ADMINISTRATIVE ACTION**`)
+                .addFields([
+                    {
+                        name: '👤 SUBJECT',
+                        value: `${targetUser}`,
+                        inline: true
+                    },
+                    {
+                        name: '📊 XP MODIFICATION',
+                        value: `**Added:** ${amount.toLocaleString()} XP\n**New Total:** ${newData.total_xp.toLocaleString()} XP\n**Level:** ${newLevel}`,
+                        inline: true
+                    },
+                    {
+                        name: '⚓ AUTHORIZED BY',
+                        value: `Marine Officer: ${interaction.user.tag}`,
+                        inline: false
+                    }
+                ])
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
 
-        await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+            await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
 
-        // Check if user leveled up and trigger Marine level-up if so
-        if (newLevel > currentLevel) {
-            const member = await interaction.guild.members.fetch(targetUser.id);
+            // Check if user leveled up and trigger Marine level-up if so
+            if (newLevel > currentLevel) {
+                const member = await interaction.guild.members.fetch(targetUser.id);
+                
+                // Create level-up data in the same format as natural level-ups
+                const levelUpData = {
+                    userId: targetUser.id,
+                    guildId: interaction.guild.id,
+                    oldLevel: currentLevel,
+                    newLevel: newLevel,
+                    totalXP: newData.total_xp,
+                    member: member,
+                    channel: interaction.channel
+                };
+
+                // Trigger the Marine level-up system
+                await xpTracker.sendMarineLevelUp(levelUpData);
+            }
+
+        } catch (error) {
+            console.error('Error in add-xp:', error);
             
-            // Create level-up data in the same format as natural level-ups
-            const levelUpData = {
-                userId: targetUser.id,
-                guildId: interaction.guild.id,
-                oldLevel: currentLevel,
-                newLevel: newLevel,
-                totalXP: newData.total_xp,
-                member: member,
-                channel: interaction.channel
-            };
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#FF0000')
+                .setTitle('❌ MARINE COMMAND FAILED')
+                .setDescription(`Failed to add XP: ${error.message}`)
+                .setTimestamp();
 
-            // Trigger the Marine level-up system
-            await xpTracker.sendMarineLevelUp(levelUpData);
+            if (interaction.replied) {
+                await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+            } else {
+                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+            }
         }
     },
 
@@ -163,9 +191,10 @@ module.exports = {
         if (currentData.total_xp < amount) {
             const errorEmbed = new EmbedBuilder()
                 .setColor('#FF0000')
-                .setTitle('❌ Insufficient XP')
+                .setTitle('❌ MARINE INTELLIGENCE ERROR')
                 .setDescription(`${targetUser} only has **${currentData.total_xp.toLocaleString()} XP**. Cannot remove **${amount.toLocaleString()} XP**.`)
-                .setTimestamp();
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
 
             return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
         }
@@ -176,20 +205,30 @@ module.exports = {
         const newLevel = xpTracker.calculateLevel(newXP);
 
         const embed = new EmbedBuilder()
-            .setColor('#FF6B35')
-            .setTitle('✅ XP Removed Successfully')
-            .setDescription(`Removed **${amount.toLocaleString()} XP** from ${targetUser}`)
+            .setColor('#DC143C')
+            .setTitle('🚨 MARINE DISCIPLINARY ACTION 🚨')
+            .setDescription(`**MARINE INTELLIGENCE BUREAU - XP REDUCTION**`)
             .addFields([
                 {
-                    name: '📊 Updated Stats',
-                    value: `**Total XP:** ${newXP.toLocaleString()}\n**Level:** ${newLevel}`,
+                    name: '👤 SUBJECT',
+                    value: `${targetUser}`,
                     inline: true
+                },
+                {
+                    name: '📊 XP MODIFICATION',
+                    value: `**Removed:** ${amount.toLocaleString()} XP\n**New Total:** ${newXP.toLocaleString()} XP\n**Level:** ${newLevel}`,
+                    inline: true
+                },
+                {
+                    name: '⚓ AUTHORIZED BY',
+                    value: `Marine Officer: ${interaction.user.tag}`,
+                    inline: false
                 }
             ])
             .setTimestamp()
-            .setFooter({ text: `Admin: ${interaction.user.tag}` });
+            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
 
-        await interaction.reply({ embeds: [embeds], ephemeral: true });
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     },
 
     async handleSetLevel(interaction, xpTracker) {
@@ -208,18 +247,28 @@ module.exports = {
 
         // Admin confirmation
         const embed = new EmbedBuilder()
-            .setColor('#9B59B6')
-            .setTitle('✅ Level Set Successfully')
-            .setDescription(`Set ${targetUser}'s level to **${targetLevel}**`)
+            .setColor('#DC143C')
+            .setTitle('🚨 MARINE RANK ADJUSTMENT 🚨')
+            .setDescription(`**MARINE INTELLIGENCE BUREAU - LEVEL OVERRIDE**`)
             .addFields([
                 {
-                    name: '📊 Updated Stats',
+                    name: '👤 SUBJECT',
+                    value: `${targetUser}`,
+                    inline: true
+                },
+                {
+                    name: '📊 RANK CHANGE',
                     value: `**Level:** ${currentLevel} → ${targetLevel}\n**Total XP:** ${requiredXP.toLocaleString()}`,
                     inline: true
+                },
+                {
+                    name: '⚓ AUTHORIZED BY',
+                    value: `Marine Officer: ${interaction.user.tag}`,
+                    inline: false
                 }
             ])
             .setTimestamp()
-            .setFooter({ text: `Admin: ${interaction.user.tag}` });
+            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
 
@@ -247,18 +296,28 @@ module.exports = {
         await xpTracker.resetUser(targetUser.id, interaction.guild.id);
 
         const embed = new EmbedBuilder()
-            .setColor('#E74C3C')
-            .setTitle('✅ User Reset Successfully')
-            .setDescription(`Reset all XP and level data for ${targetUser}`)
+            .setColor('#DC143C')
+            .setTitle('🚨 MARINE DATA PURGE 🚨')
+            .setDescription(`**MARINE INTELLIGENCE BUREAU - COMPLETE RESET**`)
             .addFields([
                 {
-                    name: '🔄 Reset Complete',
+                    name: '👤 SUBJECT',
+                    value: `${targetUser}`,
+                    inline: true
+                },
+                {
+                    name: '🔄 RESET COMPLETE',
                     value: '**Level:** 1\n**Total XP:** 0\n**All activity stats cleared**',
                     inline: true
+                },
+                {
+                    name: '⚓ AUTHORIZED BY',
+                    value: `Marine Officer: ${interaction.user.tag}`,
+                    inline: false
                 }
             ])
             .setTimestamp()
-            .setFooter({ text: `Admin: ${interaction.user.tag}` });
+            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
     },
@@ -276,28 +335,34 @@ module.exports = {
         const neededXP = nextLevelXP - userData.total_xp;
 
         const embed = new EmbedBuilder()
-            .setColor('#3498DB')
-            .setTitle(`📊 User Data: ${targetUser.tag}`)
+            .setColor('#DC143C')
+            .setTitle('🚨 MARINE INTELLIGENCE REPORT 🚨')
+            .setDescription(`**CLASSIFIED DOSSIER - ${targetUser.tag}**`)
             .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
             .addFields([
                 {
-                    name: '🎯 Core Stats',
+                    name: '🎯 THREAT ASSESSMENT',
                     value: `**Level:** ${level}\n**Rank:** #${rank}\n**Total XP:** ${userData.total_xp.toLocaleString()}`,
                     inline: true
                 },
                 {
-                    name: '📈 Progress',
+                    name: '📈 PROGRESSION ANALYSIS',
                     value: `**Current Level XP:** ${progressXP.toLocaleString()}\n**XP to Next Level:** ${neededXP.toLocaleString()}`,
                     inline: true
                 },
                 {
-                    name: '📱 Activity Breakdown',
+                    name: '📱 ACTIVITY SURVEILLANCE',
                     value: `**Messages:** ${userData.messages || 0}\n**Reactions:** ${userData.reactions || 0}\n**Voice Time:** ${Math.floor((userData.voice_time || 0) / 60)} minutes`,
                     inline: false
+                },
+                {
+                    name: '⚓ INTELLIGENCE OFFICER',
+                    value: `${interaction.user.tag}`,
+                    inline: true
                 }
             ])
             .setTimestamp()
-            .setFooter({ text: `Requested by: ${interaction.user.tag}` });
+            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
     }
