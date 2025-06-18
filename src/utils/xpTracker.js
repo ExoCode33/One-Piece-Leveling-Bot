@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete XPTracker with Enhanced Debugging
+// src/utils/xpTracker.js - Fixed to use your environment variables
 
 const { Pool } = require('pg');
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
@@ -8,27 +8,15 @@ class XPTracker {
     constructor() {
         console.log('[DEBUG] XPTracker constructor starting...');
         
-        // Log all available database environment variables
-        console.log('[DEBUG] Available database variables:');
-        console.log('[DEBUG] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
-        console.log('[DEBUG] DATABASE_PRIVATE_URL:', process.env.DATABASE_PRIVATE_URL ? 'SET' : 'NOT SET');
-        console.log('[DEBUG] POSTGRES_URL:', process.env.POSTGRES_URL ? 'SET' : 'NOT SET');
-        console.log('[DEBUG] PGHOST:', process.env.PGHOST ? 'SET' : 'NOT SET');
-        console.log('[DEBUG] PGUSER:', process.env.PGUSER ? 'SET' : 'NOT SET');
-        console.log('[DEBUG] PGDATABASE:', process.env.PGDATABASE ? 'SET' : 'NOT SET');
-        
-        // Try multiple connection options for Railway
-        const databaseUrl = process.env.DATABASE_PRIVATE_URL || 
-                           process.env.DATABASE_URL || 
-                           process.env.POSTGRES_URL;
+        // Use your actual DATABASE_URL variable
+        const databaseUrl = process.env.DATABASE_URL;
         
         if (!databaseUrl) {
-            console.error('[ERROR] No database URL found in environment variables!');
-            console.error('[ERROR] Please check your Railway environment variables');
+            console.error('[ERROR] DATABASE_URL not found in environment variables!');
             throw new Error('DATABASE_URL not found');
         }
         
-        console.log('[DEBUG] Using database URL:', databaseUrl.substring(0, 20) + '...');
+        console.log('[DEBUG] Using DATABASE_URL for connection');
         
         this.pool = new Pool({
             connectionString: databaseUrl,
@@ -40,14 +28,11 @@ class XPTracker {
             max: 10
         });
         
-        // Add error handler for the pool
         this.pool.on('error', (err) => {
             console.error('[ERROR] Database pool error:', err);
         });
         
         this.cooldowns = new Map();
-        
-        // Initialize tables and test connection
         this.initializeAsync();
     }
 
@@ -68,62 +53,21 @@ class XPTracker {
             const client = await this.pool.connect();
             console.log('[INFO] Database connected successfully');
             
-            // Test a simple query
             const result = await client.query('SELECT NOW()');
-            console.log('[DEBUG] Database query test successful:', result.rows[0]);
+            console.log('[DEBUG] Database query test successful');
             
             client.release();
             return true;
         } catch (error) {
             console.error('[ERROR] Database connection failed:', error);
-            console.error('[ERROR] Error details:', {
-                code: error.code,
-                message: error.message,
-                host: error.hostname || 'unknown'
-            });
-            
-            // Try alternative connection if main fails
-            await this.tryAlternativeConnection();
             throw error;
         }
-    }
-
-    async tryAlternativeConnection() {
-        console.log('[DEBUG] Attempting alternative connection methods...');
-        
-        // Try with individual PostgreSQL variables
-        if (process.env.PGHOST && process.env.PGUSER && process.env.PGPASSWORD) {
-            console.log('[DEBUG] Trying individual PostgreSQL variables...');
-            try {
-                const altPool = new Pool({
-                    host: process.env.PGHOST,
-                    user: process.env.PGUSER,
-                    password: process.env.PGPASSWORD,
-                    database: process.env.PGDATABASE || 'railway',
-                    port: process.env.PGPORT || 5432,
-                    ssl: { rejectUnauthorized: false }
-                });
-                
-                const client = await altPool.connect();
-                console.log('[INFO] Alternative connection successful!');
-                client.release();
-                
-                // Replace the main pool with the working one
-                this.pool = altPool;
-                return true;
-            } catch (altError) {
-                console.error('[ERROR] Alternative connection also failed:', altError);
-            }
-        }
-        
-        return false;
     }
 
     async initializeTables() {
         try {
             console.log('[DEBUG] Initializing database tables...');
             
-            // Create user_xp table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS user_xp (
                     id SERIAL PRIMARY KEY,
@@ -141,7 +85,6 @@ class XPTracker {
                 )
             `);
 
-            // Create guild_settings table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS guild_settings (
                     id SERIAL PRIMARY KEY,
@@ -157,7 +100,6 @@ class XPTracker {
                 )
             `);
 
-            // Create indexes
             await this.pool.query(`
                 CREATE INDEX IF NOT EXISTS idx_user_xp_lookup ON user_xp(user_id, guild_id);
                 CREATE INDEX IF NOT EXISTS idx_user_xp_leaderboard ON user_xp(guild_id, total_xp DESC);
@@ -165,7 +107,6 @@ class XPTracker {
                 CREATE INDEX IF NOT EXISTS idx_guild_settings_lookup ON guild_settings(guild_id);
             `);
 
-            // Check if we have any data
             const countResult = await this.pool.query('SELECT COUNT(*) FROM user_xp');
             console.log(`[DEBUG] Database has ${countResult.rows[0].count} user records`);
 
@@ -176,13 +117,113 @@ class XPTracker {
         }
     }
 
-    // FIXED addXP method with explicit column handling
+    // Generate random XP within your min/max ranges
+    generateRandomXP(source) {
+        let min, max;
+        
+        switch (source) {
+            case 'message':
+                min = parseInt(process.env.MESSAGE_XP_MIN) || 25;
+                max = parseInt(process.env.MESSAGE_XP_MAX) || 35;
+                break;
+            case 'voice':
+                min = parseInt(process.env.VOICE_XP_MIN) || 45;
+                max = parseInt(process.env.VOICE_XP_MAX) || 55;
+                break;
+            case 'reaction':
+                min = parseInt(process.env.REACTION_XP_MIN) || 25;
+                max = parseInt(process.env.REACTION_XP_MAX) || 35;
+                break;
+            default:
+                min = 15;
+                max = 25;
+        }
+        
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    // Check if user is on cooldown using your cooldown values
+    isOnCooldown(userId, guildId, source = 'message') {
+        const key = `${userId}-${guildId}-${source}`;
+        const now = Date.now();
+        const cooldownTime = this.cooldowns.get(key);
+        
+        if (cooldownTime && now < cooldownTime) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    setCooldown(userId, guildId, source = 'message') {
+        const key = `${userId}-${guildId}-${source}`;
+        let cooldownMs;
+        
+        switch (source) {
+            case 'message':
+                cooldownMs = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
+                break;
+            case 'voice':
+                cooldownMs = parseInt(process.env.VOICE_COOLDOWN) || 60000;
+                break;
+            case 'reaction':
+                cooldownMs = parseInt(process.env.REACTION_COOLDOWN) || 300000;
+                break;
+            default:
+                cooldownMs = 60000;
+        }
+        
+        const cooldownTime = now + cooldownMs;
+        this.cooldowns.set(key, cooldownTime);
+        
+        setTimeout(() => {
+            this.cooldowns.delete(key);
+        }, cooldownMs);
+    }
+
+    // Level calculation using your formula
+    calculateLevel(totalXP) {
+        if (totalXP < 0) return 1;
+        
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const formula = process.env.FORMULA_CURVE || 'exponential';
+        
+        if (formula === 'exponential') {
+            return Math.floor(Math.pow(totalXP / 100, 1 / multiplier)) + 1;
+        } else {
+            // Linear fallback
+            return Math.floor(Math.sqrt(totalXP / 100)) + 1;
+        }
+    }
+
+    getXPForLevel(level) {
+        if (level <= 1) return 0;
+        
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const formula = process.env.FORMULA_CURVE || 'exponential';
+        
+        if (formula === 'exponential') {
+            return Math.floor(Math.pow(level - 1, multiplier) * 100);
+        } else {
+            return Math.pow(level - 1, 2) * 100;
+        }
+    }
+
+    // Fixed addXP method using your environment variables
     async addXP(userId, guildId, amount, source = 'message') {
         try {
+            // If amount not provided, generate random amount
+            if (!amount) {
+                amount = this.generateRandomXP(source);
+            }
+            
+            // Apply XP multiplier
+            const multiplier = parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+            amount = Math.floor(amount * multiplier);
+            
             let query, values;
             
             if (source === 'voice') {
-                // Voice XP: increment voice_time by 60 seconds
                 query = `
                     INSERT INTO user_xp (user_id, guild_id, total_xp, voice_time, updated_at)
                     VALUES ($1, $2, $3, 60, CURRENT_TIMESTAMP)
@@ -195,7 +236,6 @@ class XPTracker {
                 `;
                 values = [userId, guildId, amount];
             } else if (source === 'reaction') {
-                // Reaction XP: increment reactions
                 query = `
                     INSERT INTO user_xp (user_id, guild_id, total_xp, reactions, updated_at)
                     VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)
@@ -208,7 +248,6 @@ class XPTracker {
                 `;
                 values = [userId, guildId, amount];
             } else {
-                // Message XP (default): increment messages
                 query = `
                     INSERT INTO user_xp (user_id, guild_id, total_xp, messages, updated_at)
                     VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)
@@ -229,21 +268,26 @@ class XPTracker {
             const oldLevel = this.calculateLevel(newTotalXP - amount);
             const newLevel = this.calculateLevel(newTotalXP);
 
-            if (newLevel > oldLevel) {
-                // Get member and channel for level up
+            // Check max level
+            const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+            if (newLevel > maxLevel) {
+                // Cap at max level
+                const maxXP = this.getXPForLevel(maxLevel);
+                await this.setUserXP(userId, guildId, maxXP);
+                return { newTotalXP: maxXP, leveledUp: false, newLevel: maxLevel };
+            }
+
+            if (newLevel > oldLevel && process.env.LEVELUP_ENABLED === 'true') {
                 const guild = global.client.guilds.cache.get(guildId);
                 if (guild) {
                     const member = await guild.members.fetch(userId).catch(() => null);
                     if (member) {
-                        // Find appropriate channel for level up message
-                        const guildSettings = await this.getGuildSettings(guildId);
+                        // Use your levelup channel
                         let channel = null;
-                        
-                        if (guildSettings.level_up_channel) {
-                            channel = guild.channels.cache.get(guildSettings.level_up_channel);
+                        if (process.env.LEVELUP_CHANNEL) {
+                            channel = guild.channels.cache.get(process.env.LEVELUP_CHANNEL);
                         }
                         
-                        // Fallback to system channel or first text channel
                         if (!channel) {
                             channel = guild.systemChannel || 
                                      guild.channels.cache.find(ch => ch.type === 0 && ch.permissionsFor(guild.members.me).has('SendMessages'));
@@ -260,6 +304,9 @@ class XPTracker {
                                 channel
                             });
                         }
+
+                        // Handle role rewards using your level roles
+                        await this.handleLevelRoles(member, newLevel);
                     }
                 }
             }
@@ -271,19 +318,101 @@ class XPTracker {
         }
     }
 
-    // Enhanced getUserXP with better error handling
+    // Handle your specific level roles
+    async handleLevelRoles(member, level) {
+        try {
+            const levelRoles = [
+                { level: 5, roleId: process.env.LEVEL_5_ROLE },
+                { level: 10, roleId: process.env.LEVEL_10_ROLE },
+                { level: 15, roleId: process.env.LEVEL_15_ROLE },
+                { level: 20, roleId: process.env.LEVEL_20_ROLE },
+                { level: 25, roleId: process.env.LEVEL_25_ROLE },
+                { level: 30, roleId: process.env.LEVEL_30_ROLE },
+                { level: 35, roleId: process.env.LEVEL_35_ROLE },
+                { level: 40, roleId: process.env.LEVEL_40_ROLE },
+                { level: 45, roleId: process.env.LEVEL_45_ROLE },
+                { level: 50, roleId: process.env.LEVEL_50_ROLE }
+            ];
+
+            for (const { level: reqLevel, roleId } of levelRoles) {
+                if (level >= reqLevel && roleId) {
+                    const role = member.guild.roles.cache.get(roleId);
+                    if (role && !member.roles.cache.has(roleId)) {
+                        await member.roles.add(role);
+                        console.log(`[INFO] Added level ${reqLevel} role to ${member.user.tag}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[ERROR] Error handling level roles:', error);
+        }
+    }
+
+    // Voice XP processing with your anti-AFK settings
+    async processVoiceXP() {
+        try {
+            if (process.env.DEBUG_VOICE === 'true') {
+                console.log('[DEBUG] Processing voice XP for active users...');
+            }
+            
+            const guilds = global.client.guilds.cache;
+            const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
+            
+            for (const [guildId, guild] of guilds) {
+                try {
+                    const voiceChannels = guild.channels.cache.filter(channel => 
+                        channel.type === 2 && channel.members.size >= minMembers
+                    );
+
+                    for (const [channelId, channel] of voiceChannels) {
+                        for (const [userId, member] of channel.members) {
+                            if (member.user.bot) continue;
+
+                            // Anti-AFK check
+                            if (process.env.VOICE_ANTI_AFK === 'true') {
+                                if (member.voice.mute || member.voice.deaf || member.voice.selfMute || member.voice.selfDeaf) {
+                                    continue;
+                                }
+                            }
+
+                            if (guild.afkChannelId && channelId === guild.afkChannelId) {
+                                continue;
+                            }
+
+                            // Check cooldown
+                            if (this.isOnCooldown(userId, guildId, 'voice')) {
+                                continue;
+                            }
+
+                            // Generate random voice XP
+                            const voiceXP = this.generateRandomXP('voice');
+                            await this.addXP(userId, guildId, voiceXP, 'voice');
+                            
+                            // Set cooldown
+                            this.setCooldown(userId, guildId, 'voice');
+                            
+                            if (process.env.DEBUG_VOICE === 'true') {
+                                console.log(`[DEBUG] Added ${voiceXP} voice XP to ${member.user.tag}`);
+                            }
+                        }
+                    }
+                } catch (guildError) {
+                    console.error(`[ERROR] Error processing voice XP for guild ${guildId}:`, guildError);
+                }
+            }
+        } catch (error) {
+            console.error('[ERROR] Error in processVoiceXP:', error);
+        }
+    }
+
     async getUserXP(userId, guildId) {
         try {
-            console.log(`[DEBUG] Getting XP for user ${userId} in guild ${guildId}`);
-            
             const query = 'SELECT * FROM user_xp WHERE user_id = $1 AND guild_id = $2';
             const result = await this.pool.query(query, [userId, guildId]);
             
             if (result.rows.length > 0) {
-                console.log(`[DEBUG] Found user data:`, result.rows[0]);
                 return result.rows[0];
             } else {
-                console.log(`[DEBUG] No data found for user, returning defaults`);
                 return {
                     user_id: userId,
                     guild_id: guildId,
@@ -296,7 +425,6 @@ class XPTracker {
             }
         } catch (error) {
             console.error('[ERROR] Error getting user XP:', error);
-            console.error('[ERROR] Query details:', { userId, guildId });
             throw error;
         }
     }
@@ -347,124 +475,34 @@ class XPTracker {
         }
     }
 
-    // Enhanced getLeaderboard with better error handling
     async getLeaderboard(guildId, limit = 10) {
         try {
-            console.log(`[DEBUG] Getting leaderboard for guild ${guildId}, limit ${limit}`);
-            
-            const query = `
+            let query = `
                 SELECT user_id, total_xp, messages, reactions, voice_time
                 FROM user_xp
                 WHERE guild_id = $1 AND total_xp > 0
-                ORDER BY total_xp DESC
-                LIMIT $2
             `;
             
-            const result = await this.pool.query(query, [guildId, limit]);
-            console.log(`[DEBUG] Leaderboard query returned ${result.rows.length} rows`);
-            
-            if (result.rows.length === 0) {
-                console.log('[DEBUG] No users found with XP > 0');
+            // Exclude role if specified
+            if (process.env.LEADERBOARD_EXCLUDE_ROLE) {
+                // Note: This would need guild member data to filter by role
+                // For now, just get all users
             }
             
+            query += ` ORDER BY total_xp DESC LIMIT $2`;
+            
+            const result = await this.pool.query(query, [guildId, limit]);
             return result.rows;
         } catch (error) {
             console.error('[ERROR] Error getting leaderboard:', error);
-            console.error('[ERROR] Query details:', { guildId, limit });
-            throw error;
+            return [];
         }
-    }
-
-    // Level Calculation Methods
-    calculateLevel(totalXP) {
-        if (totalXP < 0) return 1;
-        return Math.floor(Math.sqrt(totalXP / 100)) + 1;
-    }
-
-    getXPForLevel(level) {
-        if (level <= 1) return 0;
-        return Math.pow(level - 1, 2) * 100;
     }
 
     getXPToNextLevel(currentXP) {
         const currentLevel = this.calculateLevel(currentXP);
         const nextLevelXP = this.getXPForLevel(currentLevel + 1);
         return nextLevelXP - currentXP;
-    }
-
-    // Cooldown Methods
-    isOnCooldown(userId, guildId) {
-        const key = `${userId}-${guildId}`;
-        const now = Date.now();
-        const cooldownTime = this.cooldowns.get(key);
-        
-        if (cooldownTime && now < cooldownTime) {
-            return true;
-        }
-        
-        return false;
-    }
-
-    setCooldown(userId, guildId, seconds = 60) {
-        const key = `${userId}-${guildId}`;
-        const cooldownTime = Date.now() + (seconds * 1000);
-        this.cooldowns.set(key, cooldownTime);
-        
-        // Clean up expired cooldowns
-        setTimeout(() => {
-            this.cooldowns.delete(key);
-        }, seconds * 1000);
-    }
-
-    // Voice XP Methods
-    async processVoiceXP() {
-        try {
-            console.log('[DEBUG] Processing voice XP for active users...');
-            
-            const guilds = global.client.guilds.cache;
-            
-            for (const [guildId, guild] of guilds) {
-                try {
-                    const voiceChannels = guild.channels.cache.filter(channel => 
-                        channel.type === 2 && channel.members.size > 0
-                    );
-
-                    for (const [channelId, channel] of voiceChannels) {
-                        for (const [userId, member] of channel.members) {
-                            if (member.user.bot) continue;
-
-                            if (member.voice.mute || member.voice.deaf || member.voice.selfMute || member.voice.selfDeaf) {
-                                continue;
-                            }
-
-                            if (guild.afkChannelId && channelId === guild.afkChannelId) {
-                                continue;
-                            }
-
-                            const activeMembers = channel.members.filter(m => 
-                                !m.user.bot && 
-                                !m.voice.mute && 
-                                !m.voice.deaf && 
-                                !m.voice.selfMute && 
-                                !m.voice.selfDeaf
-                            );
-                            
-                            if (activeMembers.size < 2) continue;
-
-                            const guildSettings = await this.getGuildSettings(guildId);
-                            const voiceXP = guildSettings.voice_xp || parseInt(process.env.VOICE_XP) || 5;
-
-                            await this.addXP(userId, guildId, voiceXP, 'voice');
-                            console.log(`[DEBUG] Added ${voiceXP} voice XP to ${member.user.tag} in ${guild.name}`);
-                        }
-                    }
-                } catch (guildError) {
-                    console.error(`[ERROR] Error processing voice XP for guild ${guildId}:`, guildError);
-                }
-            }
-        } catch (error) {
-            console.error('[ERROR] Error in processVoiceXP:', error);
-        }
     }
 
     async cleanupDailyVoiceXP() {
@@ -480,25 +518,12 @@ class XPTracker {
             
             const result = await this.pool.query(query);
             console.log(`[INFO] Daily voice XP cleanup completed. Reset ${result.rowCount} users.`);
-            
-            const cleanupQuery = `
-                DELETE FROM user_xp 
-                WHERE total_xp = 0 
-                AND messages = 0 
-                AND reactions = 0 
-                AND voice_time = 0 
-                AND updated_at < NOW() - INTERVAL '30 days'
-            `;
-            
-            const cleanupResult = await this.pool.query(cleanupQuery);
-            console.log(`[INFO] Cleaned up ${cleanupResult.rowCount} inactive user records.`);
-            
         } catch (error) {
             console.error('[ERROR] Error in cleanupDailyVoiceXP:', error);
         }
     }
 
-    // Marine Level-Up System
+    // Marine Level-Up System (same as before)
     async sendMarineLevelUp(levelUpData) {
         try {
             const { userId, guildId, oldLevel, newLevel, totalXP, member, channel } = levelUpData;
@@ -528,18 +553,13 @@ class XPTracker {
             const newThreat = this.getThreatLevelName(newLevel);
             const threatUpgrade = oldThreat !== newThreat;
 
-            const isPirateKing = newLevel >= 200;
-            const isEmperor = newLevel >= 150 && newLevel < 200;
-            const isWarlord = newLevel >= 100 && newLevel < 150;
-
-            const getTerritory = (level) => {
-                if (level >= 200) return "📍 **New World - Raftel**";
-                if (level >= 150) return "📍 **New World - Yonko Territory**";
-                if (level >= 100) return "📍 **New World - Paradise**";
-                if (level >= 50) return "📍 **Grand Line**";
-                if (level >= 25) return "📍 **Paradise**";
-                return "📍 **East Blue**";
-            };
+            let content = `🚨 **MARINE HQ ALERT** 🚨\n`;
+            
+            if (process.env.LEVELUP_PING_USER === 'true') {
+                content += `${member} has been reclassified as a **Level ${newLevel}** threat!`;
+            } else {
+                content += `**${member.displayName}** has been reclassified as a **Level ${newLevel}** threat!`;
+            }
 
             const embed = new EmbedBuilder()
                 .setColor('#DC143C')
@@ -555,11 +575,6 @@ class XPTracker {
                         name: '💰 BOUNTY ASSESSMENT',
                         value: `**Previous Bounty:** ${oldBounty.toLocaleString()} Berries\n**New Bounty:** ${newBounty.toLocaleString()} Berries\n**Increase:** +${bountyIncrease.toLocaleString()} Berries`,
                         inline: true
-                    },
-                    {
-                        name: '📊 INTELLIGENCE SUMMARY',
-                        value: `**Activity Assessment:** ${this.getActivityLevel(userData)}\n**Territory:** ${getTerritory(newLevel)}\n**Threat Level:** ${threatUpgrade ? `⬆️ UPGRADED` : '📊 Maintained'}`,
-                        inline: true
                     }
                 ])
                 .setImage('attachment://bounty-update-' + userId + '.png')
@@ -568,41 +583,37 @@ class XPTracker {
                     text: '⚓ World Government Marine Intelligence Division'
                 });
 
-            if (isPirateKing) {
+            // Add XP info if enabled
+            if (process.env.LEVELUP_SHOW_XP === 'true') {
+                const nextLevelXP = this.getXPToNextLevel(totalXP);
                 embed.addFields([{
-                    name: '👑 SPECIAL CLASSIFICATION',
-                    value: '**🏴‍☠️ PIRATE KING DETECTED 🏴‍☠️**\n*Highest threat level achieved. All marines advised to exercise extreme caution.*',
-                    inline: false
-                }]);
-            } else if (isEmperor) {
-                embed.addFields([{
-                    name: '⚡ EMPEROR STATUS',
-                    value: '**🔥 YONKO-LEVEL THREAT 🔥**\n*Subject has achieved Emperor-class power level. Fleet Admiral notified.*',
-                    inline: false
-                }]);
-            } else if (isWarlord) {
-                embed.addFields([{
-                    name: '⚔️ WARLORD STATUS',
-                    value: '**🏴‍☠️ SHICHIBUKAI-LEVEL THREAT 🏴‍☠️**\n*Subject qualifies for Warlord consideration. Monitoring increased.*',
-                    inline: false
+                    name: '📊 XP PROGRESS',
+                    value: `**Total XP:** ${totalXP.toLocaleString()}\n**XP to Next Level:** ${nextLevelXP.toLocaleString()}`,
+                    inline: true
                 }]);
             }
 
-            if (threatUpgrade) {
+            // Add progress bar if enabled
+            if (process.env.LEVELUP_SHOW_PROGRESS === 'true') {
+                const currentLevelXP = this.getXPForLevel(newLevel);
+                const nextLevelXP = this.getXPForLevel(newLevel + 1);
+                const progressXP = totalXP - currentLevelXP;
+                const neededXP = nextLevelXP - currentLevelXP;
+                const progress = Math.floor((progressXP / neededXP) * 10);
+                const progressBar = '█'.repeat(progress) + '░'.repeat(10 - progress);
+                
                 embed.addFields([{
-                    name: '🔺 THREAT ESCALATION',
-                    value: `**Classification upgraded from ${oldThreat} to ${newThreat}**\n*All Marine units in the area have been notified of the threat level increase.*`,
+                    name: '📈 LEVEL PROGRESS',
+                    value: `\`${progressBar}\` ${Math.floor((progressXP / neededXP) * 100)}%`,
                     inline: false
                 }]);
             }
 
             await channel.send({
-                content: `🚨 **MARINE HQ ALERT** 🚨\n${member} has been reclassified as a **Level ${newLevel}** threat!`,
+                content: content,
                 embeds: [embed],
                 files: [attachment]
             });
-
-            await this.handleRoleRewards(member, newLevel);
 
         } catch (error) {
             console.error('[ERROR] Error sending Marine level-up:', error);
@@ -717,27 +728,32 @@ class XPTracker {
         }
     }
 
-    // Helper Methods
     getBountyForLevel(level) {
-        if (level >= 200) return 5000000000;
-        if (level >= 150) return 3000000000;
-        if (level >= 100) return 1000000000;
-        if (level >= 75) return 500000000;
-        if (level >= 50) return 100000000;
+        if (level >= 50) return 5000000000;
+        if (level >= 45) return 3000000000;
+        if (level >= 40) return 1000000000;
+        if (level >= 35) return 500000000;
+        if (level >= 30) return 100000000;
         if (level >= 25) return 50000000;
-        if (level >= 10) return 10000000;
-        return level * 1000000;
+        if (level >= 20) return 25000000;
+        if (level >= 15) return 10000000;
+        if (level >= 10) return 5000000;
+        if (level >= 5) return 1000000;
+        return level * 100000;
     }
 
     getThreatLevelName(level) {
-        if (level >= 200) return "PIRATE KING";
-        if (level >= 150) return "EMPEROR";
-        if (level >= 100) return "WARLORD";
-        if (level >= 75) return "SUPERNOVA";
-        if (level >= 50) return "NOTORIOUS";
+        if (level >= 50) return "PIRATE KING";
+        if (level >= 45) return "EMPEROR";
+        if (level >= 40) return "WARLORD";
+        if (level >= 35) return "SUPERNOVA";
+        if (level >= 30) return "NOTORIOUS";
         if (level >= 25) return "WANTED";
-        if (level >= 10) return "KNOWN";
-        return "ROOKIE";
+        if (level >= 20) return "DANGEROUS";
+        if (level >= 15) return "KNOWN";
+        if (level >= 10) return "ROOKIE";
+        if (level >= 5) return "APPRENTICE";
+        return "UNKNOWN";
     }
 
     getActivityLevel(userData) {
@@ -762,11 +778,11 @@ class XPTracker {
             } else {
                 return {
                     guild_id: guildId,
-                    message_xp: parseInt(process.env.MESSAGE_XP) || 15,
-                    voice_xp: parseInt(process.env.VOICE_XP) || 5,
-                    reaction_xp: parseInt(process.env.REACTION_XP) || 2,
-                    xp_cooldown: parseInt(process.env.XP_COOLDOWN) || 60,
-                    level_up_channel: null,
+                    message_xp: parseInt(process.env.MESSAGE_XP_MIN) || 25,
+                    voice_xp: parseInt(process.env.VOICE_XP_MIN) || 45,
+                    reaction_xp: parseInt(process.env.REACTION_XP_MIN) || 25,
+                    xp_cooldown: parseInt(process.env.MESSAGE_COOLDOWN) || 60000,
+                    level_up_channel: process.env.LEVELUP_CHANNEL,
                     role_rewards: {}
                 };
             }
@@ -774,10 +790,10 @@ class XPTracker {
             console.error('[ERROR] Error getting guild settings:', error);
             return {
                 guild_id: guildId,
-                message_xp: 15,
-                voice_xp: 5,
-                reaction_xp: 2,
-                xp_cooldown: 60,
+                message_xp: 25,
+                voice_xp: 45,
+                reaction_xp: 25,
+                xp_cooldown: 60000,
                 level_up_channel: null,
                 role_rewards: {}
             };
@@ -815,24 +831,9 @@ class XPTracker {
         }
     }
 
-    // Role Rewards
+    // Role Rewards (legacy method for compatibility)
     async handleRoleRewards(member, level) {
-        try {
-            const guildSettings = await this.getGuildSettings(member.guild.id);
-            const roleRewards = guildSettings.role_rewards || {};
-
-            for (const [rewardLevel, roleId] of Object.entries(roleRewards)) {
-                if (level >= parseInt(rewardLevel)) {
-                    const role = member.guild.roles.cache.get(roleId);
-                    if (role && !member.roles.cache.has(roleId)) {
-                        await member.roles.add(role);
-                        console.log(`[INFO] Added role ${role.name} to ${member.user.tag} for reaching level ${level}`);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('[ERROR] Error handling role rewards:', error);
-        }
+        await this.handleLevelRoles(member, level);
     }
 
     // Cleanup method
