@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete XPTracker with Marine Level-Up System
+// src/utils/xpTracker.js - Complete Final XPTracker with Fixed Column Mapping
 
 const { Pool } = require('pg');
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
@@ -6,13 +6,40 @@ const { createCanvas, loadImage, registerFont } = require('canvas');
 
 class XPTracker {
     constructor() {
+        // Try multiple connection options for Railway
+        const databaseUrl = process.env.DATABASE_PRIVATE_URL || 
+                           process.env.DATABASE_URL || 
+                           process.env.POSTGRES_URL;
+        
+        console.log('[DEBUG] Attempting database connection...');
+        
         this.pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+            connectionString: databaseUrl,
+            ssl: process.env.NODE_ENV === 'production' ? { 
+                rejectUnauthorized: false 
+            } : false,
+            // Add connection timeout and retry settings
+            connectionTimeoutMillis: 10000,
+            idleTimeoutMillis: 30000,
+            max: 10
         });
+        
+        // Test the connection
+        this.testConnection();
         
         this.cooldowns = new Map();
         this.initializeTables();
+    }
+
+    async testConnection() {
+        try {
+            const client = await this.pool.connect();
+            console.log('[INFO] Database connected successfully');
+            client.release();
+        } catch (error) {
+            console.error('[ERROR] Database connection failed:', error.message);
+            console.error('[ERROR] Check your DATABASE_URL environment variable');
+        }
     }
 
     async initializeTables() {
@@ -66,22 +93,53 @@ class XPTracker {
         }
     }
 
-    // Core XP Methods
+    // FIXED addXP method with explicit column handling
     async addXP(userId, guildId, amount, source = 'message') {
         try {
-            const query = `
-                INSERT INTO user_xp (user_id, guild_id, total_xp, ${source}s, updated_at)
-                VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id, guild_id)
-                DO UPDATE SET
-                    total_xp = user_xp.total_xp + $3,
-                    ${source}s = user_xp.${source}s + 1,
-                    ${source === 'voice' ? 'voice_time = user_xp.voice_time + 60,' : ''}
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING total_xp
-            `;
+            let query, values;
+            
+            if (source === 'voice') {
+                // Voice XP: increment voice_time by 60 seconds
+                query = `
+                    INSERT INTO user_xp (user_id, guild_id, total_xp, voice_time, updated_at)
+                    VALUES ($1, $2, $3, 60, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, guild_id)
+                    DO UPDATE SET
+                        total_xp = user_xp.total_xp + $3,
+                        voice_time = user_xp.voice_time + 60,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING total_xp
+                `;
+                values = [userId, guildId, amount];
+            } else if (source === 'reaction') {
+                // Reaction XP: increment reactions
+                query = `
+                    INSERT INTO user_xp (user_id, guild_id, total_xp, reactions, updated_at)
+                    VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, guild_id)
+                    DO UPDATE SET
+                        total_xp = user_xp.total_xp + $3,
+                        reactions = user_xp.reactions + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING total_xp
+                `;
+                values = [userId, guildId, amount];
+            } else {
+                // Message XP (default): increment messages
+                query = `
+                    INSERT INTO user_xp (user_id, guild_id, total_xp, messages, updated_at)
+                    VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, guild_id)
+                    DO UPDATE SET
+                        total_xp = user_xp.total_xp + $3,
+                        messages = user_xp.messages + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING total_xp
+                `;
+                values = [userId, guildId, amount];
+            }
 
-            const result = await this.pool.query(query, [userId, guildId, amount]);
+            const result = await this.pool.query(query, values);
             const newTotalXP = result.rows[0].total_xp;
 
             // Check for level up
