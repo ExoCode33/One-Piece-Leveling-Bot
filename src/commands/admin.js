@@ -236,7 +236,378 @@ module.exports = {
                 .setDescription(`**MARINE INTELLIGENCE BUREAU - XP MODIFICATION**`)
                 .addFields([
                     {
+                        name: '📝 REASON',
+                        value: reason,
+                        inline: false
+                    }
+                ])
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
+
+            await interaction.editReply({ embeds: [confirmEmbed] });
+
+            // Check if user leveled up and trigger Marine level-up if so
+            if (newLevel > oldLevel) {
+                const member = await interaction.guild.members.fetch(user.id);
+                
+                // Trigger Marine level-up using YOUR system
+                if (global.xpTracker) {
+                    await global.xpTracker.awardXP(user.id, guildId, 0, 'admin', user);
+                }
+            }
+
+            // Log the action
+            console.log(`[ADMIN] ${interaction.user.username} added ${amount} XP to ${user.username}: ${oldXP} → ${newXP}`);
+
+        } catch (error) {
+            console.error('Add XP error:', error);
+            
+            const embed = new EmbedBuilder()
+                .setTitle('❌ MARINE COMMAND FAILED')
+                .setDescription('Failed to add XP. Please try again.')
+                .setColor('#DC143C');
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+    },
+
+    async handleRemoveXP(interaction) {
+        const user = interaction.options.getUser('user');
+        const amount = interaction.options.getInteger('amount');
+        const reason = interaction.options.getString('reason') || 'Disciplinary action by Marine officer';
+        const guildId = interaction.guild.id;
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            // Get current user stats
+            const currentStats = await global.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [user.id, guildId]
+            );
+
+            if (currentStats.rows.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE INTELLIGENCE ERROR')
+                    .setDescription(`${user.username} has no criminal record in this server.`)
+                    .setColor('#DC143C');
+                
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
+            const oldXP = currentStats.rows[0].total_xp;
+            const oldLevel = currentStats.rows[0].level;
+            const newXP = Math.max(0, oldXP - amount); // Prevent negative XP
+
+            // Update XP
+            await global.db.query(
+                'UPDATE user_levels SET total_xp = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND guild_id = $3',
+                [newXP, user.id, guildId]
+            );
+
+            // Calculate new level
+            const newLevel = this.calculateLevel(newXP);
+            await global.db.query(
+                'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
+                [newLevel, user.id, guildId]
+            );
+
+            const embed = new EmbedBuilder()
+                .setTitle('🚨 MARINE DISCIPLINARY ACTION 🚨')
+                .setDescription(`**MARINE INTELLIGENCE BUREAU - XP REDUCTION**`)
+                .addFields([
+                    {
                         name: '👤 SUBJECT',
+                        value: `${user}`,
+                        inline: true
+                    },
+                    {
+                        name: '📊 XP MODIFICATION',
+                        value: `**Removed:** ${amount.toLocaleString()} XP\n**New Total:** ${newXP.toLocaleString()} XP\n**Level:** ${oldLevel} → ${newLevel}`,
+                        inline: true
+                    },
+                    {
+                        name: '⚓ AUTHORIZED BY',
+                        value: `Marine Officer: ${interaction.user.tag}`,
+                        inline: false
+                    },
+                    {
+                        name: '📝 REASON',
+                        value: reason,
+                        inline: false
+                    }
+                ])
+                .setColor('#DC143C')
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('Remove XP error:', error);
+            
+            const embed = new EmbedBuilder()
+                .setTitle('❌ MARINE COMMAND FAILED')
+                .setDescription('Failed to remove XP. Please try again.')
+                .setColor('#DC143C');
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+    },
+
+    async handleSetLevel(interaction) {
+        const user = interaction.options.getUser('user');
+        const targetLevel = interaction.options.getInteger('level');
+        const reason = interaction.options.getString('reason') || 'Manual level adjustment by Marine officer';
+        const guildId = interaction.guild.id;
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            // Calculate required XP for target level
+            const requiredXP = this.getXPForLevel(targetLevel);
+
+            // Get current stats
+            const currentStats = await global.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [user.id, guildId]
+            );
+
+            const oldXP = currentStats.rows.length > 0 ? currentStats.rows[0].total_xp : 0;
+            const oldLevel = currentStats.rows.length > 0 ? currentStats.rows[0].level : 0;
+
+            // Update or insert user stats
+            await global.db.query(`
+                INSERT INTO user_levels (user_id, guild_id, total_xp, level)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET
+                    total_xp = $3,
+                    level = $4,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [user.id, guildId, requiredXP, targetLevel]);
+
+            const embed = new EmbedBuilder()
+                .setTitle('🚨 MARINE RANK ADJUSTMENT 🚨')
+                .setDescription(`**MARINE INTELLIGENCE BUREAU - LEVEL OVERRIDE**`)
+                .addFields([
+                    {
+                        name: '👤 SUBJECT',
+                        value: `${user}`,
+                        inline: true
+                    },
+                    {
+                        name: '📊 RANK CHANGE',
+                        value: `**Level:** ${oldLevel} → ${targetLevel}\n**Total XP:** ${requiredXP.toLocaleString()}`,
+                        inline: true
+                    },
+                    {
+                        name: '⚓ AUTHORIZED BY',
+                        value: `Marine Officer: ${interaction.user.tag}`,
+                        inline: false
+                    },
+                    {
+                        name: '📝 REASON',
+                        value: reason,
+                        inline: false
+                    }
+                ])
+                .setColor('#DC143C')
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
+
+            await interaction.editReply({ embeds: [embed] });
+
+            // Trigger Marine level-up if level increased
+            if (targetLevel > oldLevel) {
+                if (global.xpTracker) {
+                    await global.xpTracker.awardXP(user.id, guildId, 0, 'admin', user);
+                }
+            }
+
+        } catch (error) {
+            console.error('Set level error:', error);
+            
+            const embed = new EmbedBuilder()
+                .setTitle('❌ MARINE COMMAND FAILED')
+                .setDescription('Failed to set level. Please try again.')
+                .setColor('#DC143C');
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+    },
+
+    async handleResetUser(interaction) {
+        const user = interaction.options.getUser('user');
+        const reason = interaction.options.getString('reason') || 'Data purge by Marine officer';
+        const guildId = interaction.guild.id;
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            // Delete user data
+            const result = await global.db.query(
+                'DELETE FROM user_levels WHERE user_id = $1 AND guild_id = $2 RETURNING *',
+                [user.id, guildId]
+            );
+
+            if (result.rows.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE INTELLIGENCE ERROR')
+                    .setDescription(`${user.username} has no criminal record in this server.`)
+                    .setColor('#DC143C');
+                
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle('🚨 MARINE DATA PURGE 🚨')
+                .setDescription(`**MARINE INTELLIGENCE BUREAU - COMPLETE RESET**`)
+                .addFields([
+                    {
+                        name: '👤 SUBJECT',
+                        value: `${user}`,
+                        inline: true
+                    },
+                    {
+                        name: '🔄 RESET COMPLETE',
+                        value: `**Previous Level:** ${result.rows[0].level}\n**Previous XP:** ${result.rows[0].total_xp.toLocaleString()}\n**All activity stats cleared**`,
+                        inline: true
+                    },
+                    {
+                        name: '⚓ AUTHORIZED BY',
+                        value: `Marine Officer: ${interaction.user.tag}`,
+                        inline: false
+                    },
+                    {
+                        name: '📝 REASON',
+                        value: reason,
+                        inline: false
+                    }
+                ])
+                .setColor('#DC143C')
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('Reset user error:', error);
+            
+            const embed = new EmbedBuilder()
+                .setTitle('❌ MARINE COMMAND FAILED')
+                .setDescription('Failed to reset user. Please try again.')
+                .setColor('#DC143C');
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+    },
+
+    async handleStats(interaction) {
+        const guildId = interaction.guild.id;
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            // Get server statistics
+            const totalUsers = await global.db.query(
+                'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
+                [guildId]
+            );
+
+            const totalXP = await global.db.query(
+                'SELECT SUM(total_xp) FROM user_levels WHERE guild_id = $1',
+                [guildId]
+            );
+
+            const totalMessages = await global.db.query(
+                'SELECT SUM(messages) FROM user_levels WHERE guild_id = $1',
+                [guildId]
+            );
+
+            const topUser = await global.db.query(
+                'SELECT user_id, total_xp, level FROM user_levels WHERE guild_id = $1 ORDER BY total_xp DESC LIMIT 1',
+                [guildId]
+            );
+
+            const settings = global.guildSettings.get(guildId) || {};
+
+            const embed = new EmbedBuilder()
+                .setTitle('🚨 MARINE INTELLIGENCE REPORT 🚨')
+                .setDescription(`**SURVEILLANCE DATA - ${interaction.guild.name}**`)
+                .addFields([
+                    { name: '👥 Total Subjects', value: totalUsers.rows[0].count || '0', inline: true },
+                    { name: '📊 Total XP', value: (totalXP.rows[0].sum || 0).toLocaleString(), inline: true },
+                    { name: '💬 Total Messages', value: (totalMessages.rows[0].sum || 0).toLocaleString(), inline: true },
+                    { name: '⚡ XP Multiplier', value: (settings.xpMultiplier || 1.0).toString(), inline: true },
+                    { name: '📢 Levelup Channel', value: settings.levelupChannel ? `<#${settings.levelupChannel}>` : 'Not set', inline: true },
+                    { name: '👑 Excluded Role', value: settings.excludedRole ? `<@&${settings.excludedRole}>` : 'None', inline: true }
+                ])
+                .setColor('#DC143C')
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
+
+            if (topUser.rows.length > 0) {
+                embed.addFields({
+                    name: '🎯 Highest Threat',
+                    value: `<@${topUser.rows[0].user_id}> - Level ${topUser.rows[0].level} (${topUser.rows[0].total_xp.toLocaleString()} XP)`,
+                    inline: false
+                });
+            }
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('Stats error:', error);
+            
+            const embed = new EmbedBuilder()
+                .setTitle('❌ MARINE COMMAND FAILED')
+                .setDescription('Failed to retrieve statistics. Please try again.')
+                .setColor('#DC143C');
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+    },
+
+    calculateLevel(totalXP) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+
+        for (let level = 1; level <= maxLevel; level++) {
+            let requiredXP;
+            
+            if (curve === 'exponential') {
+                requiredXP = Math.floor(100 * Math.pow(level, multiplier));
+            } else if (curve === 'linear') {
+                requiredXP = 100 * level * multiplier;
+            } else if (curve === 'logarithmic') {
+                requiredXP = Math.floor(100 * Math.log(level + 1) * multiplier * 10);
+            }
+
+            if (totalXP < requiredXP) {
+                return level - 1;
+            }
+        }
+
+        return maxLevel;
+    },
+
+    getXPForLevel(level) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        
+        if (curve === 'exponential') {
+            return Math.floor(100 * Math.pow(level, multiplier));
+        } else if (curve === 'linear') {
+            return 100 * level * multiplier;
+        } else if (curve === 'logarithmic') {
+            return Math.floor(100 * Math.log(level + 1) * multiplier * 10);
+        }
+        
+        return Math.floor(100 * Math.pow(level, multiplier));
+    }
+};👤 SUBJECT',
                         value: `${user}`,
                         inline: true
                     },
