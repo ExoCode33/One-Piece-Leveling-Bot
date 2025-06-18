@@ -1,369 +1,254 @@
-// src/commands/admin.js - Complete Red Marine Admin Command
+// src/commands/admin.js - Updated for your original system with red Marine theme
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const XPTracker = require('../utils/xpTracker');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('admin')
-        .setDescription('Admin commands for managing the leveling system')
+        .setDescription('Bot administration commands')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('settings')
+                .setDescription('Configure server settings')
+                .addChannelOption(option =>
+                    option.setName('levelup-channel')
+                        .setDescription('Channel for level up announcements')
+                        .setRequired(false))
+                .addRoleOption(option =>
+                    option.setName('excluded-role')
+                        .setDescription('Role to exclude from XP gain')
+                        .setRequired(false))
+                .addNumberOption(option =>
+                    option.setName('xp-multiplier')
+                        .setDescription('XP multiplier for this server (default: 1.0)')
+                        .setMinValue(0.1)
+                        .setMaxValue(5.0)
+                        .setRequired(false)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('add-xp')
                 .setDescription('Add XP to a user')
                 .addUserOption(option =>
                     option.setName('user')
-                        .setDescription('The user to add XP to')
+                        .setDescription('User to give XP to')
                         .setRequired(true))
                 .addIntegerOption(option =>
                     option.setName('amount')
                         .setDescription('Amount of XP to add')
-                        .setRequired(true)
-                        .setMinValue(1)))
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('reason')
+                        .setDescription('Reason for XP adjustment')
+                        .setRequired(false)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('remove-xp')
                 .setDescription('Remove XP from a user')
                 .addUserOption(option =>
                     option.setName('user')
-                        .setDescription('The user to remove XP from')
+                        .setDescription('User to remove XP from')
                         .setRequired(true))
                 .addIntegerOption(option =>
                     option.setName('amount')
                         .setDescription('Amount of XP to remove')
-                        .setRequired(true)
-                        .setMinValue(1)))
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('reason')
+                        .setDescription('Reason for XP adjustment')
+                        .setRequired(false)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('set-level')
-                .setDescription('Set a user\'s level')
+                .setDescription('Set a user to a specific level')
                 .addUserOption(option =>
                     option.setName('user')
-                        .setDescription('The user to set level for')
+                        .setDescription('User to set level for')
                         .setRequired(true))
                 .addIntegerOption(option =>
                     option.setName('level')
-                        .setDescription('Level to set')
-                        .setRequired(true)
-                        .setMinValue(1)
-                        .setMaxValue(200)))
+                        .setDescription('Level to set (0-50)')
+                        .setMinValue(0)
+                        .setMaxValue(50)
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('reason')
+                        .setDescription('Reason for level adjustment')
+                        .setRequired(false)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('reset-user')
-                .setDescription('Reset a user\'s XP and level')
+                .setDescription('Reset all XP and levels for a user')
                 .addUserOption(option =>
                     option.setName('user')
-                        .setDescription('The user to reset')
-                        .setRequired(true)))
+                        .setDescription('User to reset')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('reason')
+                        .setDescription('Reason for reset')
+                        .setRequired(false)))
         .addSubcommand(subcommand =>
             subcommand
-                .setName('view-user')
-                .setDescription('View detailed user XP data')
-                .addUserOption(option =>
-                    option.setName('user')
-                        .setDescription('The user to view')
-                        .setRequired(true))),
+                .setName('stats')
+                .setDescription('View server statistics')),
 
     async execute(interaction) {
         try {
             const subcommand = interaction.options.getSubcommand();
-            const xpTracker = new XPTracker();
 
             switch (subcommand) {
+                case 'settings':
+                    await this.handleSettings(interaction);
+                    break;
                 case 'add-xp':
-                    await this.handleAddXP(interaction, xpTracker);
+                    await this.handleAddXP(interaction);
                     break;
                 case 'remove-xp':
-                    await this.handleRemoveXP(interaction, xpTracker);
+                    await this.handleRemoveXP(interaction);
                     break;
                 case 'set-level':
-                    await this.handleSetLevel(interaction, xpTracker);
+                    await this.handleSetLevel(interaction);
                     break;
                 case 'reset-user':
-                    await this.handleResetUser(interaction, xpTracker);
+                    await this.handleResetUser(interaction);
                     break;
-                case 'view-user':
-                    await this.handleViewUser(interaction, xpTracker);
+                case 'stats':
+                    await this.handleStats(interaction);
                     break;
+                default:
+                    await interaction.reply({ content: 'Unknown admin command.', ephemeral: true });
             }
+
         } catch (error) {
-            console.error('Error in admin command:', error);
+            console.error('Admin command error:', error);
+            
             const errorEmbed = new EmbedBuilder()
-                .setColor('#FF0000')
                 .setTitle('❌ MARINE COMMAND FAILED')
                 .setDescription('An error occurred while executing the admin command.')
+                .setColor('#DC143C')
                 .setTimestamp();
 
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+            if (interaction.deferred) {
+                await interaction.editReply({ embeds: [errorEmbed] });
             } else {
                 await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
             }
         }
     },
 
-    async handleAddXP(interaction, xpTracker) {
-        const targetUser = interaction.options.getUser('user');
-        const amount = interaction.options.getInteger('amount');
+    async handleSettings(interaction) {
+        const levelupChannel = interaction.options.getChannel('levelup-channel');
+        const excludedRole = interaction.options.getRole('excluded-role');
+        const xpMultiplier = interaction.options.getNumber('xp-multiplier');
+        const guildId = interaction.guild.id;
 
         try {
-            // Get current level before adding XP
-            const currentData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
-            const currentLevel = xpTracker.calculateLevel(currentData.total_xp);
+            await interaction.deferReply({ ephemeral: true });
 
-            // Add XP
-            await xpTracker.addXP(targetUser.id, interaction.guild.id, amount, 'admin');
+            // Update database
+            await global.db.query(`
+                INSERT INTO guild_settings (guild_id, levelup_channel, excluded_role, xp_multiplier)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id)
+                DO UPDATE SET
+                    levelup_channel = COALESCE($2, guild_settings.levelup_channel),
+                    excluded_role = COALESCE($3, guild_settings.excluded_role),
+                    xp_multiplier = COALESCE($4, guild_settings.xp_multiplier),
+                    updated_at = CURRENT_TIMESTAMP
+            `, [guildId, levelupChannel?.id, excludedRole?.id, xpMultiplier]);
 
-            // Get new level after adding XP
-            const newData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
-            const newLevel = xpTracker.calculateLevel(newData.total_xp);
+            // Update global cache
+            const currentSettings = global.guildSettings.get(guildId) || {};
+            global.guildSettings.set(guildId, {
+                levelupChannel: levelupChannel?.id || currentSettings.levelupChannel,
+                excludedRole: excludedRole?.id || currentSettings.excludedRole,
+                xpMultiplier: xpMultiplier || currentSettings.xpMultiplier || 1.0
+            });
+
+            const embed = new EmbedBuilder()
+                .setTitle('🚨 MARINE COMMAND EXECUTED 🚨')
+                .setDescription('**MARINE INTELLIGENCE BUREAU - SETTINGS UPDATE**')
+                .addFields(
+                    { name: '📢 Level-up Channel', value: levelupChannel ? `<#${levelupChannel.id}>` : 'Not changed', inline: true },
+                    { name: '👑 Excluded Role', value: excludedRole ? `<@&${excludedRole.id}>` : 'Not changed', inline: true },
+                    { name: '⚡ XP Multiplier', value: xpMultiplier ? xpMultiplier.toString() : 'Not changed', inline: true }
+                )
+                .setColor('#DC143C')
+                .setTimestamp()
+                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('Settings update error:', error);
+            
+            const embed = new EmbedBuilder()
+                .setTitle('❌ MARINE COMMAND FAILED')
+                .setDescription('Failed to update settings. Please try again.')
+                .setColor('#DC143C');
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+    },
+
+    async handleAddXP(interaction) {
+        const user = interaction.options.getUser('user');
+        const amount = interaction.options.getInteger('amount');
+        const reason = interaction.options.getString('reason') || 'Manual adjustment by Marine officer';
+        const guildId = interaction.guild.id;
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            // Get current user stats
+            const currentStats = await global.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [user.id, guildId]
+            );
+
+            const oldXP = currentStats.rows.length > 0 ? currentStats.rows[0].total_xp : 0;
+            const oldLevel = currentStats.rows.length > 0 ? currentStats.rows[0].level : 0;
+            const newXP = oldXP + amount;
+
+            // Update or insert user stats
+            await global.db.query(`
+                INSERT INTO user_levels (user_id, guild_id, total_xp, level)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET
+                    total_xp = user_levels.total_xp + $3,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [user.id, guildId, amount, 0]);
+
+            // Calculate new level
+            const newLevel = this.calculateLevel(newXP);
+            
+            // Update level in database
+            await global.db.query(
+                'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
+                [newLevel, user.id, guildId]
+            );
 
             // RED Marine admin confirmation embed
             const confirmEmbed = new EmbedBuilder()
-                .setColor('#DC143C') // Red like Marine theme
+                .setColor('#DC143C')
                 .setTitle('🚨 MARINE COMMAND EXECUTED 🚨')
-                .setDescription(`**MARINE INTELLIGENCE BUREAU - ADMINISTRATIVE ACTION**`)
+                .setDescription(`**MARINE INTELLIGENCE BUREAU - XP MODIFICATION**`)
                 .addFields([
                     {
                         name: '👤 SUBJECT',
-                        value: `${targetUser}`,
+                        value: `${user}`,
                         inline: true
                     },
                     {
                         name: '📊 XP MODIFICATION',
-                        value: `**Added:** ${amount.toLocaleString()} XP\n**New Total:** ${newData.total_xp.toLocaleString()} XP\n**Level:** ${newLevel}`,
+                        value: `**Added:** ${amount.toLocaleString()} XP\n**New Total:** ${newXP.toLocaleString()} XP\n**Level:** ${oldLevel} → ${newLevel}`,
                         inline: true
                     },
                     {
                         name: '⚓ AUTHORIZED BY',
                         value: `Marine Officer: ${interaction.user.tag}`,
                         inline: false
-                    }
-                ])
-                .setTimestamp()
-                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
-
-            await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
-
-            // Check if user leveled up and trigger Marine level-up if so
-            if (newLevel > currentLevel) {
-                const member = await interaction.guild.members.fetch(targetUser.id);
-                
-                // Create level-up data in the same format as natural level-ups
-                const levelUpData = {
-                    userId: targetUser.id,
-                    guildId: interaction.guild.id,
-                    oldLevel: currentLevel,
-                    newLevel: newLevel,
-                    totalXP: newData.total_xp,
-                    member: member,
-                    channel: interaction.channel
-                };
-
-                // Trigger the Marine level-up system
-                await xpTracker.sendMarineLevelUp(levelUpData);
-            }
-
-        } catch (error) {
-            console.error('Error in add-xp:', error);
-            
-            const errorEmbed = new EmbedBuilder()
-                .setColor('#FF0000')
-                .setTitle('❌ MARINE COMMAND FAILED')
-                .setDescription(`Failed to add XP: ${error.message}`)
-                .setTimestamp();
-
-            if (interaction.replied) {
-                await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
-            } else {
-                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-            }
-        }
-    },
-
-    async handleRemoveXP(interaction, xpTracker) {
-        const targetUser = interaction.options.getUser('user');
-        const amount = interaction.options.getInteger('amount');
-
-        const currentData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
-        
-        if (currentData.total_xp < amount) {
-            const errorEmbed = new EmbedBuilder()
-                .setColor('#FF0000')
-                .setTitle('❌ MARINE INTELLIGENCE ERROR')
-                .setDescription(`${targetUser} only has **${currentData.total_xp.toLocaleString()} XP**. Cannot remove **${amount.toLocaleString()} XP**.`)
-                .setTimestamp()
-                .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
-
-            return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-        }
-
-        const newXP = Math.max(0, currentData.total_xp - amount);
-        await xpTracker.setUserXP(targetUser.id, interaction.guild.id, newXP);
-
-        const newLevel = xpTracker.calculateLevel(newXP);
-
-        const embed = new EmbedBuilder()
-            .setColor('#DC143C')
-            .setTitle('🚨 MARINE DISCIPLINARY ACTION 🚨')
-            .setDescription(`**MARINE INTELLIGENCE BUREAU - XP REDUCTION**`)
-            .addFields([
-                {
-                    name: '👤 SUBJECT',
-                    value: `${targetUser}`,
-                    inline: true
-                },
-                {
-                    name: '📊 XP MODIFICATION',
-                    value: `**Removed:** ${amount.toLocaleString()} XP\n**New Total:** ${newXP.toLocaleString()} XP\n**Level:** ${newLevel}`,
-                    inline: true
-                },
-                {
-                    name: '⚓ AUTHORIZED BY',
-                    value: `Marine Officer: ${interaction.user.tag}`,
-                    inline: false
-                }
-            ])
-            .setTimestamp()
-            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
-
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-    },
-
-    async handleSetLevel(interaction, xpTracker) {
-        const targetUser = interaction.options.getUser('user');
-        const targetLevel = interaction.options.getInteger('level');
-
-        // Get current level
-        const currentData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
-        const currentLevel = xpTracker.calculateLevel(currentData.total_xp);
-
-        // Calculate XP needed for target level
-        const requiredXP = xpTracker.getXPForLevel(targetLevel);
-        
-        // Set the new XP
-        await xpTracker.setUserXP(targetUser.id, interaction.guild.id, requiredXP);
-
-        // Admin confirmation
-        const embed = new EmbedBuilder()
-            .setColor('#DC143C')
-            .setTitle('🚨 MARINE RANK ADJUSTMENT 🚨')
-            .setDescription(`**MARINE INTELLIGENCE BUREAU - LEVEL OVERRIDE**`)
-            .addFields([
-                {
-                    name: '👤 SUBJECT',
-                    value: `${targetUser}`,
-                    inline: true
-                },
-                {
-                    name: '📊 RANK CHANGE',
-                    value: `**Level:** ${currentLevel} → ${targetLevel}\n**Total XP:** ${requiredXP.toLocaleString()}`,
-                    inline: true
-                },
-                {
-                    name: '⚓ AUTHORIZED BY',
-                    value: `Marine Officer: ${interaction.user.tag}`,
-                    inline: false
-                }
-            ])
-            .setTimestamp()
-            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
-
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-
-        // Trigger Marine level-up if level increased
-        if (targetLevel > currentLevel) {
-            const member = await interaction.guild.members.fetch(targetUser.id);
-            
-            const levelUpData = {
-                userId: targetUser.id,
-                guildId: interaction.guild.id,
-                oldLevel: currentLevel,
-                newLevel: targetLevel,
-                totalXP: requiredXP,
-                member: member,
-                channel: interaction.channel
-            };
-
-            await xpTracker.sendMarineLevelUp(levelUpData);
-        }
-    },
-
-    async handleResetUser(interaction, xpTracker) {
-        const targetUser = interaction.options.getUser('user');
-
-        await xpTracker.resetUser(targetUser.id, interaction.guild.id);
-
-        const embed = new EmbedBuilder()
-            .setColor('#DC143C')
-            .setTitle('🚨 MARINE DATA PURGE 🚨')
-            .setDescription(`**MARINE INTELLIGENCE BUREAU - COMPLETE RESET**`)
-            .addFields([
-                {
-                    name: '👤 SUBJECT',
-                    value: `${targetUser}`,
-                    inline: true
-                },
-                {
-                    name: '🔄 RESET COMPLETE',
-                    value: '**Level:** 1\n**Total XP:** 0\n**All activity stats cleared**',
-                    inline: true
-                },
-                {
-                    name: '⚓ AUTHORIZED BY',
-                    value: `Marine Officer: ${interaction.user.tag}`,
-                    inline: false
-                }
-            ])
-            .setTimestamp()
-            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
-
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-    },
-
-    async handleViewUser(interaction, xpTracker) {
-        const targetUser = interaction.options.getUser('user');
-        const userData = await xpTracker.getUserXP(targetUser.id, interaction.guild.id);
-        const level = xpTracker.calculateLevel(userData.total_xp);
-        const rank = await xpTracker.getUserRank(targetUser.id, interaction.guild.id);
-
-        // Calculate XP progress
-        const currentLevelXP = xpTracker.getXPForLevel(level);
-        const nextLevelXP = xpTracker.getXPForLevel(level + 1);
-        const progressXP = userData.total_xp - currentLevelXP;
-        const neededXP = nextLevelXP - userData.total_xp;
-
-        const embed = new EmbedBuilder()
-            .setColor('#DC143C')
-            .setTitle('🚨 MARINE INTELLIGENCE REPORT 🚨')
-            .setDescription(`**CLASSIFIED DOSSIER - ${targetUser.tag}**`)
-            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-            .addFields([
-                {
-                    name: '🎯 THREAT ASSESSMENT',
-                    value: `**Level:** ${level}\n**Rank:** #${rank}\n**Total XP:** ${userData.total_xp.toLocaleString()}`,
-                    inline: true
-                },
-                {
-                    name: '📈 PROGRESSION ANALYSIS',
-                    value: `**Current Level XP:** ${progressXP.toLocaleString()}\n**XP to Next Level:** ${neededXP.toLocaleString()}`,
-                    inline: true
-                },
-                {
-                    name: '📱 ACTIVITY SURVEILLANCE',
-                    value: `**Messages:** ${userData.messages || 0}\n**Reactions:** ${userData.reactions || 0}\n**Voice Time:** ${Math.floor((userData.voice_time || 0) / 60)} minutes`,
-                    inline: false
-                },
-                {
-                    name: '⚓ INTELLIGENCE OFFICER',
-                    value: `${interaction.user.tag}`,
-                    inline: true
-                }
-            ])
-            .setTimestamp()
-            .setFooter({ text: '⚓ World Government Marine Intelligence Division' });
-
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-};
+                    },
+                    {
+                        name: '
