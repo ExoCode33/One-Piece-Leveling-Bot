@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete Final XPTracker with Fixed Column Mapping
+// src/utils/xpTracker.js - Complete XPTracker with Enhanced Debugging
 
 const { Pool } = require('pg');
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
@@ -6,44 +6,123 @@ const { createCanvas, loadImage, registerFont } = require('canvas');
 
 class XPTracker {
     constructor() {
+        console.log('[DEBUG] XPTracker constructor starting...');
+        
+        // Log all available database environment variables
+        console.log('[DEBUG] Available database variables:');
+        console.log('[DEBUG] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+        console.log('[DEBUG] DATABASE_PRIVATE_URL:', process.env.DATABASE_PRIVATE_URL ? 'SET' : 'NOT SET');
+        console.log('[DEBUG] POSTGRES_URL:', process.env.POSTGRES_URL ? 'SET' : 'NOT SET');
+        console.log('[DEBUG] PGHOST:', process.env.PGHOST ? 'SET' : 'NOT SET');
+        console.log('[DEBUG] PGUSER:', process.env.PGUSER ? 'SET' : 'NOT SET');
+        console.log('[DEBUG] PGDATABASE:', process.env.PGDATABASE ? 'SET' : 'NOT SET');
+        
         // Try multiple connection options for Railway
         const databaseUrl = process.env.DATABASE_PRIVATE_URL || 
                            process.env.DATABASE_URL || 
                            process.env.POSTGRES_URL;
         
-        console.log('[DEBUG] Attempting database connection...');
+        if (!databaseUrl) {
+            console.error('[ERROR] No database URL found in environment variables!');
+            console.error('[ERROR] Please check your Railway environment variables');
+            throw new Error('DATABASE_URL not found');
+        }
+        
+        console.log('[DEBUG] Using database URL:', databaseUrl.substring(0, 20) + '...');
         
         this.pool = new Pool({
             connectionString: databaseUrl,
             ssl: process.env.NODE_ENV === 'production' ? { 
                 rejectUnauthorized: false 
             } : false,
-            // Add connection timeout and retry settings
             connectionTimeoutMillis: 10000,
             idleTimeoutMillis: 30000,
             max: 10
         });
         
-        // Test the connection
-        this.testConnection();
+        // Add error handler for the pool
+        this.pool.on('error', (err) => {
+            console.error('[ERROR] Database pool error:', err);
+        });
         
         this.cooldowns = new Map();
-        this.initializeTables();
+        
+        // Initialize tables and test connection
+        this.initializeAsync();
+    }
+
+    async initializeAsync() {
+        try {
+            await this.testConnection();
+            await this.initializeTables();
+            console.log('[INFO] XP Tracker initialized successfully');
+        } catch (error) {
+            console.error('[ERROR] XP Tracker initialization failed:', error);
+            throw error;
+        }
     }
 
     async testConnection() {
         try {
+            console.log('[DEBUG] Testing database connection...');
             const client = await this.pool.connect();
             console.log('[INFO] Database connected successfully');
+            
+            // Test a simple query
+            const result = await client.query('SELECT NOW()');
+            console.log('[DEBUG] Database query test successful:', result.rows[0]);
+            
             client.release();
+            return true;
         } catch (error) {
-            console.error('[ERROR] Database connection failed:', error.message);
-            console.error('[ERROR] Check your DATABASE_URL environment variable');
+            console.error('[ERROR] Database connection failed:', error);
+            console.error('[ERROR] Error details:', {
+                code: error.code,
+                message: error.message,
+                host: error.hostname || 'unknown'
+            });
+            
+            // Try alternative connection if main fails
+            await this.tryAlternativeConnection();
+            throw error;
         }
+    }
+
+    async tryAlternativeConnection() {
+        console.log('[DEBUG] Attempting alternative connection methods...');
+        
+        // Try with individual PostgreSQL variables
+        if (process.env.PGHOST && process.env.PGUSER && process.env.PGPASSWORD) {
+            console.log('[DEBUG] Trying individual PostgreSQL variables...');
+            try {
+                const altPool = new Pool({
+                    host: process.env.PGHOST,
+                    user: process.env.PGUSER,
+                    password: process.env.PGPASSWORD,
+                    database: process.env.PGDATABASE || 'railway',
+                    port: process.env.PGPORT || 5432,
+                    ssl: { rejectUnauthorized: false }
+                });
+                
+                const client = await altPool.connect();
+                console.log('[INFO] Alternative connection successful!');
+                client.release();
+                
+                // Replace the main pool with the working one
+                this.pool = altPool;
+                return true;
+            } catch (altError) {
+                console.error('[ERROR] Alternative connection also failed:', altError);
+            }
+        }
+        
+        return false;
     }
 
     async initializeTables() {
         try {
+            console.log('[DEBUG] Initializing database tables...');
+            
             // Create user_xp table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS user_xp (
@@ -85,6 +164,10 @@ class XPTracker {
                 CREATE INDEX IF NOT EXISTS idx_user_xp_voice_reset ON user_xp(last_voice_reset);
                 CREATE INDEX IF NOT EXISTS idx_guild_settings_lookup ON guild_settings(guild_id);
             `);
+
+            // Check if we have any data
+            const countResult = await this.pool.query('SELECT COUNT(*) FROM user_xp');
+            console.log(`[DEBUG] Database has ${countResult.rows[0].count} user records`);
 
             console.log('[INFO] Database tables initialized successfully');
         } catch (error) {
@@ -188,15 +271,19 @@ class XPTracker {
         }
     }
 
+    // Enhanced getUserXP with better error handling
     async getUserXP(userId, guildId) {
         try {
+            console.log(`[DEBUG] Getting XP for user ${userId} in guild ${guildId}`);
+            
             const query = 'SELECT * FROM user_xp WHERE user_id = $1 AND guild_id = $2';
             const result = await this.pool.query(query, [userId, guildId]);
             
             if (result.rows.length > 0) {
+                console.log(`[DEBUG] Found user data:`, result.rows[0]);
                 return result.rows[0];
             } else {
-                // Return default data for new users
+                console.log(`[DEBUG] No data found for user, returning defaults`);
                 return {
                     user_id: userId,
                     guild_id: guildId,
@@ -209,6 +296,7 @@ class XPTracker {
             }
         } catch (error) {
             console.error('[ERROR] Error getting user XP:', error);
+            console.error('[ERROR] Query details:', { userId, guildId });
             throw error;
         }
     }
@@ -259,20 +347,31 @@ class XPTracker {
         }
     }
 
+    // Enhanced getLeaderboard with better error handling
     async getLeaderboard(guildId, limit = 10) {
         try {
+            console.log(`[DEBUG] Getting leaderboard for guild ${guildId}, limit ${limit}`);
+            
             const query = `
                 SELECT user_id, total_xp, messages, reactions, voice_time
                 FROM user_xp
-                WHERE guild_id = $1
+                WHERE guild_id = $1 AND total_xp > 0
                 ORDER BY total_xp DESC
                 LIMIT $2
             `;
+            
             const result = await this.pool.query(query, [guildId, limit]);
+            console.log(`[DEBUG] Leaderboard query returned ${result.rows.length} rows`);
+            
+            if (result.rows.length === 0) {
+                console.log('[DEBUG] No users found with XP > 0');
+            }
+            
             return result.rows;
         } catch (error) {
             console.error('[ERROR] Error getting leaderboard:', error);
-            return [];
+            console.error('[ERROR] Query details:', { guildId, limit });
+            throw error;
         }
     }
 
