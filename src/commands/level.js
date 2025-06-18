@@ -1,4 +1,4 @@
-// src/commands/level.js - Enhanced Marine themed version with Canvas
+// src/commands/level.js - Enhanced Marine themed version with Wanted Poster Canvas
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
 const { getBountyForLevel } = require('../utils/bountySystem');
@@ -94,74 +94,82 @@ module.exports = {
             );
             const userRank = rankQuery.rows[0]?.rank || 'Unknown';
 
-            // Create Canvas level card
-            const canvas = await createLevelCard(userData, member, currentLevel, currentBounty, totalXP, userRank, neededXP, nextBounty);
-            const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `level_${targetUser.id}.png` });
+            // Create the userData object for the wanted poster (same format as leaderboard)
+            const wantedPosterData = {
+                userId: targetUser.id,
+                level: currentLevel,
+                total_xp: totalXP,
+                messages: userData.messages || 0,
+                reactions: userData.reactions || 0,
+                voice_time: userData.voice_time || 0,
+                member: member
+            };
 
-            // Create Marine Intelligence report with single-line format
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('MARINE INTELLIGENCE BUREAU')
-                .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
-                .setDescription('```diff\n- CRIMINAL PROFILE: ' + member.displayName.toUpperCase() + '\n- THREAT ASSESSMENT COMPLETE\n```')
-                .addFields(
-                    {
-                        name: 'CURRENT BOUNTY',
-                        value: '```diff\n- ' + currentBounty.toLocaleString() + ' BERRIES\n```',
-                        inline: true
-                    },
-                    {
-                        name: 'THREAT LEVEL',
-                        value: '```diff\n- LEVEL ' + currentLevel + '\n```',
-                        inline: true
-                    },
-                    {
-                        name: 'FLEET RANKING',
-                        value: '```diff\n- RANK #' + userRank + '\n```',
-                        inline: true
-                    },
-                    {
-                        name: 'TOTAL CRIMINAL ACTIVITY',
-                        value: '```diff\n- ' + totalXP.toLocaleString() + ' XP ACCUMULATED\n```',
-                        inline: true
-                    },
-                    {
-                        name: 'ADVANCEMENT PROGRESS',
-                        value: '```diff\n- ' + neededXP.toLocaleString() + ' XP REQUIRED\n```',
-                        inline: true
-                    },
-                    {
-                        name: 'NEXT BOUNTY INCREASE',
-                        value: '```diff\n- ' + nextBounty.toLocaleString() + ' BERRIES\n```',
-                        inline: true
-                    }
-                )
-                .setImage(`attachment://level_${targetUser.id}.png`)
-                .setFooter({ 
-                    text: 'WORLD GOVERNMENT INTELLIGENCE DIVISION',
-                    iconURL: interaction.guild.iconURL() 
-                })
-                .setTimestamp();
+            // Create Canvas wanted poster (EXACT SAME as leaderboard)
+            const canvas = await createWantedPoster(wantedPosterData, interaction.guild);
+            const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${targetUser.id}.png` });
 
-            // Add threat assessment based on level
-            let threatLevel = '';
-            if (currentLevel >= 50) {
-                threatLevel = '```diff\n- EXTREMELY DANGEROUS\n- SUPERNOVA THREAT\n- IMMEDIATE CAPTURE REQUIRED\n```';
-            } else if (currentLevel >= 30) {
-                threatLevel = '```diff\n- HIGH THREAT LEVEL\n- EXPERIENCED CRIMINAL\n- PROCEED WITH CAUTION\n```';
-            } else if (currentLevel >= 15) {
-                threatLevel = '```diff\n- MODERATE THREAT\n- ACTIVE PIRATE\n- STANDARD OPERATIONS\n```';
-            } else if (currentLevel >= 5) {
-                threatLevel = '```diff\n- LOW THREAT LEVEL\n- ROOKIE PIRATE\n- ROUTINE MONITORING\n```';
-            } else {
-                threatLevel = '```diff\n- MINIMAL THREAT\n- CIVILIAN ACTIVITY\n- BASIC SURVEILLANCE\n```';
+            // Helper function to get threat level name (same as leaderboard)
+            function getThreatLevelName(level) {
+                if (level >= 55) return "LEGENDARY THREAT";
+                if (level >= 50) return "EMPEROR CLASS";
+                if (level >= 45) return "EXTRAORDINARY";
+                if (level >= 40) return "ELITE LEVEL";
+                if (level >= 35) return "TERRITORIAL";
+                if (level >= 30) return "ADVANCED COMBATANT";
+                if (level >= 25) return "HIGH PRIORITY";
+                if (level >= 20) return "DANGEROUS";
+                if (level >= 15) return "GRAND LINE";
+                if (level >= 10) return "ELEVATED";
+                if (level >= 5) return "CONFIRMED CRIMINAL";
+                return "MONITORING";
             }
 
+            // Check if user has excluded role (Pirate King)
+            const settings = global.guildSettings?.get(interaction.guild.id) || {};
+            const excludedRoleId = settings.excludedRole;
+            const isPirateKing = excludedRoleId && member.roles.cache.has(excludedRoleId);
+
+            // Create Marine Intelligence report with EXACT SAME format as leaderboard
+            const embed = new EmbedBuilder()
+                .setAuthor({ 
+                    name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                })
+                .setColor(0xFF0000);
+
+            // Intelligence summary for this pirate (EXACT SAME as leaderboard)
+            let intelligenceValue = `\`\`\`diff\n- Alias: ${member.displayName}\n- Bounty: ฿${currentBounty.toLocaleString()}\n- Level: ${currentLevel} | Rank: #${userRank}\n- Threat: ${getThreatLevelName(currentLevel)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
+
             embed.addFields({
-                name: 'INTELLIGENCE ASSESSMENT',
-                value: threatLevel,
+                name: '📊 INTELLIGENCE SUMMARY',
+                value: intelligenceValue,
                 inline: false
             });
+
+            // Add progress to next level
+            const progressXP = totalXP - currentLevelXP;
+            const totalLevelXP = nextLevelXP - currentLevelXP;
+            const progressPercent = Math.max(0, Math.min(100, Math.round((progressXP / totalLevelXP) * 100)));
+
+            embed.addFields({
+                name: '📈 ADVANCEMENT ANALYSIS',
+                value: `\`\`\`diff\n- Progress to Next Level: ${progressPercent}%\n- XP Required: ${neededXP.toLocaleString()}\n- Next Bounty: ฿${nextBounty.toLocaleString()}\n- Total Criminal Activity: ${totalXP.toLocaleString()} XP\n\`\`\``,
+                inline: false
+            });
+
+            if (isPirateKing) {
+                embed.addFields({
+                    name: '👑 SPECIAL CLASSIFICATION',
+                    value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
+                    inline: false
+                });
+            }
+
+            embed.setImage(`attachment://wanted_${targetUser.id}.png`)
+                .setFooter({ 
+                    text: `⚓ Marine Intelligence Division • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(currentLevel)}`
+                })
+                .setTimestamp();
 
             await interaction.editReply({ embeds: [embed], files: [attachment] });
 
@@ -184,50 +192,68 @@ module.exports = {
     }
 };
 
-// Create level card with Canvas (similar to leaderboard wanted posters)
-async function createLevelCard(userData, member, level, bounty, totalXP, rank, neededXP, nextBounty) {
-    const width = 800, height = 600;
+// EXACT SAME createWantedPoster function from leaderboard.js
+async function createWantedPoster(userData, guild) {
+    const width = 600, height = 900;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
     // Load and draw scroll texture background
     try {
         const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+        
+        // Draw the texture to fill the entire canvas
         ctx.drawImage(scrollTexture, 0, 0, width, height);
+        
+        console.log('[DEBUG] Successfully loaded scroll texture background');
     } catch (error) {
-        // Fallback to parchment background
+        console.log('[DEBUG] Scroll texture not found, using fallback parchment color');
+        // Fallback to original parchment background if texture fails to load
         ctx.fillStyle = '#f5e6c5';
         ctx.fillRect(0, 0, width, height);
     }
     
-    // All borders black
-    ctx.strokeStyle = '#000000';
+    // All borders and elements go on top of the texture
+    // All borders now black for consistency
+    ctx.strokeStyle = '#000000'; // Outer border - black
     ctx.lineWidth = 8;
     ctx.strokeRect(0, 0, width, height);
     
+    ctx.strokeStyle = '#000000'; // Middle border - black
     ctx.lineWidth = 2;
     ctx.strokeRect(10, 10, width - 20, height - 20);
     
+    ctx.strokeStyle = '#000000'; // Inner border - black
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // "LEVEL REPORT" title
+    // WANTED title - Size 27, Horiz 50, Vert 92
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '60px CaptainKiddNF, Arial, sans-serif';
-    ctx.fillText('LEVEL REPORT', width/2, 80);
+    ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
+    const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
+    const wantedX = (50/100) * width; // Horiz 50: centered
+    ctx.fillText('WANTED', wantedX, wantedY);
 
-    // Avatar box
-    const avatarSize = 200;
-    const avatarX = 60;
-    const avatarY = 120;
+    // Image Box - Size 95, Horiz 50, Vert 65 with slightly wider border
+    const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
+    const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
+    const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
     
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(avatarX, avatarY, avatarSize, avatarSize);
+    // Slightly wider black border
+    ctx.strokeStyle = '#000000'; // Black border
+    ctx.lineWidth = 3; // Increased from 1 to 3 for wider border
+    ctx.strokeRect(photoX, photoY, photoSize, photoSize);
     
-    // Draw avatar
+    // No white background - image goes directly on texture
+
+    let member = null;
+    try {
+        if (guild && userData.userId) member = await guild.members.fetch(userData.userId);
+    } catch {}
+    
+    const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 }; // Adjusted for wider border
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -235,102 +261,127 @@ async function createLevelCard(userData, member, level, bounty, totalXP, rank, n
             
             ctx.save();
             ctx.beginPath();
-            ctx.rect(avatarX + 3, avatarY + 3, avatarSize - 6, avatarSize - 6);
+            ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             ctx.clip();
+            
+            // Subtle weathering effect
             ctx.filter = 'contrast(0.95) sepia(0.05)';
-            ctx.drawImage(avatar, avatarX + 3, avatarY + 3, avatarSize - 6, avatarSize - 6);
+            ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             ctx.filter = 'none';
+            
             ctx.restore();
         } catch {
-            console.log('[DEBUG] No avatar found for level card');
+            // If no avatar, just leave the texture showing through with border
+            console.log('[DEBUG] No avatar found, texture will show through');
         }
     }
 
-    // Name
-    ctx.font = '48px CaptainKiddNF, Arial, sans-serif';
-    ctx.textAlign = 'left';
-    let displayName = member ? member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16) : 'UNKNOWN PIRATE';
-    ctx.fillText(displayName, avatarX + avatarSize + 40, avatarY + 40);
+    // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 39
+    ctx.fillStyle = '#111';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+    const deadOrAliveY = height * (1 - 39/100); // Vert 39: 39% from bottom
+    const deadOrAliveX = (50/100) * width; // Horiz 50: centered
+    ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Level
-    ctx.font = '36px Cinzel, Georgia, serif';
-    ctx.fillText(`LEVEL ${level}`, avatarX + avatarSize + 40, avatarY + 80);
-
-    // Rank
-    ctx.font = '30px Cinzel, Georgia, serif';
-    ctx.fillText(`RANK #${rank}`, avatarX + avatarSize + 40, avatarY + 120);
-
-    // Bounty section
-    const bountyY = avatarY + 180;
-    ctx.font = '32px CaptainKiddNF, Arial, sans-serif';
-    ctx.fillText('CURRENT BOUNTY:', 60, bountyY);
+    // Name ("SHANKS") - Size 23, Horiz 50, Vert 30
+    ctx.font = '69px CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
+    let displayName = 'UNKNOWN PIRATE';
+    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+    else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
     
-    // Berry symbol and bounty amount
+    // Check if name is too long and adjust
+    ctx.textAlign = 'center';
+    let nameWidth = ctx.measureText(displayName).width;
+    if (nameWidth > width - 60) {
+        ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
+    }
+    
+    const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
+    const nameX = (50/100) * width; // Horiz 50: centered
+    ctx.fillText(displayName, nameX, nameY);
+
+    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
+    const berryBountyGap = 5; // Fixed gap in our 1-100 scale
+    
+    // FIXED: Get BOUNTY amount for user's level instead of XP
+    const bountyAmount = getBountyForLevel(userData.level);
+    const bountyStr = bountyAmount.toLocaleString();
+    
+    console.log(`[LEVEL] Level ${userData.level} = Bounty ฿${bountyStr}`);
+    
+    ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
+    const bountyTextWidth = ctx.measureText(bountyStr).width;
+    
+    // Berry symbol size
+    const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
+    
+    // Calculate total width of the bounty unit (berry + gap + text)
+    const gapPixels = (berryBountyGap/100) * width; // Convert gap to pixels
+    const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+    
+    // Center the entire bounty unit horizontally
+    const bountyUnitStartX = (width - totalBountyWidth) / 2;
+    
+    // Position berry symbol at the start of the centered unit
+    const berryX = bountyUnitStartX + (berrySize/2); // Center of berry symbol
+    const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
+    
     let berryImg;
     try {
-        berryImg = await loadImage(path.join(__dirname, '../../assets/berry.png'));
+        const berryPath = path.join(__dirname, '../../assets/berry.png');
+        berryImg = await loadImage(berryPath);
     } catch {
         // Create simple berry symbol
-        const berryCanvas = createCanvas(40, 40);
+        const berryCanvas = createCanvas(berrySize, berrySize);
         const berryCtx = berryCanvas.getContext('2d');
         berryCtx.fillStyle = '#111';
-        berryCtx.font = 'bold 40px serif';
+        berryCtx.font = `bold ${berrySize}px serif`;
         berryCtx.textAlign = 'center';
         berryCtx.textBaseline = 'middle';
-        berryCtx.fillText('฿', 20, 20);
+        berryCtx.fillText('฿', berrySize/2, berrySize/2);
         berryImg = berryCanvas;
     }
     
-    ctx.drawImage(berryImg, 60, bountyY + 20, 40, 40);
-    ctx.font = '36px Cinzel, Georgia, serif';
-    ctx.fillText(bounty.toLocaleString(), 120, bountyY + 45);
+    ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
 
-    // Stats section
-    const statsY = bountyY + 100;
-    ctx.font = '24px TimesNewNormal, Times, serif';
+    // Position bounty numbers with fixed gap from berry
+    const bountyX = bountyUnitStartX + berrySize + gapPixels; // Start after berry + gap
+    const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
     
-    ctx.fillText(`Total XP: ${totalXP.toLocaleString()}`, 60, statsY);
-    ctx.fillText(`XP Required: ${neededXP.toLocaleString()}`, 60, statsY + 40);
-    ctx.fillText(`Next Bounty: ฿${nextBounty.toLocaleString()}`, 60, statsY + 80);
-
-    // Progress bar
-    const progressBarX = 60;
-    const progressBarY = statsY + 120;
-    const progressBarWidth = width - 120;
-    const progressBarHeight = 30;
-    
-    // Calculate progress
-    const currentLevelXP = global.xpTracker.getXPForLevel(level);
-    const nextLevelXP = global.xpTracker.getXPForLevel(level + 1);
-    const progressXP = totalXP - currentLevelXP;
-    const totalLevelXP = nextLevelXP - currentLevelXP;
-    const progressPercent = Math.max(0, Math.min(1, progressXP / totalLevelXP));
-    
-    // Progress bar background
-    ctx.fillStyle = '#8B4513';
-    ctx.fillRect(progressBarX, progressBarY, progressBarWidth, progressBarHeight);
-    
-    // Progress bar fill
-    ctx.fillStyle = '#DC143C';
-    ctx.fillRect(progressBarX, progressBarY, progressBarWidth * progressPercent, progressBarHeight);
-    
-    // Progress bar border
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(progressBarX, progressBarY, progressBarWidth, progressBarHeight);
-    
-    // Progress text
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
-    ctx.font = '20px TimesNewNormal, Times, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${Math.round(progressPercent * 100)}% TO NEXT LEVEL`, width/2, progressBarY + 55);
+    ctx.fillText(bountyStr, bountyX, bountyY);
 
-    // Marine watermark
+    // One Piece logo - Size 26, Horiz 50, Vert 4.5
+    try {
+        const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
+        const onePieceLogo = await loadImage(onePieceLogoPath);
+        const logoSize = (26/100) * 200; // Size 26/100 * reasonable max = 52px
+        const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
+        const logoY = height * (1 - 4.5/100) - (logoSize/2); // Vert 4.5: 4.5% from bottom
+        
+        ctx.globalAlpha = 0.6;
+        ctx.filter = 'sepia(0.2) brightness(0.9)';
+        ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+        ctx.globalAlpha = 1.0;
+        ctx.filter = 'none';
+    } catch {
+        console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
+    }
+
+    // "MARINE" - Size 8, Horiz 96, Vert 2
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = '18px TimesNewNormal, Times, serif';
-    ctx.fillStyle = '#666';
-    ctx.fillText('M A R I N E   I N T E L L I G E N C E', width - 30, height - 30);
+    ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
+    ctx.fillStyle = '#111';
+    
+    const marineText = 'M A R I N E';
+    const marineX = (96/100) * width; // Horiz 96: very far right
+    const marineY = height * (1 - 2/100); // Vert 2: 2% from bottom
+    ctx.fillText(marineText, marineX, marineY);
 
     return canvas;
 }
