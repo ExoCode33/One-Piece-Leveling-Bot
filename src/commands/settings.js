@@ -7,69 +7,40 @@ module.exports = {
         .setName('settings')
         .setDescription('🔧 Configure server leveling settings (Administrator only)')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator) // Require Admin permission
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('levelup-channel')
-                .setDescription('Set the channel for level up announcements')
-                .addChannelOption(option =>
-                    option
-                        .setName('channel')
-                        .setDescription('The channel to send level up announcements')
-                        .setRequired(true)
-                        .addChannelTypes(0) // Text channel only
+        .addStringOption(option =>
+            option
+                .setName('action')
+                .setDescription('What setting would you like to change?')
+                .setRequired(true)
+                .addChoices(
+                    { name: '📢 Set Level Up Channel', value: 'levelup-channel' },
+                    { name: '📊 Set XP Log Channel', value: 'xp-log-channel' },
+                    { name: '⚡ Set XP Multiplier', value: 'xp-multiplier' },
+                    { name: '🔄 Toggle Level Up Announcements', value: 'toggle-levelup' },
+                    { name: '🔄 Toggle XP Logging', value: 'toggle-xp-logs' },
+                    { name: '👁️ View Current Settings', value: 'view' }
                 )
         )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('xp-log-channel')
-                .setDescription('Set the channel for XP activity logs')
-                .addChannelOption(option =>
-                    option
-                        .setName('channel')
-                        .setDescription('The channel to send XP logs')
-                        .setRequired(true)
-                        .addChannelTypes(0) // Text channel only
-                )
+        .addChannelOption(option =>
+            option
+                .setName('channel')
+                .setDescription('Channel to use (for levelup-channel or xp-log-channel)')
+                .setRequired(false)
+                .addChannelTypes(0) // Text channel only
         )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('xp-multiplier')
-                .setDescription('Set the XP multiplier for this server')
-                .addNumberOption(option =>
-                    option
-                        .setName('multiplier')
-                        .setDescription('XP multiplier (0.1 to 5.0)')
-                        .setRequired(true)
-                        .setMinValue(0.1)
-                        .setMaxValue(5.0)
-                )
+        .addNumberOption(option =>
+            option
+                .setName('multiplier')
+                .setDescription('XP multiplier value (0.1 to 5.0)')
+                .setRequired(false)
+                .setMinValue(0.1)
+                .setMaxValue(5.0)
         )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('toggle-levelup')
-                .setDescription('Enable or disable level up announcements')
-                .addBooleanOption(option =>
-                    option
-                        .setName('enabled')
-                        .setDescription('Enable level up announcements')
-                        .setRequired(true)
-                )
-        )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('toggle-xp-logs')
-                .setDescription('Enable or disable XP activity logging')
-                .addBooleanOption(option =>
-                    option
-                        .setName('enabled')
-                        .setDescription('Enable XP activity logs')
-                        .setRequired(true)
-                )
-        )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('view')
-                .setDescription('View current server settings')
+        .addBooleanOption(option =>
+            option
+                .setName('enabled')
+                .setDescription('Enable or disable (for toggle options)')
+                .setRequired(false)
         ),
 
     async execute(interaction) {
@@ -82,7 +53,10 @@ module.exports = {
                 });
             }
 
-            const subcommand = interaction.options.getSubcommand();
+            const action = interaction.options.getString('action');
+            const channel = interaction.options.getChannel('channel');
+            const multiplier = interaction.options.getNumber('multiplier');
+            const enabled = interaction.options.getBoolean('enabled');
             const guildId = interaction.guild.id;
 
             // Initialize guild settings if not exists
@@ -99,19 +73,24 @@ module.exports = {
                 xpMultiplier: 1.0
             };
 
-            switch (subcommand) {
+            switch (action) {
                 case 'levelup-channel':
-                    const levelupChannel = interaction.options.getChannel('channel');
-                    
-                    // Validate channel permissions
-                    if (!levelupChannel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
+                    if (!channel) {
                         return await interaction.reply({
-                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${levelupChannel}. Please ensure I have **Send Messages** and **Embed Links** permissions.`,
+                            content: '❌ **Missing Parameter**\n\nPlease specify a channel for level up announcements.',
                             ephemeral: true
                         });
                     }
 
-                    guildSettings.levelupChannel = levelupChannel.id;
+                    // Validate channel permissions
+                    if (!channel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
+                        return await interaction.reply({
+                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${channel}. Please ensure I have **Send Messages** and **Embed Links** permissions.`,
+                            ephemeral: true
+                        });
+                    }
+
+                    guildSettings.levelupChannel = channel.id;
                     global.guildSettings.set(guildId, guildSettings);
                     
                     // Save to database
@@ -121,24 +100,29 @@ module.exports = {
                         embeds: [new EmbedBuilder()
                             .setColor('#00FF00')
                             .setTitle('✅ Level Up Channel Updated')
-                            .setDescription(`Level up announcements will now be sent to ${levelupChannel}`)
+                            .setDescription(`Level up announcements will now be sent to ${channel}`)
                             .setFooter({ text: '⚓ Marine Intelligence • Settings Updated' })
                             .setTimestamp()
                         ]
                     });
 
                 case 'xp-log-channel':
-                    const xpLogChannel = interaction.options.getChannel('channel');
-                    
-                    // Validate channel permissions
-                    if (!xpLogChannel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
+                    if (!channel) {
                         return await interaction.reply({
-                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${xpLogChannel}. Please ensure I have **Send Messages** and **Embed Links** permissions.`,
+                            content: '❌ **Missing Parameter**\n\nPlease specify a channel for XP activity logs.',
                             ephemeral: true
                         });
                     }
 
-                    guildSettings.xpLogChannel = xpLogChannel.id;
+                    // Validate channel permissions
+                    if (!channel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
+                        return await interaction.reply({
+                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${channel}. Please ensure I have **Send Messages** and **Embed Links** permissions.`,
+                            ephemeral: true
+                        });
+                    }
+
+                    guildSettings.xpLogChannel = channel.id;
                     guildSettings.xpLogEnabled = true; // Auto-enable when setting channel
                     global.guildSettings.set(guildId, guildSettings);
                     
@@ -149,15 +133,20 @@ module.exports = {
                         embeds: [new EmbedBuilder()
                             .setColor('#00FF00')
                             .setTitle('✅ XP Log Channel Updated')
-                            .setDescription(`XP activity logs will now be sent to ${xpLogChannel}\n\n*XP logging has been automatically enabled.*`)
+                            .setDescription(`XP activity logs will now be sent to ${channel}\n\n*XP logging has been automatically enabled.*`)
                             .setFooter({ text: '⚓ Marine Intelligence • Settings Updated' })
                             .setTimestamp()
                         ]
                     });
 
                 case 'xp-multiplier':
-                    const multiplier = interaction.options.getNumber('multiplier');
-                    
+                    if (multiplier === null) {
+                        return await interaction.reply({
+                            content: '❌ **Missing Parameter**\n\nPlease specify an XP multiplier value (0.1 to 5.0).',
+                            ephemeral: true
+                        });
+                    }
+
                     guildSettings.xpMultiplier = multiplier;
                     global.guildSettings.set(guildId, guildSettings);
                     
@@ -175,9 +164,14 @@ module.exports = {
                     });
 
                 case 'toggle-levelup':
-                    const levelupEnabled = interaction.options.getBoolean('enabled');
-                    
-                    guildSettings.levelupEnabled = levelupEnabled;
+                    if (enabled === null) {
+                        return await interaction.reply({
+                            content: '❌ **Missing Parameter**\n\nPlease specify whether to enable or disable level up announcements.',
+                            ephemeral: true
+                        });
+                    }
+
+                    guildSettings.levelupEnabled = enabled;
                     global.guildSettings.set(guildId, guildSettings);
                     
                     // Save to database
@@ -185,9 +179,9 @@ module.exports = {
 
                     return await interaction.reply({
                         embeds: [new EmbedBuilder()
-                            .setColor(levelupEnabled ? '#00FF00' : '#FF6B6B')
-                            .setTitle(`${levelupEnabled ? '✅' : '❌'} Level Up Announcements ${levelupEnabled ? 'Enabled' : 'Disabled'}`)
-                            .setDescription(levelupEnabled ? 
+                            .setColor(enabled ? '#00FF00' : '#FF6B6B')
+                            .setTitle(`${enabled ? '✅' : '❌'} Level Up Announcements ${enabled ? 'Enabled' : 'Disabled'}`)
+                            .setDescription(enabled ? 
                                 'Level up announcements are now **enabled**.' :
                                 'Level up announcements are now **disabled**.'
                             )
@@ -197,16 +191,21 @@ module.exports = {
                     });
 
                 case 'toggle-xp-logs':
-                    const xpLogEnabled = interaction.options.getBoolean('enabled');
-                    
-                    if (xpLogEnabled && !guildSettings.xpLogChannel) {
+                    if (enabled === null) {
                         return await interaction.reply({
-                            content: '❌ **Configuration Error**\n\nYou must set an XP log channel first using `/settings xp-log-channel`.',
+                            content: '❌ **Missing Parameter**\n\nPlease specify whether to enable or disable XP logging.',
+                            ephemeral: true
+                        });
+                    }
+
+                    if (enabled && !guildSettings.xpLogChannel) {
+                        return await interaction.reply({
+                            content: '❌ **Configuration Error**\n\nYou must set an XP log channel first using the `xp-log-channel` action.',
                             ephemeral: true
                         });
                     }
                     
-                    guildSettings.xpLogEnabled = xpLogEnabled;
+                    guildSettings.xpLogEnabled = enabled;
                     global.guildSettings.set(guildId, guildSettings);
                     
                     // Save to database
@@ -214,9 +213,9 @@ module.exports = {
 
                     return await interaction.reply({
                         embeds: [new EmbedBuilder()
-                            .setColor(xpLogEnabled ? '#00FF00' : '#FF6B6B')
-                            .setTitle(`${xpLogEnabled ? '✅' : '❌'} XP Logging ${xpLogEnabled ? 'Enabled' : 'Disabled'}`)
-                            .setDescription(xpLogEnabled ? 
+                            .setColor(enabled ? '#00FF00' : '#FF6B6B')
+                            .setTitle(`${enabled ? '✅' : '❌'} XP Logging ${enabled ? 'Enabled' : 'Disabled'}`)
+                            .setDescription(enabled ? 
                                 'XP activity logging is now **enabled**.' :
                                 'XP activity logging is now **disabled**.'
                             )
@@ -254,7 +253,7 @@ module.exports = {
 
                 default:
                     return await interaction.reply({
-                        content: '❌ **Unknown Subcommand**\n\nPlease use a valid subcommand.',
+                        content: '❌ **Unknown Action**\n\nPlease use a valid action from the dropdown.',
                         ephemeral: true
                     });
             }
