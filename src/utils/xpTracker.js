@@ -208,14 +208,14 @@ class XPTracker {
 
             console.log(`[XP] ${user.username}: ${oldTotalXP} + ${finalXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
 
-            // FIXED: Handle multiple level gains - announce EVERY level
+            // FIXED: Handle multiple level gains - announce EVERY level with XP source
             if (newLevel > oldLevel) {
                 console.log(`[LEVEL UP] ${user.username} gained ${newLevel - oldLevel} levels: ${oldLevel} → ${newLevel}!`);
                 
                 // Announce each level individually
                 for (let level = oldLevel + 1; level <= newLevel; level++) {
                     const levelXP = this.getXPForLevel(level);
-                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user);
+                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, source);
                     
                     // Small delay between announcements to prevent spam
                     if (level < newLevel) {
