@@ -1,4 +1,4 @@
-// src/commands/admin.js - Simple fix without XP logging
+// src/commands/admin.js - Updated with XP logging for admin actions
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 
@@ -134,7 +134,45 @@ module.exports = {
                 await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
             }
         }
+    calculateLevel(totalXP) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+
+        for (let level = 1; level <= maxLevel; level++) {
+            let requiredXP;
+            
+            if (curve === 'exponential') {
+                requiredXP = Math.floor(100 * Math.pow(level, multiplier));
+            } else if (curve === 'linear') {
+                requiredXP = 100 * level * multiplier;
+            } else if (curve === 'logarithmic') {
+                requiredXP = Math.floor(100 * Math.log(level + 1) * multiplier * 10);
+            }
+
+            if (totalXP < requiredXP) {
+                return level - 1;
+            }
+        }
+
+        return maxLevel;
     },
+
+    getXPForLevel(level) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        
+        if (curve === 'exponential') {
+            return Math.floor(100 * Math.pow(level, multiplier));
+        } else if (curve === 'linear') {
+            return 100 * level * multiplier;
+        } else if (curve === 'logarithmic') {
+            return Math.floor(100 * Math.log(level + 1) * multiplier * 10);
+        }
+        
+        return Math.floor(100 * Math.pow(level, multiplier));
+    }
+};
 
     async handleSettings(interaction) {
         const levelupChannel = interaction.options.getChannel('levelup-channel');
@@ -240,7 +278,7 @@ module.exports = {
                 DO UPDATE SET
                     total_xp = user_levels.total_xp + $3,
                     updated_at = CURRENT_TIMESTAMP
-            `, [user.id, guildId, amount, 0]);
+            `, [user.id, guildId, amount, oldLevel]);
 
             // Calculate new level
             const newLevel = this.calculateLevel(newXP);
@@ -250,6 +288,14 @@ module.exports = {
                 'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
                 [newLevel, user.id, guildId]
             );
+
+            // Log admin XP adjustment
+            await xpTracker.logXPActivity('admin', user, guildId, amount, {
+                adminUser: interaction.user,
+                reason,
+                totalXP: newXP,
+                currentLevel: newLevel
+            });
 
             // RED Marine admin confirmation embed
             const confirmEmbed = new EmbedBuilder()
@@ -283,10 +329,19 @@ module.exports = {
 
             await interaction.editReply({ embeds: [confirmEmbed] });
 
-            // Check if user leveled up and trigger Marine level-up if so
+            // FIXED: Check if user leveled up and trigger Marine level-up for EVERY level
             if (newLevel > oldLevel) {
-                if (global.xpTracker) {
-                    await global.xpTracker.handleLevelUp(user.id, guildId, oldLevel, newLevel, oldXP, newXP, user);
+                console.log(`[ADMIN] User ${user.username} gained ${newLevel - oldLevel} levels from admin command`);
+                
+                // Announce each level individually
+                for (let level = oldLevel + 1; level <= newLevel; level++) {
+                    const levelXP = xpTracker.getXPForLevel(level);
+                    await xpTracker.handleLevelUp(user.id, guildId, level - 1, level, levelXP - 100, levelXP, user);
+                    
+                    // Small delay between announcements
+                    if (level < newLevel) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
                 }
             }
 
@@ -355,6 +410,14 @@ module.exports = {
                 'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
                 [newLevel, user.id, guildId]
             );
+
+            // Log admin XP removal
+            await xpTracker.logXPActivity('admin', user, guildId, -amount, {
+                adminUser: interaction.user,
+                reason,
+                totalXP: newXP,
+                currentLevel: newLevel
+            });
 
             const embed = new EmbedBuilder()
                 .setTitle('🚨 MARINE DISCIPLINARY ACTION 🚨')
@@ -429,6 +492,7 @@ module.exports = {
 
             const oldXP = currentStats.rows.length > 0 ? currentStats.rows[0].total_xp : 0;
             const oldLevel = currentStats.rows.length > 0 ? currentStats.rows[0].level : 0;
+            const xpDifference = requiredXP - oldXP;
 
             // Update or insert user stats
             await xpTracker.db.query(`
@@ -440,6 +504,14 @@ module.exports = {
                     level = $4,
                     updated_at = CURRENT_TIMESTAMP
             `, [user.id, guildId, requiredXP, targetLevel]);
+
+            // Log admin level set
+            await xpTracker.logXPActivity('admin', user, guildId, xpDifference, {
+                adminUser: interaction.user,
+                reason: `${reason} (Set to Level ${targetLevel})`,
+                totalXP: requiredXP,
+                currentLevel: targetLevel
+            });
 
             const embed = new EmbedBuilder()
                 .setTitle('🚨 MARINE RANK ADJUSTMENT 🚨')
@@ -472,10 +544,19 @@ module.exports = {
 
             await interaction.editReply({ embeds: [embed] });
 
-            // Trigger Marine level-up if level increased
+            // FIXED: Trigger Marine level-up for EVERY level gained
             if (targetLevel > oldLevel) {
-                if (global.xpTracker) {
-                    await global.xpTracker.handleLevelUp(user.id, guildId, oldLevel, targetLevel, oldXP, requiredXP, user);
+                console.log(`[ADMIN] User ${user.username} set to level ${targetLevel} from ${oldLevel}`);
+                
+                // Announce each level individually
+                for (let level = oldLevel + 1; level <= targetLevel; level++) {
+                    const levelXP = xpTracker.getXPForLevel(level);
+                    await xpTracker.handleLevelUp(user.id, guildId, level - 1, level, levelXP - 100, levelXP, user);
+                    
+                    // Small delay between announcements
+                    if (level < targetLevel) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
                 }
             }
 
@@ -509,6 +590,12 @@ module.exports = {
                 return await interaction.editReply({ embeds: [embed] });
             }
 
+            // Get current stats before deletion for logging
+            const currentStats = await xpTracker.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [user.id, guildId]
+            );
+
             // Delete user data
             const result = await xpTracker.db.query(
                 'DELETE FROM user_levels WHERE user_id = $1 AND guild_id = $2 RETURNING *',
@@ -523,6 +610,15 @@ module.exports = {
                 
                 return await interaction.editReply({ embeds: [embed] });
             }
+
+            // Log admin reset
+            const oldXP = currentStats.rows.length > 0 ? currentStats.rows[0].total_xp : 0;
+            await xpTracker.logXPActivity('admin', user, guildId, -oldXP, {
+                adminUser: interaction.user,
+                reason: `${reason} (Complete Reset)`,
+                totalXP: 0,
+                currentLevel: 0
+            });
 
             const embed = new EmbedBuilder()
                 .setTitle('🚨 MARINE DATA PURGE 🚨')
@@ -642,43 +738,3 @@ module.exports = {
             await interaction.editReply({ embeds: [embed] });
         }
     },
-
-    calculateLevel(totalXP) {
-        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
-        const curve = process.env.FORMULA_CURVE || 'exponential';
-        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
-
-        for (let level = 1; level <= maxLevel; level++) {
-            let requiredXP;
-            
-            if (curve === 'exponential') {
-                requiredXP = Math.floor(100 * Math.pow(level, multiplier));
-            } else if (curve === 'linear') {
-                requiredXP = 100 * level * multiplier;
-            } else if (curve === 'logarithmic') {
-                requiredXP = Math.floor(100 * Math.log(level + 1) * multiplier * 10);
-            }
-
-            if (totalXP < requiredXP) {
-                return level - 1;
-            }
-        }
-
-        return maxLevel;
-    },
-
-    getXPForLevel(level) {
-        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
-        const curve = process.env.FORMULA_CURVE || 'exponential';
-        
-        if (curve === 'exponential') {
-            return Math.floor(100 * Math.pow(level, multiplier));
-        } else if (curve === 'linear') {
-            return 100 * level * multiplier;
-        } else if (curve === 'logarithmic') {
-            return Math.floor(100 * Math.log(level + 1) * multiplier * 10);
-        }
-        
-        return Math.floor(100 * Math.pow(level, multiplier));
-    }
-};
