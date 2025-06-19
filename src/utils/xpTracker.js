@@ -435,23 +435,13 @@ class XPTracker {
                 .setThumbnail(user.displayAvatarURL({ size: 128 }))
                 .addFields(
                     {
-                        name: '📑 Previous Status',
-                        value: `\`\`\`diff\n- Level ${oldLevel}\n- ฿${oldBounty.toLocaleString()}\n\`\`\``,
-                        inline: true
-                    },
-                    {
-                        name: '🔥 NEW BOUNTY',
-                        value: `\`\`\`diff\n- Level ${newLevel}\n- ฿${newBounty.toLocaleString()}\n\`\`\``,
-                        inline: true
-                    },
-                    {
-                        name: '💰 Bounty Increase',
-                        value: `\`\`\`diff\n- +฿${bountyIncrease.toLocaleString()}\n\`\`\``,
-                        inline: true
+                        name: '💰 BOUNTY PROGRESSION',
+                        value: `\`\`\`diff\n- OLD BOUNTY: ฿${oldBounty.toLocaleString()} (Level ${oldLevel})\n- NEW BOUNTY: ฿${newBounty.toLocaleString()} (Level ${newLevel})\n\`\`\``,
+                        inline: false
                     },
                     {
                         name: '📊 Intelligence Summary',
-                        value: `\`\`\`diff\n- Total Criminal Activity: ${newTotalXP.toLocaleString()} XP\n- Threat Classification: ${getThreatLevelName(newLevel)}\n\`\`\``,
+                        value: `\`\`\`diff\n- Total Criminal Activity: ${newTotalXP.toLocaleString()} XP (Level ${newLevel})\n- Threat Classification: ${getThreatLevelName(newLevel)}\n\`\`\``,
                         inline: false
                     }
                 );
