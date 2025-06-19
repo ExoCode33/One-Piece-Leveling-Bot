@@ -1,17 +1,20 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
-const { getBountyForLevel } = require('../utils/bountySystem'); // ADDED: Import bounty system
+const { getBountyForLevel, isPirateKing, getPirateKingData } = require('../utils/bountySystem'); // ADDED: Import bounty system
 const path = require('path');
 
-// Register custom fonts
+// Register custom fonts - Railway safe version
 try {
-    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
-    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
-    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
-    console.log('[DEBUG] Successfully registered custom fonts for wanted posters');
+    if (process.env.NODE_ENV !== 'production') {
+        registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+        registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+        registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+        console.log('[DEBUG] Successfully registered custom fonts for wanted posters');
+    } else {
+        console.log('[INFO] Using system fonts in production mode');
+    }
 } catch (error) {
-    console.error('[ERROR] Failed to register custom fonts:', error.message);
-    console.log('[INFO] Falling back to system fonts');
+    console.log('[INFO] Font registration skipped, using system fonts');
 }
 
 module.exports = {
@@ -157,7 +160,7 @@ module.exports = {
 
             // Get excluded role ID from guild settings
             const settings = global.guildSettings?.get(interaction.guild.id) || {};
-            const excludedRoleId = settings.excludedRole;
+            const excludedRoleId = settings.excludedRole || process.env.LEADERBOARD_EXCLUDE_ROLE;
             console.log('[DEBUG] Excluded role ID:', excludedRoleId);
             
             // Get top users from database using the XP tracker
@@ -168,18 +171,36 @@ module.exports = {
             const allUsers = leaderboardData?.users || [];
             console.log('[DEBUG] Raw users from database:', allUsers.length);
 
-            if (!allUsers || allUsers.length === 0) {
-                const embed = new EmbedBuilder()
-                    .setTitle('🏴‍☠️ No Bounties Found')
-                    .setDescription('No pirates have earned bounties yet!')
-                    .setColor('#FF6B35');
-
-                return await interaction.editReply({ embeds: [embed], components: [] });
+            // Find Pirate King manually by checking guild members with excluded role
+            let pirateKing = null;
+            if (excludedRoleId) {
+                try {
+                    const guild = interaction.guild;
+                    const role = guild.roles.cache.get(excludedRoleId);
+                    if (role && role.members.size > 0) {
+                        // Get the first member with the Pirate King role
+                        const pirateKingMember = role.members.first();
+                        if (pirateKingMember) {
+                            pirateKing = {
+                                userId: pirateKingMember.user.id,
+                                level: 55,
+                                total_xp: 999999999, // High XP for display
+                                messages: 0,
+                                reactions: 0,
+                                voice_time: 0,
+                                member: pirateKingMember,
+                                isPirateKing: true
+                            };
+                            console.log('[DEBUG] Found Pirate King:', pirateKingMember.displayName);
+                        }
+                    }
+                } catch (error) {
+                    console.error('[DEBUG] Error finding Pirate King:', error);
+                }
             }
 
-            // Filter users and separate Pirate King
+            // Filter users and remove any that have the excluded role
             const filteredUsers = [];
-            let pirateKing = null;
 
             console.log('[DEBUG] Processing users...');
             
@@ -204,21 +225,31 @@ module.exports = {
                 }
             }
 
-            // Process users with cached members
+            // Process users with cached members, excluding Pirate King from regular list
             for (const user of allUsers) {
                 const member = members.get(user.userId);
                 if (!member) continue;
 
+                // Skip users with excluded role (they will be shown as Pirate King separately)
                 if (excludedRoleId && member.roles.cache.has(excludedRoleId)) {
-                    pirateKing = { ...user, member };
-                    console.log('[DEBUG] Found Pirate King:', member.displayName);
-                } else {
-                    filteredUsers.push({ ...user, member });
+                    console.log('[DEBUG] Skipping excluded role user from regular leaderboard:', member.displayName);
+                    continue;
                 }
+
+                filteredUsers.push({ ...user, member });
             }
 
-            console.log('[DEBUG] Filtered users:', filteredUsers.length);
+            console.log('[DEBUG] Filtered users (excluding Pirate King):', filteredUsers.length);
             console.log('[DEBUG] Pirate King found:', !!pirateKing);
+
+            if (!pirateKing && filteredUsers.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setTitle('🏴‍☠️ No Bounties Found')
+                    .setDescription('No pirates have earned bounties yet!')
+                    .setColor('#FF6B35');
+
+                return await interaction.editReply({ embeds: [embed], components: [] });
+            }
 
             // Create navigation buttons
             const buttons = new ActionRowBuilder()
@@ -265,7 +296,7 @@ module.exports = {
                 let headerValue = `🚨 **TOP 3 MOST WANTED PIRATES** 🚨\n\n`;
                 
                 if (pirateKing) {
-                    const pirateKingBounty = getBountyForLevel(pirateKing.level);
+                    const pirateKingBounty = getBountyForLevel(pirateKing.level, true); // true = isPirateKing
                     headerValue += `\`\`\`diff\n+ EMPEROR STATUS ALERT\n+ Subject: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Classification: PIRATE KING\n+ Status: EXCLUDED FROM STANDARD TRACKING\n! EXTREME CAUTION REQUIRED\n\`\`\`\n\n`;
                 }
 
@@ -294,15 +325,15 @@ module.exports = {
                 // Send each poster with red intelligence embed
                 for (let i = 0; i < postersToShow.length; i++) {
                     const userData = postersToShow[i];
-                    const isPirateKing = pirateKing && userData === pirateKing;
-                    const rank = isPirateKing ? 'PIRATE KING' : `RANK ${i + (pirateKing ? 0 : 1)}`;
+                    const isPirateKingData = userData.isPirateKing || false;
+                    const rank = isPirateKingData ? 'PIRATE KING' : `RANK ${i + (pirateKing ? 0 : 1)}`;
                     
                     try {
                         const canvas = await createWantedPoster(userData, interaction.guild);
                         const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${userData.userId}.png` });
                         
                         // Get bounty amount for embed
-                        const bountyAmount = getBountyForLevel(userData.level);
+                        const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
                         
                         // Create red intelligence embed for each poster
                         const embed = new EmbedBuilder()
@@ -312,7 +343,7 @@ module.exports = {
                             .setColor(0xFF0000);
 
                         // Intelligence summary for this pirate
-                        let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
+                        let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
                         embed.addFields({
                             name: '📊 INTELLIGENCE SUMMARY',
@@ -320,7 +351,7 @@ module.exports = {
                             inline: false
                         });
 
-                        if (isPirateKing) {
+                        if (isPirateKingData) {
                             embed.addFields({
                                 name: '👑 SPECIAL CLASSIFICATION',
                                 value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
@@ -330,7 +361,7 @@ module.exports = {
 
                         embed.setImage(`attachment://wanted_${userData.userId}.png`)
                             .setFooter({ 
-                                text: `⚓ Marine Intelligence Division • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(userData.level)}`
+                                text: `⚓ Marine Intelligence Division • Classification: ${isPirateKingData ? 'EMPEROR' : getThreatLevelName(userData.level)}`
                             })
                             .setTimestamp();
 
@@ -360,7 +391,7 @@ module.exports = {
                 let headerValue = `🚨 **TOP 10 MOST WANTED PIRATES** 🚨\n\n`;
                 
                 if (pirateKing) {
-                    const pirateKingBounty = getBountyForLevel(pirateKing.level);
+                    const pirateKingBounty = getBountyForLevel(pirateKing.level, true);
                     headerValue += `\`\`\`diff\n+ EMPEROR STATUS ALERT\n+ Subject: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Classification: PIRATE KING\n+ Status: EXCLUDED FROM STANDARD TRACKING\n! EXTREME CAUTION REQUIRED\n\`\`\`\n\n`;
                 }
 
@@ -389,15 +420,15 @@ module.exports = {
                 // Send each poster with red intelligence embed
                 for (let i = 0; i < postersToShow.length; i++) {
                     const userData = postersToShow[i];
-                    const isPirateKing = pirateKing && userData === pirateKing;
-                    const rank = isPirateKing ? 'PIRATE KING' : `RANK ${i + (pirateKing ? 0 : 1)}`;
+                    const isPirateKingData = userData.isPirateKing || false;
+                    const rank = isPirateKingData ? 'PIRATE KING' : `RANK ${i + (pirateKing ? 0 : 1)}`;
                     
                     try {
                         const canvas = await createWantedPoster(userData, interaction.guild);
                         const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${userData.userId}.png` });
                         
                         // Get bounty amount for embed
-                        const bountyAmount = getBountyForLevel(userData.level);
+                        const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
                         
                         // Create detailed red intelligence embed for each poster
                         const embed = new EmbedBuilder()
@@ -407,7 +438,7 @@ module.exports = {
                             .setColor(0xFF0000);
 
                         // Intelligence summary for this pirate - SAME AS TOP 3
-                        let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
+                        let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
                         embed.addFields({
                             name: '📊 INTELLIGENCE SUMMARY',
@@ -415,7 +446,7 @@ module.exports = {
                             inline: false
                         });
 
-                        if (isPirateKing) {
+                        if (isPirateKingData) {
                             embed.addFields({
                                 name: '👑 SPECIAL CLASSIFICATION',
                                 value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
@@ -425,7 +456,7 @@ module.exports = {
 
                         embed.setImage(`attachment://wanted_${userData.userId}.png`)
                             .setFooter({ 
-                                text: `⚓ Marine Intelligence Division • Classification: ${isPirateKing ? 'EMPEROR' : getThreatLevelName(userData.level)}`
+                                text: `⚓ Marine Intelligence Division • Classification: ${isPirateKingData ? 'EMPEROR' : getThreatLevelName(userData.level)}`
                             })
                             .setTimestamp();
 
@@ -456,7 +487,7 @@ module.exports = {
                 let intelligenceValue = `🚨 **COMPLETE BOUNTY DATABASE** 🚨\n\n`;
 
                 if (pirateKing) {
-                    const pirateKingBounty = getBountyForLevel(pirateKing.level);
+                    const pirateKingBounty = getBountyForLevel(pirateKing.level, true);
                     intelligenceValue += `\`\`\`diff\n+ EMPEROR: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Level: ${pirateKing.level} | PIRATE KING\n\`\`\`\n\n`;
                 }
 
@@ -527,7 +558,7 @@ module.exports = {
     }
 };
 
-// FIXED: Canvas function now uses bounty amounts instead of XP
+// FIXED: Canvas function now uses bounty amounts instead of XP and supports Pirate King
 async function createWantedPoster(userData, guild) {
     const width = 600, height = 900;
     const canvas = createCanvas(width, height);
@@ -640,11 +671,12 @@ async function createWantedPoster(userData, guild) {
     // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
     const berryBountyGap = 5; // Fixed gap in our 1-100 scale
     
-    // FIXED: Get BOUNTY amount for user's level instead of XP
-    const bountyAmount = getBountyForLevel(userData.level);
+    // FIXED: Get BOUNTY amount for user's level and check if Pirate King
+    const isPirateKingData = userData.isPirateKing || false;
+    const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
     const bountyStr = bountyAmount.toLocaleString();
     
-    console.log(`[LEADERBOARD] Level ${userData.level} = Bounty ฿${bountyStr}`);
+    console.log(`[LEADERBOARD] Level ${userData.level} ${isPirateKingData ? '(PIRATE KING)' : ''} = Bounty ฿${bountyStr}`);
     
     ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
     const bountyTextWidth = ctx.measureText(bountyStr).width;
