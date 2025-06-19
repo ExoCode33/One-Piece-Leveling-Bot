@@ -129,12 +129,17 @@ class XPTracker {
                 if (user) {
                     await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user);
                     
-                    // Log voice XP if logging is enabled
+                    // Get updated user stats after XP award for accurate logging
+                    const updatedStats = await this.getUserStats(userId, session.guildId);
+                    
+                    // Log voice XP if logging is enabled with correct stats
                     await this.logXPActivity('voice', user, session.guildId, actualXPGain, {
                         channelName: channel.name,
                         sessionDuration: Math.floor((now - session.joinTime) / 60000),
                         memberCount,
-                        dailyCapped: newDailyXP >= dailyCap
+                        dailyCapped: newDailyXP >= dailyCap,
+                        totalXP: updatedStats?.total_xp || 0,
+                        currentLevel: updatedStats?.level || 0
                     });
                 }
                 
@@ -198,8 +203,8 @@ class XPTracker {
                 [newLevel, userId, guildId]
             );
 
-            // Log XP gain for non-admin sources
-            if (source !== 'admin') {
+            // Log XP gain for non-admin and non-voice sources (voice logging handled in processVoiceXP)
+            if (source !== 'admin' && source !== 'voice') {
                 await this.logXPActivity(source, user, guildId, finalXP, {
                     totalXP: newTotalXP,
                     currentLevel: newLevel
