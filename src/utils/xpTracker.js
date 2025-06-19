@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Fixed to announce EVERY level gained
+// src/utils/xpTracker.js - Fixed to announce EVERY level gained with red text admin logs
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -229,7 +229,7 @@ class XPTracker {
         }
     }
 
-    async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user) {
+    async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, xpSource = 'unknown') {
         try {
             console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
 
@@ -239,12 +239,13 @@ class XPTracker {
             // Send Marine-themed level up notification
             await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward);
 
-            // Log the level up event
+            // Log the level up event with XP source
             await this.logXPActivity('levelup', user, guildId, 0, {
                 oldLevel,
                 newLevel,
                 totalXP: newTotalXP,
-                roleReward
+                roleReward,
+                xpSource: xpSource.toUpperCase()
             });
 
             console.log(`[LEVEL UP] Completed level up processing for ${user.username}`);
@@ -380,22 +381,22 @@ class XPTracker {
                 .addFields(
                     {
                         name: '📑 Previous Status',
-                        value: `\`\`\`ansi\n\u001b[0;31mLevel ${oldLevel}\n฿${oldBounty.toLocaleString()}\u001b[0m\n\`\`\``,
+                        value: `\`\`\`diff\n- Level ${oldLevel}\n- ฿${oldBounty.toLocaleString()}\n\`\`\``,
                         inline: true
                     },
                     {
                         name: '🔥 NEW BOUNTY',
-                        value: `\`\`\`ansi\n\u001b[0;31mLevel ${newLevel}\n฿${newBounty.toLocaleString()}\u001b[0m\n\`\`\``,
+                        value: `\`\`\`diff\n- Level ${newLevel}\n- ฿${newBounty.toLocaleString()}\n\`\`\``,
                         inline: true
                     },
                     {
                         name: '💰 Bounty Increase',
-                        value: `\`\`\`ansi\n\u001b[0;31m+฿${bountyIncrease.toLocaleString()}\u001b[0m\n\`\`\``,
+                        value: `\`\`\`diff\n- +฿${bountyIncrease.toLocaleString()}\n\`\`\``,
                         inline: true
                     },
                     {
                         name: '📊 Intelligence Summary',
-                        value: `\`\`\`ansi\n\u001b[0;31mTotal Criminal Activity: ${newTotalXP.toLocaleString()} XP\nThreat Classification: ${getThreatLevelName(newLevel)}\u001b[0m\n\`\`\``,
+                        value: `\`\`\`diff\n- Total Criminal Activity: ${newTotalXP.toLocaleString()} XP\n- Threat Classification: ${getThreatLevelName(newLevel)}\n\`\`\``,
                         inline: false
                     }
                 );
@@ -404,7 +405,7 @@ class XPTracker {
             if (roleReward) {
                 embed.addFields({
                     name: '👑 New Authority Granted',
-                    value: `\`\`\`ansi\n\u001b[0;31m**${roleReward}** role assigned for reaching Level ${newLevel}\u001b[0m\n\`\`\``,
+                    value: `\`\`\`diff\n- **${roleReward}** role assigned for reaching Level ${newLevel}\n\`\`\``,
                     inline: false
                 });
             }
@@ -472,7 +473,7 @@ class XPTracker {
         }
     }
 
-    // XP Logging function for admin purposes
+    // XP Logging function for admin purposes - FIXED with red text and no surveillance line
     async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
         try {
             // Check if XP logging is enabled
@@ -497,6 +498,16 @@ class XPTracker {
             
             if (!channel || !channel.isTextBased()) return;
 
+            // Helper function to properly handle level 0
+            const formatLevel = (level) => {
+                return level !== undefined && level !== null ? level.toString() : '0';
+            };
+
+            // Helper function to format XP totals
+            const formatXP = (xp) => {
+                return xp !== undefined && xp !== null ? xp.toLocaleString() : '0';
+            };
+
             // Create logging embed
             const embed = new EmbedBuilder()
                 .setColor(0xFF0000)
@@ -508,31 +519,31 @@ class XPTracker {
                 case 'message':
                     embed
                         .setAuthor({ 
-                            name: '📝 MARINE INTELLIGENCE BUREAU',
+                            name: '🚨 MARINE INTELLIGENCE BUREAU',
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('MESSAGE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                     break;
 
                 case 'reaction':
                     embed
                         .setAuthor({ 
-                            name: '😄 MARINE INTELLIGENCE BUREAU',
+                            name: '🚨 MARINE INTELLIGENCE BUREAU',
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('REACTION ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                     break;
 
                 case 'voice':
                     embed
                         .setAuthor({ 
-                            name: '🎙️ MARINE INTELLIGENCE BUREAU',
+                            name: '🚨 MARINE INTELLIGENCE BUREAU',
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('VOICE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${additionalInfo.sessionDuration || 1} minute(s)\n- MEMBERS: ${additionalInfo.memberCount || 'Unknown'}\n- XP AWARDED: +${xpGain}${additionalInfo.dailyCapped ? ' (DAILY CAP)' : ''}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${additionalInfo.sessionDuration || 1} minute(s)\n- MEMBERS: ${additionalInfo.memberCount || 'Unknown'}\n- XP AWARDED: +${xpGain}${additionalInfo.dailyCapped ? ' (DAILY CAP)' : ''}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                     break;
 
                 case 'levelup':
@@ -542,7 +553,7 @@ class XPTracker {
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('⚠️ THREAT LEVEL INCREASED ⚠️')
-                        .setDescription(`\`\`\`diff\n+ BOUNTY UPDATE CONFIRMED\n+ SUBJECT: ${user.username} (${user.id})\n+ GUILD: ${guild?.name || 'Unknown'}\n+ LEVEL: ${additionalInfo.oldLevel || 0} → ${additionalInfo.newLevel || 0}\n+ TOTAL XP: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n${additionalInfo.roleReward ? `+ ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}! ENHANCED SURVEILLANCE REQUIRED\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- LEVEL: ${formatLevel(additionalInfo.oldLevel)} → ${formatLevel(additionalInfo.newLevel)}\n- TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n- XP SOURCE: ${additionalInfo.xpSource || 'UNKNOWN'}\n${additionalInfo.roleReward ? `- ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\`\`\``);
                     break;
 
                 case 'admin':
@@ -552,7 +563,7 @@ class XPTracker {
                             iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
                         })
                         .setTitle('MANUAL XP ADJUSTMENT')
-                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username} (${user.id})\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason'}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- NEW LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username} (${user.id})\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason'}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- NEW LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                     break;
             }
 
