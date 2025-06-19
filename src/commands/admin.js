@@ -1,6 +1,7 @@
-// src/commands/admin.js - Fixed version with proper syntax
+// src/commands/admin.js - Updated with XP logging for manual adjustments
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { quickLog } = require('../utils/xpLogger'); // Import XP logging
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -251,6 +252,9 @@ module.exports = {
                 [newLevel, user.id, guildId]
             );
 
+            // Log the admin XP adjustment
+            await quickLog.admin(interaction.client, user, guildId, amount, interaction.user, reason);
+
             // RED Marine admin confirmation embed
             const confirmEmbed = new EmbedBuilder()
                 .setColor('#DC143C')
@@ -285,11 +289,8 @@ module.exports = {
 
             // Check if user leveled up and trigger Marine level-up if so
             if (newLevel > oldLevel) {
-                const member = await interaction.guild.members.fetch(user.id);
-                
-                // Trigger Marine level-up using YOUR system
                 if (global.xpTracker) {
-                    await global.xpTracker.awardXP(user.id, guildId, 0, 'admin', user);
+                    await global.xpTracker.handleLevelUp(user.id, guildId, oldLevel, newLevel, oldXP, newXP, user);
                 }
             }
 
@@ -358,6 +359,9 @@ module.exports = {
                 'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
                 [newLevel, user.id, guildId]
             );
+
+            // Log the admin XP removal (negative amount)
+            await quickLog.admin(interaction.client, user, guildId, -amount, interaction.user, reason);
 
             const embed = new EmbedBuilder()
                 .setTitle('🚨 MARINE DISCIPLINARY ACTION 🚨')
@@ -432,6 +436,7 @@ module.exports = {
 
             const oldXP = currentStats.rows.length > 0 ? currentStats.rows[0].total_xp : 0;
             const oldLevel = currentStats.rows.length > 0 ? currentStats.rows[0].level : 0;
+            const xpDifference = requiredXP - oldXP;
 
             // Update or insert user stats
             await xpTracker.db.query(`
@@ -443,6 +448,9 @@ module.exports = {
                     level = $4,
                     updated_at = CURRENT_TIMESTAMP
             `, [user.id, guildId, requiredXP, targetLevel]);
+
+            // Log the admin level set (as XP difference)
+            await quickLog.admin(interaction.client, user, guildId, xpDifference, interaction.user, `${reason} (Set to Level ${targetLevel})`);
 
             const embed = new EmbedBuilder()
                 .setTitle('🚨 MARINE RANK ADJUSTMENT 🚨')
@@ -478,7 +486,7 @@ module.exports = {
             // Trigger Marine level-up if level increased
             if (targetLevel > oldLevel) {
                 if (global.xpTracker) {
-                    await global.xpTracker.awardXP(user.id, guildId, 0, 'admin', user);
+                    await global.xpTracker.handleLevelUp(user.id, guildId, oldLevel, targetLevel, oldXP, requiredXP, user);
                 }
             }
 
@@ -512,6 +520,12 @@ module.exports = {
                 return await interaction.editReply({ embeds: [embed] });
             }
 
+            // Get current stats before deletion for logging
+            const currentStats = await xpTracker.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [user.id, guildId]
+            );
+
             // Delete user data
             const result = await xpTracker.db.query(
                 'DELETE FROM user_levels WHERE user_id = $1 AND guild_id = $2 RETURNING *',
@@ -526,6 +540,10 @@ module.exports = {
                 
                 return await interaction.editReply({ embeds: [embed] });
             }
+
+            // Log the admin reset (negative of their total XP)
+            const oldXP = currentStats.rows.length > 0 ? currentStats.rows[0].total_xp : 0;
+            await quickLog.admin(interaction.client, user, guildId, -oldXP, interaction.user, `${reason} (Complete Reset)`);
 
             const embed = new EmbedBuilder()
                 .setTitle('🚨 MARINE DATA PURGE 🚨')
