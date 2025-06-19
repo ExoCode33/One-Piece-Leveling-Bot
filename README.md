@@ -8,16 +8,19 @@ Copy
 Edit
 .
 .
-├── assets/               # Images and fonts for image-based features
+one-piece-leveling-bot/
+│
+├── assets/ # Images and fonts for image-based features
 ├── src/
-│   ├── commands/         # All command modules (leaderboard, admin, etc.)
-│   └── utils/            # Utility scripts for XP, bounty, tracking, etc.
-├── index.js              # Main bot entrypoint
-├── package.json          # Node.js dependencies & project info
-├── railway.toml          # Railway project config
-├── Dockerfile            # For containerized deployment
-├── .env.example          # Example environment variables (copy and edit as .env)
-├── README.md             # (This file!)
+│ ├── commands/ # All command modules (leaderboard, admin, etc.)
+│ └── utils/ # Utility scripts for XP, bounty, tracking, etc.
+│
+├── index.js # Main bot entrypoint
+├── package.json # Node.js dependencies & project info
+├── railway.toml # Railway project config
+├── Dockerfile # For containerized deployment
+├── .env.example # Example environment variables
+├── README.md # This file!
  
 ⚡ Features
 Leveling system with XP from messages, voice, reactions
