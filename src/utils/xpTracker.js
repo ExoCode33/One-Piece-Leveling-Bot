@@ -1,7 +1,6 @@
-// src/utils/xpTracker.js - Complete fixed version with working level up announcements
+// src/utils/xpTracker.js - Fixed to announce EVERY level gained
 
 const { EmbedBuilder } = require('discord.js');
-const { quickLog } = require('./xpLogger'); // Import logging
 
 class XPTracker {
     constructor(client, database) {
@@ -83,7 +82,7 @@ class XPTracker {
 
     async processVoiceXP() {
         const now = Date.now();
-        const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000; // Use YOUR cooldown
+        const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
         const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
         const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 6000;
 
@@ -130,20 +129,13 @@ class XPTracker {
                 if (user) {
                     await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user);
                     
-                    // Log voice XP with enhanced details
-                    const sessionDuration = Math.floor((now - session.joinTime) / 60000); // minutes
-                    const dailyCapped = newDailyXP >= dailyCap;
-                    
-                    await quickLog.voice(
-                        this.client, 
-                        user, 
-                        session.guildId, 
-                        actualXPGain, 
-                        channel, 
-                        sessionDuration, 
-                        memberCount, 
-                        dailyCapped
-                    );
+                    // Log voice XP if logging is enabled
+                    await this.logXPActivity('voice', user, session.guildId, actualXPGain, {
+                        channelName: channel.name,
+                        sessionDuration: Math.floor((now - session.joinTime) / 60000),
+                        memberCount,
+                        dailyCapped: newDailyXP >= dailyCap
+                    });
                 }
                 
                 session.lastXPTime = now;
@@ -206,12 +198,30 @@ class XPTracker {
                 [newLevel, userId, guildId]
             );
 
+            // Log XP gain for non-admin sources
+            if (source !== 'admin') {
+                await this.logXPActivity(source, user, guildId, finalXP, {
+                    totalXP: newTotalXP,
+                    currentLevel: newLevel
+                });
+            }
+
             console.log(`[XP] ${user.username}: ${oldTotalXP} + ${finalXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
 
-            // Check for level up - CRITICAL FIX: Only trigger if ACTUALLY leveled up
+            // FIXED: Handle multiple level gains - announce EVERY level
             if (newLevel > oldLevel) {
-                console.log(`[LEVEL UP] ${user.username} leveled up from ${oldLevel} to ${newLevel}!`);
-                await this.handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user);
+                console.log(`[LEVEL UP] ${user.username} gained ${newLevel - oldLevel} levels: ${oldLevel} → ${newLevel}!`);
+                
+                // Announce each level individually
+                for (let level = oldLevel + 1; level <= newLevel; level++) {
+                    const levelXP = this.getXPForLevel(level);
+                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user);
+                    
+                    // Small delay between announcements to prevent spam
+                    if (level < newLevel) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
             }
 
         } catch (error) {
@@ -226,11 +236,16 @@ class XPTracker {
             // Award level roles using YOUR level role system
             const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
 
-            // Send Marine-themed level up notification - FIXED
+            // Send Marine-themed level up notification
             await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward);
 
-            // Log the level up with enhanced details
-            await quickLog.levelup(this.client, user, guildId, oldLevel, newLevel, newTotalXP, roleReward);
+            // Log the level up event
+            await this.logXPActivity('levelup', user, guildId, 0, {
+                oldLevel,
+                newLevel,
+                totalXP: newTotalXP,
+                roleReward
+            });
 
             console.log(`[LEVEL UP] Completed level up processing for ${user.username}`);
 
@@ -249,11 +264,11 @@ class XPTracker {
                 return;
             }
 
-            // Get notification channel - FIXED: Better channel detection
+            // Get notification channel
             let channelId = process.env.LEVELUP_CHANNEL;
             
             // Check if levelup is enabled
-            const levelupEnabled = process.env.LEVELUP_ENABLED !== 'false'; // Default to enabled
+            const levelupEnabled = process.env.LEVELUP_ENABLED !== 'false';
             if (!levelupEnabled) {
                 console.log('[LEVEL UP] Level up announcements disabled');
                 return;
@@ -420,6 +435,97 @@ class XPTracker {
         } catch (error) {
             console.error('Error awarding level roles:', error);
             return null;
+        }
+    }
+
+    // XP Logging function for admin purposes
+    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
+        try {
+            // Check if XP logging is enabled
+            const logChannelId = process.env.XP_LOG_CHANNEL;
+            const logEnabled = process.env.XP_LOG_ENABLED === 'true';
+            
+            if (!logChannelId || !logEnabled) return;
+
+            // Check specific logging settings
+            const logSettings = {
+                message: process.env.XP_LOG_MESSAGES !== 'false',
+                reaction: process.env.XP_LOG_REACTIONS !== 'false',
+                voice: process.env.XP_LOG_VOICE !== 'false',
+                levelup: process.env.XP_LOG_LEVELUP !== 'false',
+                admin: process.env.XP_LOG_ADMIN !== 'false'
+            };
+
+            if (!logSettings[type]) return;
+
+            const guild = this.client.guilds.cache.get(guildId);
+            const channel = await this.client.channels.fetch(logChannelId).catch(() => null);
+            
+            if (!channel || !channel.isTextBased()) return;
+
+            // Create logging embed
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTimestamp()
+                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
+
+            // Configure embed based on type
+            switch (type) {
+                case 'message':
+                    embed
+                        .setAuthor({ 
+                            name: '📝 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('MESSAGE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                    break;
+
+                case 'reaction':
+                    embed
+                        .setAuthor({ 
+                            name: '😄 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('REACTION ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                    break;
+
+                case 'voice':
+                    embed
+                        .setAuthor({ 
+                            name: '🎙️ MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('VOICE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${additionalInfo.sessionDuration || 1} minute(s)\n- MEMBERS: ${additionalInfo.memberCount || 'Unknown'}\n- XP AWARDED: +${xpGain}${additionalInfo.dailyCapped ? ' (DAILY CAP)' : ''}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                    break;
+
+                case 'levelup':
+                    embed
+                        .setAuthor({ 
+                            name: '🚨 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('⚠️ THREAT LEVEL INCREASED ⚠️')
+                        .setDescription(`\`\`\`diff\n+ BOUNTY UPDATE CONFIRMED\n+ SUBJECT: ${user.username} (${user.id})\n+ GUILD: ${guild?.name || 'Unknown'}\n+ LEVEL: ${additionalInfo.oldLevel || 0} → ${additionalInfo.newLevel || 0}\n+ TOTAL XP: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n${additionalInfo.roleReward ? `+ ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}! ENHANCED SURVEILLANCE REQUIRED\n\`\`\``);
+                    break;
+
+                case 'admin':
+                    embed
+                        .setAuthor({ 
+                            name: '⚓ MARINE COMMAND CENTER',
+                            iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('MANUAL XP ADJUSTMENT')
+                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username} (${user.id})\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason'}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || 'Unknown'}\n- NEW LEVEL: ${additionalInfo.currentLevel || 'Unknown'}\n\`\`\``);
+                    break;
+            }
+
+            await channel.send({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('[XP LOG] Failed to send XP log:', error);
         }
     }
 
