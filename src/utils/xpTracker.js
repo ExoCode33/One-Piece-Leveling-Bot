@@ -27,6 +27,44 @@ class XPTracker {
                 global.guildSettings = new Map();
             }
 
+            // First, check what columns exist in the guild_settings table
+            const tableInfo = await this.db.query(`
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_name = 'guild_settings'
+                ORDER BY ordinal_position
+            `);
+
+            console.log('[SETTINGS] Current guild_settings table columns:', tableInfo.rows.map(r => r.column_name).join(', '));
+
+            // Add missing columns if needed
+            const existingColumns = tableInfo.rows.map(r => r.column_name);
+            
+            if (!existingColumns.includes('levelup_enabled')) {
+                console.log('[SETTINGS] Adding levelup_enabled column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS levelup_enabled BOOLEAN DEFAULT true');
+            }
+            
+            if (!existingColumns.includes('xp_log_enabled')) {
+                console.log('[SETTINGS] Adding xp_log_enabled column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_log_enabled BOOLEAN DEFAULT false');
+            }
+            
+            if (!existingColumns.includes('xp_multiplier')) {
+                console.log('[SETTINGS] Adding xp_multiplier column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_multiplier DECIMAL(3,2) DEFAULT 1.0');
+            }
+
+            if (!existingColumns.includes('levelup_channel')) {
+                console.log('[SETTINGS] Adding levelup_channel column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS levelup_channel VARCHAR(20)');
+            }
+
+            if (!existingColumns.includes('xp_log_channel')) {
+                console.log('[SETTINGS] Adding xp_log_channel column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_log_channel VARCHAR(20)');
+            }
+
             // Load all guild settings from database
             const result = await this.db.query(`
                 SELECT guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier
@@ -57,12 +95,6 @@ class XPTracker {
             }
 
             console.log(`[SETTINGS] Successfully loaded ${loadedCount} guild configurations from database`);
-
-            // Also log what's in memory
-            console.log(`[SETTINGS] Guild settings in memory: ${global.guildSettings.size} guilds`);
-            for (const [guildId, settings] of global.guildSettings) {
-                console.log(`[SETTINGS] Memory - Guild ${guildId}: Multiplier ${settings.xpMultiplier}x`);
-            }
 
         } catch (error) {
             console.error('[SETTINGS] Error loading guild settings from database:', error);
