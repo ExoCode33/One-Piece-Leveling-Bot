@@ -1,15 +1,4 @@
-async processVoiceXP() {
-        const now = Date.now();
-        const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
-        const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
-        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 6000;
-
-        // Collect all voice XP activities for batch logging
-        const voiceActivities = [];
-
-        for (const [userId, session] of this.voiceSessions.entries()) {
-            try {
-                //// src/utils/xpTracker.js - Complete fixed file with working settings and admin permissions
+// src/utils/xpTracker.js - Complete fixed file with voice XP summaries
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -147,6 +136,9 @@ class XPTracker {
         const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
         const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 6000;
 
+        // Collect all voice XP activities for batch logging
+        const voiceActivities = [];
+
         for (const [userId, session] of this.voiceSessions.entries()) {
             try {
                 // Check if enough time has passed
@@ -190,25 +182,19 @@ class XPTracker {
                 if (user) {
                     await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user);
                     
-                    // Get updated user stats after XP award for selective logging
+                    // Get updated user stats after XP award
                     const updatedStats = await this.getUserStats(userId, session.guildId);
                     
-                    // Only log voice XP for significant events (every 10 minutes or level ups)
-                    const sessionMinutes = Math.floor((now - session.joinTime) / 60000);
-                    const shouldLog = sessionMinutes % 10 === 0 || // Every 10 minutes
-                                    newDailyXP >= dailyCap; // When hitting daily cap
-                    
-                    if (shouldLog) {
-                        await this.logXPActivity('voice', user, session.guildId, actualXPGain, {
-                            channelName: channel.name,
-                            sessionDuration: sessionMinutes,
-                            memberCount,
-                            dailyCapped: newDailyXP >= dailyCap,
-                            totalXP: updatedStats?.total_xp || 0,
-                            currentLevel: updatedStats?.level || 0
-                        });
-                    }
-                }xp || 0,
+                    // Add to voice activities collection for batch logging
+                    voiceActivities.push({
+                        user,
+                        guildId: session.guildId,
+                        channelName: channel.name,
+                        sessionDuration: Math.floor((now - session.joinTime) / 60000),
+                        memberCount,
+                        xpGain: actualXPGain,
+                        dailyCapped: newDailyXP >= dailyCap,
+                        totalXP: updatedStats?.total_xp || 0,
                         currentLevel: updatedStats?.level || 0
                     });
                 }
@@ -218,6 +204,82 @@ class XPTracker {
             } catch (error) {
                 console.error(`Error processing voice XP for user ${userId}:`, error);
             }
+        }
+
+        // Send batch voice XP summary if there are activities
+        if (voiceActivities.length > 0) {
+            await this.sendVoiceXPSummary(voiceActivities);
+        }
+    }
+
+    // NEW: Send voice XP summary for all users at once
+    async sendVoiceXPSummary(activities) {
+        try {
+            if (activities.length === 0) return;
+
+            // Get guild settings from the first activity
+            const firstActivity = activities[0];
+            const guildSettings = global.guildSettings?.get(firstActivity.guildId);
+            
+            // Check if XP logging is enabled for this guild
+            const logEnabled = guildSettings?.xpLogEnabled === true;
+            if (!logEnabled) return;
+
+            // Get log channel from guild settings
+            const logChannelId = guildSettings?.xpLogChannel;
+            if (!logChannelId) return;
+
+            // Check if voice logging is enabled
+            const logVoice = process.env.XP_LOG_VOICE !== 'false';
+            if (!logVoice) return;
+
+            const channel = await this.client.channels.fetch(logChannelId).catch(() => null);
+            if (!channel || !channel.isTextBased()) return;
+
+            // Group activities by voice channel
+            const channelGroups = new Map();
+            activities.forEach(activity => {
+                if (!channelGroups.has(activity.channelName)) {
+                    channelGroups.set(activity.channelName, []);
+                }
+                channelGroups.get(activity.channelName).push(activity);
+            });
+
+            // Create summary embed
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTimestamp()
+                .setAuthor({ 
+                    name: '🚨 MARINE INTELLIGENCE BUREAU',
+                    iconURL: null
+                })
+                .setTitle('VOICE ACTIVITY SUMMARY')
+                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
+
+            let description = '```diff\n';
+            let totalXPAwarded = 0;
+
+            // Add each voice channel group
+            for (const [channelName, channelActivities] of channelGroups) {
+                description += `\n🎙️ CHANNEL: ${channelName}\n`;
+                description += `- MEMBERS: ${channelActivities[0].memberCount}\n`;
+                
+                channelActivities.forEach(activity => {
+                    const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
+                    description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}\n`;
+                    totalXPAwarded += activity.xpGain;
+                });
+            }
+
+            description += `\n📊 TOTAL XP AWARDED: +${totalXPAwarded}\n`;
+            description += '```';
+
+            embed.setDescription(description);
+
+            await channel.send({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('[VOICE XP SUMMARY] Failed to send summary:', error);
         }
     }
 
@@ -273,7 +335,7 @@ class XPTracker {
                 [newLevel, userId, guildId]
             );
 
-            // Log XP gain for non-admin and non-voice sources (voice logging handled in processVoiceXP)
+            // Log XP gain for non-admin and non-voice sources (voice logging handled in processVoiceXP summary)
             if (source !== 'admin' && source !== 'voice') {
                 await this.logXPActivity(source, user, guildId, finalXP, {
                     totalXP: newTotalXP,
@@ -601,7 +663,7 @@ class XPTracker {
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('MESSAGE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                     break;
 
                 case 'reaction':
@@ -611,17 +673,7 @@ class XPTracker {
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('REACTION ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
-                    break;
-
-                case 'voice':
-                    embed
-                        .setAuthor({ 
-                            name: '🚨 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('VOICE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${additionalInfo.sessionDuration || 1} minute(s)\n- MEMBERS: ${additionalInfo.memberCount || 'Unknown'}\n- XP AWARDED: +${xpGain}${additionalInfo.dailyCapped ? ' (DAILY CAP)' : ''}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                     break;
 
                 case 'levelup':
@@ -631,7 +683,7 @@ class XPTracker {
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('⚠️ THREAT LEVEL INCREASED ⚠️')
-                        .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guild?.name || 'Unknown'}\n- LEVEL: ${formatLevel(additionalInfo.oldLevel)} → ${formatLevel(additionalInfo.newLevel)}\n- TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n- XP SOURCE: ${additionalInfo.xpSource || 'UNKNOWN'}\n${additionalInfo.roleReward ? `- ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\`\`\``);
+                        .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- LEVEL: ${formatLevel(additionalInfo.oldLevel)} → ${formatLevel(additionalInfo.newLevel)}\n- TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n- XP SOURCE: ${additionalInfo.xpSource || 'UNKNOWN'}\n${additionalInfo.roleReward ? `- ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\`\`\``);
                     break;
 
                 case 'admin':
