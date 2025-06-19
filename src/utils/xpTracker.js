@@ -1,4 +1,15 @@
-// src/utils/xpTracker.js - Complete fixed file with working settings and admin permissions
+async processVoiceXP() {
+        const now = Date.now();
+        const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
+        const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
+        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 6000;
+
+        // Collect all voice XP activities for batch logging
+        const voiceActivities = [];
+
+        for (const [userId, session] of this.voiceSessions.entries()) {
+            try {
+                //// src/utils/xpTracker.js - Complete fixed file with working settings and admin permissions
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -179,16 +190,25 @@ class XPTracker {
                 if (user) {
                     await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user);
                     
-                    // Get updated user stats after XP award for accurate logging
+                    // Get updated user stats after XP award for selective logging
                     const updatedStats = await this.getUserStats(userId, session.guildId);
                     
-                    // Log voice XP if logging is enabled with correct stats
-                    await this.logXPActivity('voice', user, session.guildId, actualXPGain, {
-                        channelName: channel.name,
-                        sessionDuration: Math.floor((now - session.joinTime) / 60000),
-                        memberCount,
-                        dailyCapped: newDailyXP >= dailyCap,
-                        totalXP: updatedStats?.total_xp || 0,
+                    // Only log voice XP for significant events (every 10 minutes or level ups)
+                    const sessionMinutes = Math.floor((now - session.joinTime) / 60000);
+                    const shouldLog = sessionMinutes % 10 === 0 || // Every 10 minutes
+                                    newDailyXP >= dailyCap; // When hitting daily cap
+                    
+                    if (shouldLog) {
+                        await this.logXPActivity('voice', user, session.guildId, actualXPGain, {
+                            channelName: channel.name,
+                            sessionDuration: sessionMinutes,
+                            memberCount,
+                            dailyCapped: newDailyXP >= dailyCap,
+                            totalXP: updatedStats?.total_xp || 0,
+                            currentLevel: updatedStats?.level || 0
+                        });
+                    }
+                }xp || 0,
                         currentLevel: updatedStats?.level || 0
                     });
                 }
