@@ -1,13 +1,12 @@
-🏴‍☠️ One Piece Leveling Bot
-A Discord bot for role management, leveling, leaderboards, and more — inspired by One Piece!
-Designed for easy deployment on Railway.
+# 🏴‍☠️ One Piece Leveling Bot
 
-📁 Project Structure
-bash
-Copy
-Edit
-.
-.
+A Discord bot for role management, leveling, leaderboards, and more — inspired by One Piece!  
+Designed for easy deployment on [Railway](https://railway.app) or locally.
+
+---
+
+## 📁 Project Structure
+
 one-piece-leveling-bot/
 │
 ├── assets/ # Images and fonts for image-based features
@@ -21,101 +20,118 @@ one-piece-leveling-bot/
 ├── Dockerfile # For containerized deployment
 ├── .env.example # Example environment variables
 ├── README.md # This file!
- 
-⚡ Features
-Leveling system with XP from messages, voice, reactions
 
-Leaderboard with custom One Piece styling
+---
 
-Role management (/add, /delete, /settings, etc.)
+## ⚡ Features
 
-Admin commands
+- **Leveling system** — XP from messages, voice, and reactions
+- **Leaderboard** with custom One Piece styling
+- **Role management** (`/add`, `/delete`, `/settings`, etc.)
+- **Admin commands**
+- **Supports custom images and fonts for embeds/posters**
+- **Easy deployment on Railway or locally**
 
-Supports custom images and fonts for embeds/posters
+---
 
-Designed for Railway/Node.js deployment
+## 🚀 Quick Start (Railway)
 
-🚀 Quick Start (Railway)
-1. Clone/Upload the Bot
+### 1. **Clone/Upload the Bot**
+
 If not already on Railway, upload all files or link your repo.
 
-2. Set Environment Variables
-You need these in Railway's “Variables”:
+### 2. **Set Environment Variables**
 
-Variable	Example/Description
-DISCORD_TOKEN	Your Discord bot token
-CLIENT_ID	Your Discord Application ID
-DATABASE_URL	(If using a DB, e.g. PostgreSQL)
+In the Railway project dashboard, go to the "Variables" tab and set:
 
-Note:
+| Variable         | Description                      |
+|------------------|---------------------------------|
+| `DISCORD_TOKEN`  | Your Discord bot token           |
+| `CLIENT_ID`      | Your Discord Application ID      |
+| `DATABASE_URL`   | Your PostgreSQL URL (if used)    |
 
-Use .env.example as a template for local dev (rename to .env).
+*For local use, copy `.env.example` to `.env` and fill in your values.*
 
-On Railway, set these in the dashboard (not as a file).
+### 3. **Enable Privileged Intents**
 
-3. Enable Privileged Intents
-Go to your bot's page in the Discord Developer Portal.
+- Go to your bot's page in the [Discord Developer Portal](https://discord.com/developers/applications).
+- Click **Bot** in the sidebar.
+- Enable **SERVER MEMBERS INTENT**.
+- Save changes and restart the bot!
 
-Under Bot, scroll to Privileged Gateway Intents.
+### 4. **Set Bot Permissions**
 
-Enable SERVER MEMBERS INTENT.
+- The bot’s role must be **above** the roles it will manage in Server Settings > Roles.
+- The bot needs **Manage Roles** and **Read Messages/Members** permissions.
 
-Save and restart your bot!
+### 5. **Deploy!**
 
-4. Set Bot Permissions
-The bot's role must be above the roles it will manage.
+- Railway will automatically install dependencies and start the bot.
+- If using Dockerfile/railway.toml, ensure the start command matches your main file (`index.js`).
 
-Bot needs Manage Roles and Read Messages/Members permissions.
+---
 
-5. Deploy!
-Railway will auto-install with npm install and run node index.js by default.
+## 🛠️ Usage
 
-If using Dockerfile/railway.toml, double check your start command matches your main file (index.js).
+### **Main Slash Commands**
 
-🛠️ Usage
-Leaderboard: /leaderboard
+| Command               | Description                                  | Permissions         |
+|-----------------------|----------------------------------------------|---------------------|
+| `/leaderboard`        | Show the leveling leaderboard                | Everyone            |
+| `/add`                | Add a role to a user or everyone             | Admin only          |
+| `/delete`             | Remove a role from a user or everyone        | Admin only          |
+| `/settings`           | Adjust leveling and bot settings             | Admin only          |
+| ...                   | See `src/commands/` for more                 |                     |
 
-Add/Remove Roles: /add, /delete
-(administrator only, if using provided code)
+---
 
-Other Commands: See files in src/commands/
+## 📝 Customization
 
-📝 Customization
-Edit /src/commands/ to add or change bot commands.
+- **Edit/Add Commands:**  
+  Modify or add command files in `src/commands/`.
 
-Change images or fonts in /assets/.
+- **Change XP/Level Logic:**  
+  Tweak XP/bounty systems in `src/utils/`.
 
-Logic for XP and leveling is in /src/utils/.
+- **Custom Images/Fonts:**  
+  Replace files in `assets/` for different styles.
 
-🧩 Troubleshooting
-Bot says “0 members”:
+---
 
-Enable SERVER MEMBERS INTENT in Developer Portal
+## 🧩 Troubleshooting
 
-Place bot’s role above target roles
+- **Bot says “0 members”:**  
+  - Enable SERVER MEMBERS INTENT in Developer Portal  
+  - Bot’s role must be above the role it’s managing  
+  - Give bot “Manage Roles” permission
 
-Give bot “Manage Roles” permission
+- **Bot not responding:**  
+  - Check Railway logs  
+  - Ensure environment variables are set
 
-Bot not responding:
+- **Roles not being managed:**  
+  - Confirm bot's role hierarchy and permissions
 
-Check Railway logs for errors
+---
 
-Make sure environment variables are set correctly
+## 🖥️ Local Development
 
-Role not being managed:
+1. `cp .env.example .env` (and fill in your info)
+2. `npm install`
+3. `node index.js`
 
-Check bot's role hierarchy and permissions
+---
 
-🖥️ Local Development
-Copy .env.example to .env and fill in your values.
+## 👑 Credits
 
-npm install
+Inspired by **One Piece**.  
+Created by ExoCode.
 
-node index.js
+---
 
-👑 Credits & License
-Inspired by the world of One Piece.
-Open source — use and modify as you like!
+## 📄 License
 
-🚨 Contact
-For help or custom changes, just ask ExoCode or your project maintainer!
+Open source — free to use and modify!
+
+---
+
