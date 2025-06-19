@@ -57,13 +57,13 @@ module.exports = {
     }
 };
 
-async function handleStats(interaction, pool) {
+async function handleStats(interaction, db) {
     // Get comprehensive statistics
     const [userStats, guildStats, xpStats, levelStats] = await Promise.all([
-        pool.query('SELECT COUNT(*) as total_users FROM users'),
-        pool.query('SELECT COUNT(*) as total_guilds FROM guild_settings'),
-        pool.query('SELECT SUM(total_xp) as total_xp, AVG(total_xp) as avg_xp FROM users WHERE total_xp > 0'),
-        pool.query('SELECT level, COUNT(*) as count FROM users WHERE level > 0 GROUP BY level ORDER BY level DESC LIMIT 10')
+        db.query('SELECT COUNT(*) as total_users FROM user_levels'),
+        db.query('SELECT COUNT(*) as total_guilds FROM guild_settings'),
+        db.query('SELECT SUM(total_xp) as total_xp, AVG(total_xp) as avg_xp FROM user_levels WHERE total_xp > 0'),
+        db.query('SELECT level, COUNT(*) as count FROM user_levels WHERE level > 0 GROUP BY level ORDER BY level DESC LIMIT 10')
     ]);
 
     const totalUsers = userStats.rows[0]?.total_users || 0;
@@ -101,7 +101,7 @@ async function handleStats(interaction, pool) {
     await interaction.reply({ embeds: [statsEmbed], ephemeral: true });
 }
 
-async function handleMaintenance(interaction, pool) {
+async function handleMaintenance(interaction, db) {
     const maintenanceButtons = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
@@ -136,7 +136,7 @@ async function handleMaintenance(interaction, pool) {
     });
 }
 
-async function handleNuclear(interaction, pool) {
+async function handleNuclear(interaction, db) {
     const nuclearEmbed = new EmbedBuilder()
         .setColor(0xFF0000)
         .setTitle('☢️ NUCLEAR PROTOCOL - DATA DESTRUCTION AUTHORIZATION')
@@ -176,11 +176,11 @@ async function handleNuclear(interaction, pool) {
 }
 
 // Export button handlers for use in index.js
-module.exports.handleMaintenanceButtons = async (interaction, pool) => {
+module.exports.handleMaintenanceButtons = async (interaction, db) => {
     if (interaction.customId === 'cleanup_inactive') {
         await interaction.deferUpdate();
         
-        const result = await pool.query('DELETE FROM users WHERE total_xp = 0 AND level = 0');
+        const result = await db.query('DELETE FROM user_levels WHERE total_xp = 0 AND level = 0');
         const cleaned = result.rowCount || 0;
 
         const cleanupEmbed = new EmbedBuilder()
@@ -198,10 +198,10 @@ module.exports.handleMaintenanceButtons = async (interaction, pool) => {
     } else if (interaction.customId === 'optimize_db') {
         await interaction.deferUpdate();
 
-        await pool.query('VACUUM ANALYZE users');
-        await pool.query('VACUUM ANALYZE guild_settings');
-        await pool.query('REINDEX TABLE users');
-        await pool.query('REINDEX TABLE guild_settings');
+        await db.query('VACUUM ANALYZE user_levels');
+        await db.query('VACUUM ANALYZE guild_settings');
+        await db.query('REINDEX TABLE user_levels');
+        await db.query('REINDEX TABLE guild_settings');
 
         const optimizeEmbed = new EmbedBuilder()
             .setColor(0x00FF00)
@@ -218,12 +218,12 @@ module.exports.handleMaintenanceButtons = async (interaction, pool) => {
     } else if (interaction.customId === 'backup_stats') {
         await interaction.deferUpdate();
 
-        const backupData = await pool.query(`
+        const backupData = await db.query(`
             SELECT 
-                (SELECT COUNT(*) FROM users) as total_users,
+                (SELECT COUNT(*) FROM user_levels) as total_users,
                 (SELECT COUNT(*) FROM guild_settings) as total_guilds,
-                (SELECT SUM(total_xp) FROM users) as total_xp,
-                (SELECT MAX(level) FROM users) as max_level,
+                (SELECT SUM(total_xp) FROM user_levels) as total_xp,
+                (SELECT MAX(level) FROM user_levels) as max_level,
                 CURRENT_TIMESTAMP as backup_time
         `);
 
@@ -244,7 +244,7 @@ module.exports.handleMaintenanceButtons = async (interaction, pool) => {
     }
 };
 
-module.exports.handleNuclearButtons = async (interaction, pool) => {
+module.exports.handleNuclearButtons = async (interaction, db) => {
     if (interaction.customId === 'nuclear_abort') {
         await interaction.deferUpdate();
 
@@ -295,10 +295,9 @@ module.exports.handleNuclearButtons = async (interaction, pool) => {
 
         try {
             // Nuclear option - Complete database wipe
-            await pool.query('TRUNCATE TABLE users CASCADE');
-            await pool.query('TRUNCATE TABLE guild_settings CASCADE');
-            await pool.query('DROP TABLE IF EXISTS xp_logs CASCADE');
-            await pool.query('DROP TABLE IF EXISTS daily_voice_xp CASCADE');
+            await db.query('TRUNCATE TABLE user_levels CASCADE');
+            await db.query('TRUNCATE TABLE guild_settings CASCADE');
+            await db.query('DROP TABLE IF EXISTS daily_voice_xp CASCADE');
             
             console.log('[NUCLEAR] ☢️ NUCLEAR PROTOCOL EXECUTED - ALL DATA DESTROYED');
 
