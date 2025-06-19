@@ -27,25 +27,13 @@ class XPTracker {
                 global.guildSettings = new Map();
             }
 
-            // Ensure guild_settings table exists
-            await this.db.query(`
-                CREATE TABLE IF NOT EXISTS guild_settings (
-                    guild_id VARCHAR(20) PRIMARY KEY,
-                    levelup_channel VARCHAR(20),
-                    levelup_enabled BOOLEAN DEFAULT true,
-                    xp_log_channel VARCHAR(20),
-                    xp_log_enabled BOOLEAN DEFAULT false,
-                    xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
             // Load all guild settings from database
             const result = await this.db.query(`
                 SELECT guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier
                 FROM guild_settings
             `);
+
+            console.log(`[SETTINGS] Found ${result.rows.length} guild configurations in database`);
 
             let loadedCount = 0;
             for (const row of result.rows) {
@@ -60,10 +48,21 @@ class XPTracker {
                 global.guildSettings.set(row.guild_id, guildSettings);
                 loadedCount++;
 
-                console.log(`[SETTINGS] Loaded settings for guild ${row.guild_id}: XP Multiplier ${row.xp_multiplier}x, Level Up ${row.levelup_enabled ? 'enabled' : 'disabled'}`);
+                console.log(`[SETTINGS] Guild ${row.guild_id}:`);
+                console.log(`  - XP Multiplier: ${row.xp_multiplier}x`);
+                console.log(`  - Level Up: ${row.levelup_enabled ? 'enabled' : 'disabled'}`);
+                console.log(`  - Level Up Channel: ${row.levelup_channel || 'not set'}`);
+                console.log(`  - XP Log: ${row.xp_log_enabled ? 'enabled' : 'disabled'}`);
+                console.log(`  - XP Log Channel: ${row.xp_log_channel || 'not set'}`);
             }
 
             console.log(`[SETTINGS] Successfully loaded ${loadedCount} guild configurations from database`);
+
+            // Also log what's in memory
+            console.log(`[SETTINGS] Guild settings in memory: ${global.guildSettings.size} guilds`);
+            for (const [guildId, settings] of global.guildSettings) {
+                console.log(`[SETTINGS] Memory - Guild ${guildId}: Multiplier ${settings.xpMultiplier}x`);
+            }
 
         } catch (error) {
             console.error('[SETTINGS] Error loading guild settings from database:', error);
