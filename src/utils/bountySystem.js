@@ -1,4 +1,4 @@
-// src/utils/bountySystem.js - Enhanced with proper bounty amounts and threat levels
+// src/utils/bountySystem.js - Enhanced with Pirate King support
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -79,9 +79,14 @@ const THREAT_LEVEL_MESSAGES = {
 };
 
 const DEFAULT_LEVEL_UP_MSG = "Bounty increased. Threat level rising.";
-const PIRATE_KING_BOUNTY = 4600000000; // 4.6 billion
+const PIRATE_KING_BOUNTY = 4600000000; // 4.6 billion (Gol D. Roger's bounty)
 
-function getBountyForLevel(level) {
+function getBountyForLevel(level, isPirateKing = false) {
+  // Special bounty for Pirate King
+  if (isPirateKing) {
+    return PIRATE_KING_BOUNTY;
+  }
+  
   // Clamp level to maximum
   if (level > 55) level = 55;
   if (level < 0) level = 0;
@@ -116,14 +121,14 @@ function getThreatLevelMessage(level) {
   return DEFAULT_LEVEL_UP_MSG;
 }
 
-function createLevelUpEmbed(user, prevLevel, newLevel) {
-  const bounty = getBountyForLevel(newLevel);
-  const prevBounty = getBountyForLevel(prevLevel);
+function createLevelUpEmbed(user, prevLevel, newLevel, isPirateKing = false) {
+  const bounty = getBountyForLevel(newLevel, isPirateKing);
+  const prevBounty = getBountyForLevel(prevLevel, isPirateKing);
   const threatMessage = getThreatLevelMessage(newLevel);
   
   // Determine embed color based on level
   let embedColor = 0xf7d560; // Default gold
-  if (newLevel >= 50) embedColor = 0xFF0000; // Red for Emperor class
+  if (isPirateKing || newLevel >= 50) embedColor = 0xFF0000; // Red for Emperor class/Pirate King
   else if (newLevel >= 40) embedColor = 0xFF4500; // Orange red for Elite
   else if (newLevel >= 30) embedColor = 0xFF8C00; // Dark orange for Advanced
   else if (newLevel >= 20) embedColor = 0xFFA500; // Orange for Dangerous
@@ -131,38 +136,42 @@ function createLevelUpEmbed(user, prevLevel, newLevel) {
 
   const embed = new EmbedBuilder()
     .setColor(embedColor)
-    .setTitle('🚨 WORLD GOVERNMENT BOUNTY UPDATE 🚨')
+    .setTitle(isPirateKing ? '👑 PIRATE KING ACTIVITY DETECTED 👑' : '🚨 WORLD GOVERNMENT BOUNTY UPDATE 🚨')
     .setThumbnail(user.displayAvatarURL({ dynamic: true }))
     .setDescription(
-      `**${user.username}** has reached a new level of infamy!\n\n` +
-      `*${threatMessage}*`
+      isPirateKing ? 
+      `**${user.username}** - The Pirate King has taken action!\n\n*EMPEROR STATUS CONFIRMED. All Marine units maintain maximum alert.*` :
+      `**${user.username}** has reached a new level of infamy!\n\n*${threatMessage}*`
     )
     .addFields(
       { 
-        name: '📑 Previous Bounty', 
-        value: `Level ${prevLevel}\n฿${prevBounty.toLocaleString()}`, 
+        name: isPirateKing ? '👑 Previous Authority' : '📑 Previous Bounty', 
+        value: isPirateKing ? `Pirate King\n฿${prevBounty.toLocaleString()}` : `Level ${prevLevel}\n฿${prevBounty.toLocaleString()}`, 
         inline: true 
       },
       { 
-        name: '🔥 NEW BOUNTY', 
-        value: `Level ${newLevel}\n฿${bounty.toLocaleString()}`, 
+        name: isPirateKing ? '👑 CURRENT AUTHORITY' : '🔥 NEW BOUNTY', 
+        value: isPirateKing ? `Pirate King\n฿${bounty.toLocaleString()}` : `Level ${newLevel}\n฿${bounty.toLocaleString()}`, 
         inline: true 
       },
       { 
-        name: '💰 Bounty Increase', 
-        value: `+฿${(bounty - prevBounty).toLocaleString()}`, 
+        name: '💰 Bounty Change', 
+        value: bounty > prevBounty ? `+฿${(bounty - prevBounty).toLocaleString()}` : 'No Change', 
         inline: true 
       }
     )
     .setFooter({ 
-      text: `⚓ Marine Bounty Tracking System • Threat Level: ${getThreatLevelName(newLevel)}` 
+      text: isPirateKing ? 
+        `👑 Marine Intelligence • PIRATE KING STATUS • Threat Level: EMPEROR` :
+        `⚓ Marine Bounty Tracking System • Threat Level: ${getThreatLevelName(newLevel)}` 
     })
     .setTimestamp();
 
   return embed;
 }
 
-function getThreatLevelName(level) {
+function getThreatLevelName(level, isPirateKing = false) {
+  if (isPirateKing) return "PIRATE KING";
   if (level >= 55) return "LEGENDARY";
   if (level >= 50) return "EMPEROR CLASS";
   if (level >= 45) return "EXTRAORDINARY";
@@ -175,6 +184,27 @@ function getThreatLevelName(level) {
   if (level >= 10) return "ELEVATED";
   if (level >= 5) return "CONFIRMED CRIMINAL";
   return "MONITORING";
+}
+
+// Helper function to check if user is Pirate King
+function isPirateKing(member, guildSettings) {
+  if (!member || !guildSettings) return false;
+  const excludedRoleId = guildSettings.excludedRole || process.env.LEADERBOARD_EXCLUDE_ROLE;
+  return excludedRoleId && member.roles.cache.has(excludedRoleId);
+}
+
+// Get Pirate King data for leaderboard display
+function getPirateKingData(member) {
+  return {
+    userId: member.user.id,
+    level: 55, // Pirate King is always level 55
+    total_xp: 999999999, // High XP for sorting but not displayed
+    messages: 0,
+    reactions: 0,
+    voice_time: 0,
+    member: member,
+    isPirateKing: true
+  };
 }
 
 // Auto-dismiss function for ephemeral messages
@@ -200,6 +230,8 @@ module.exports = {
   createLevelUpEmbed,
   getThreatLevelName,
   autoDissmissEphemeralMessage,
+  isPirateKing,
+  getPirateKingData,
   BOUNTY_LADDER,
   THREAT_LEVEL_MESSAGES,
   PIRATE_KING_BOUNTY
