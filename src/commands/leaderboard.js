@@ -1,20 +1,17 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
-const { getBountyForLevel, isPirateKing, getPirateKingData } = require('../utils/bountySystem'); // ADDED: Import bounty system
+const { getBountyForLevel } = require('../utils/bountySystem'); // ADDED: Import bounty system
 const path = require('path');
 
-// Register custom fonts - Railway safe version
+// Register custom fonts - Keep your original font loading
 try {
-    if (process.env.NODE_ENV !== 'production') {
-        registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
-        registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
-        registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
-        console.log('[DEBUG] Successfully registered custom fonts for wanted posters');
-    } else {
-        console.log('[INFO] Using system fonts in production mode');
-    }
+    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+    console.log('[DEBUG] Successfully registered custom fonts for wanted posters');
 } catch (error) {
-    console.log('[INFO] Font registration skipped, using system fonts');
+    console.error('[ERROR] Failed to register custom fonts:', error.message);
+    console.log('[INFO] Falling back to system fonts');
 }
 
 module.exports = {
@@ -292,14 +289,8 @@ module.exports = {
                     })
                     .setColor(0xFF0000);
 
-                // Add Pirate King to header if exists
+                // SIMPLIFIED header - no detailed Pirate King info
                 let headerValue = `🚨 **TOP 3 MOST WANTED PIRATES** 🚨\n\n`;
-                
-                if (pirateKing) {
-                    const pirateKingBounty = getBountyForLevel(pirateKing.level, true); // true = isPirateKing
-                    headerValue += `\`\`\`diff\n+ EMPEROR STATUS ALERT\n+ Subject: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Classification: PIRATE KING\n+ Status: EXCLUDED FROM STANDARD TRACKING\n! EXTREME CAUTION REQUIRED\n\`\`\`\n\n`;
-                }
-
                 headerValue += `\`\`\`diff\n- MARINE INTELLIGENCE DIRECTIVE:\n- The following individuals represent the highest threat\n- levels currently under surveillance. Immediate\n- response protocols are authorized for any sightings.\n\`\`\``;
 
                 headerEmbed.addFields({
@@ -342,7 +333,7 @@ module.exports = {
                             })
                             .setColor(0xFF0000);
 
-                        // Intelligence summary for this pirate
+                        // Intelligence summary for this pirate - ALL RED TEXT
                         let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
                         embed.addFields({
@@ -352,9 +343,10 @@ module.exports = {
                         });
 
                         if (isPirateKingData) {
+                            // FIXED: Remove "EXCLUDED FROM BOUNTY TRACKING" and make all text red
                             embed.addFields({
                                 name: '👑 SPECIAL CLASSIFICATION',
-                                value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
+                                value: `\`\`\`diff\n- EMPEROR STATUS CONFIRMED\n- MAXIMUM THREAT DESIGNATION\n- APPROACH WITH EXTREME CAUTION\n\`\`\``,
                                 inline: false
                             });
                         }
@@ -380,21 +372,15 @@ module.exports = {
                 }
 
             } else if (type === 'long') {
-                // TOP 10 BOUNTIES - Show Pirate King + Top 10 with canvas and red intelligence embeds
+                // TOP 10 BOUNTIES - Same as Top 3 but for 10 users
                 const headerEmbed = new EmbedBuilder()
                     .setAuthor({ 
                         name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                     })
                     .setColor(0xFF0000);
 
-                // Add comprehensive header for top 10
+                // SIMPLIFIED header for top 10
                 let headerValue = `🚨 **TOP 10 MOST WANTED PIRATES** 🚨\n\n`;
-                
-                if (pirateKing) {
-                    const pirateKingBounty = getBountyForLevel(pirateKing.level, true);
-                    headerValue += `\`\`\`diff\n+ EMPEROR STATUS ALERT\n+ Subject: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Classification: PIRATE KING\n+ Status: EXCLUDED FROM STANDARD TRACKING\n! EXTREME CAUTION REQUIRED\n\`\`\`\n\n`;
-                }
-
                 headerValue += `\`\`\`diff\n- EXTENDED SURVEILLANCE REPORT:\n- This comprehensive assessment covers the ten most\n- dangerous pirates currently under Marine observation.\n- All personnel are advised to review threat profiles\n- and maintain heightened alert status.\n\`\`\``;
 
                 headerEmbed.addFields({
@@ -437,7 +423,7 @@ module.exports = {
                             })
                             .setColor(0xFF0000);
 
-                        // Intelligence summary for this pirate - SAME AS TOP 3
+                        // Intelligence summary for this pirate - ALL RED TEXT
                         let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
                         embed.addFields({
@@ -447,9 +433,10 @@ module.exports = {
                         });
 
                         if (isPirateKingData) {
+                            // FIXED: Remove "EXCLUDED FROM BOUNTY TRACKING" and make all text red
                             embed.addFields({
                                 name: '👑 SPECIAL CLASSIFICATION',
-                                value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
+                                value: `\`\`\`diff\n- EMPEROR STATUS CONFIRMED\n- MAXIMUM THREAT DESIGNATION\n- APPROACH WITH EXTREME CAUTION\n\`\`\``,
                                 inline: false
                             });
                         }
@@ -488,7 +475,7 @@ module.exports = {
 
                 if (pirateKing) {
                     const pirateKingBounty = getBountyForLevel(pirateKing.level, true);
-                    intelligenceValue += `\`\`\`diff\n+ EMPEROR: ${pirateKing.member.displayName}\n+ Bounty: ฿${pirateKingBounty.toLocaleString()}\n+ Level: ${pirateKing.level} | PIRATE KING\n\`\`\`\n\n`;
+                    intelligenceValue += `\`\`\`diff\n- EMPEROR: ${pirateKing.member.displayName}\n- Bounty: ฿${pirateKingBounty.toLocaleString()}\n- Level: ${pirateKing.level} | PIRATE KING\n\`\`\`\n\n`;
                 }
 
                 // Split users into chunks to avoid Discord's 1024 character limit
@@ -558,7 +545,7 @@ module.exports = {
     }
 };
 
-// FIXED: Canvas function now uses bounty amounts instead of XP and supports Pirate King
+// FIXED: Canvas function with proper Pirate King bounty support
 async function createWantedPoster(userData, guild) {
     const width = 600, height = 900;
     const canvas = createCanvas(width, height);
@@ -668,7 +655,7 @@ async function createWantedPoster(userData, guild) {
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
+    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS WITH PIRATE KING SUPPORT
     const berryBountyGap = 5; // Fixed gap in our 1-100 scale
     
     // FIXED: Get BOUNTY amount for user's level and check if Pirate King
