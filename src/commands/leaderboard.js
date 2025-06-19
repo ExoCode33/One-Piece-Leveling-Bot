@@ -326,12 +326,12 @@ module.exports = {
                         // Get bounty amount for embed
                         const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
                         
-                        // Create red intelligence embed for each poster
+                        // Create intelligence embed for each poster - GOLD for Pirate King, RED for others
                         const embed = new EmbedBuilder()
                             .setAuthor({ 
                                 name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                             })
-                            .setColor(0xFF0000);
+                            .setColor(isPirateKingData ? 0xFFD700 : 0xFF0000); // Gold for Pirate King, Red for others
 
                         // Intelligence summary for this pirate - ALL RED TEXT
                         let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
@@ -416,12 +416,12 @@ module.exports = {
                         // Get bounty amount for embed
                         const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
                         
-                        // Create detailed red intelligence embed for each poster
+                        // Create intelligence embed for each poster - GOLD for Pirate King, RED for others
                         const embed = new EmbedBuilder()
                             .setAuthor({ 
                                 name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                             })
-                            .setColor(0xFF0000);
+                            .setColor(isPirateKingData ? 0xFFD700 : 0xFF0000); // Gold for Pirate King, Red for others
 
                         // Intelligence summary for this pirate - ALL RED TEXT
                         let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
