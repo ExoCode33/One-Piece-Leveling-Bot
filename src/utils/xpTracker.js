@@ -10,8 +10,69 @@ class XPTracker {
         this.cooldowns = new Map();
         this.dailyVoiceXP = new Map();
         
+        // Initialize guild settings from database
+        this.loadGuildSettingsFromDatabase();
+        
         // Initialize voice sessions for users already in voice channels
         this.initializeExistingVoiceSessions();
+    }
+
+    // NEW: Load all guild settings from database on startup
+    async loadGuildSettingsFromDatabase() {
+        try {
+            console.log('[SETTINGS] Loading guild settings from database...');
+            
+            // Initialize global guild settings map if it doesn't exist
+            if (!global.guildSettings) {
+                global.guildSettings = new Map();
+            }
+
+            // Ensure guild_settings table exists
+            await this.db.query(`
+                CREATE TABLE IF NOT EXISTS guild_settings (
+                    guild_id VARCHAR(20) PRIMARY KEY,
+                    levelup_channel VARCHAR(20),
+                    levelup_enabled BOOLEAN DEFAULT true,
+                    xp_log_channel VARCHAR(20),
+                    xp_log_enabled BOOLEAN DEFAULT false,
+                    xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Load all guild settings from database
+            const result = await this.db.query(`
+                SELECT guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier
+                FROM guild_settings
+            `);
+
+            let loadedCount = 0;
+            for (const row of result.rows) {
+                const guildSettings = {
+                    levelupChannel: row.levelup_channel,
+                    levelupEnabled: row.levelup_enabled,
+                    xpLogChannel: row.xp_log_channel,
+                    xpLogEnabled: row.xp_log_enabled,
+                    xpMultiplier: parseFloat(row.xp_multiplier)
+                };
+
+                global.guildSettings.set(row.guild_id, guildSettings);
+                loadedCount++;
+
+                console.log(`[SETTINGS] Loaded settings for guild ${row.guild_id}: XP Multiplier ${row.xp_multiplier}x, Level Up ${row.levelup_enabled ? 'enabled' : 'disabled'}`);
+            }
+
+            console.log(`[SETTINGS] Successfully loaded ${loadedCount} guild configurations from database`);
+
+        } catch (error) {
+            console.error('[SETTINGS] Error loading guild settings from database:', error);
+            
+            // Initialize empty map if loading fails
+            if (!global.guildSettings) {
+                global.guildSettings = new Map();
+            }
+        }
     }
 
     // NEW: Initialize voice sessions for users already in voice channels when bot starts
