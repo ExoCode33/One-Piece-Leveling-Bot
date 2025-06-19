@@ -225,8 +225,24 @@ class XPTracker {
             const logEnabled = guildSettings?.xpLogEnabled === true;
             if (!logEnabled) return;
 
-            // Get log channel from guild settings
-            const logChannelId = guildSettings?.xpLogChannel;
+            // Get log channel from guild settings or find default
+            let logChannelId = guildSettings?.xpLogChannel;
+            
+            if (!logChannelId) {
+                // Try to find the default leveling event log channel
+                const guild = this.client.guilds.cache.get(firstActivity.guildId);
+                if (guild) {
+                    const defaultLogChannel = guild.channels.cache.find(ch => 
+                        ch.name.toLowerCase().includes('leveling-event-log') && ch.isTextBased()
+                    );
+                    
+                    if (defaultLogChannel) {
+                        logChannelId = defaultLogChannel.id;
+                        console.log(`[VOICE XP SUMMARY] Using default log channel: ${defaultLogChannel.name}`);
+                    }
+                }
+            }
+            
             if (!logChannelId) return;
 
             // Check if voice logging is enabled
@@ -421,16 +437,26 @@ class XPTracker {
             }
 
             if (!channelId || channelId === 'your_levelup_channel_id') {
-                // Try to find a default channel
-                const defaultChannels = ['general', 'chat', 'levelup', 'announcements'];
-                for (const name of defaultChannels) {
-                    const foundChannel = guild.channels.cache.find(ch => 
-                        ch.name.toLowerCase().includes(name) && ch.isTextBased()
-                    );
-                    if (foundChannel) {
-                        channelId = foundChannel.id;
-                        console.log(`[LEVEL UP] Using default channel: ${foundChannel.name}`);
-                        break;
+                // Try to find the default bounty notices channel first
+                const defaultChannel = guild.channels.cache.find(ch => 
+                    ch.name.toLowerCase().includes('bounty-notices') && ch.isTextBased()
+                );
+                
+                if (defaultChannel) {
+                    channelId = defaultChannel.id;
+                    console.log(`[LEVEL UP] Using default bounty channel: ${defaultChannel.name}`);
+                } else {
+                    // Fallback to other common channel names
+                    const fallbackChannels = ['general', 'chat', 'levelup', 'announcements'];
+                    for (const name of fallbackChannels) {
+                        const foundChannel = guild.channels.cache.find(ch => 
+                            ch.name.toLowerCase().includes(name) && ch.isTextBased()
+                        );
+                        if (foundChannel) {
+                            channelId = foundChannel.id;
+                            console.log(`[LEVEL UP] Using fallback channel: ${foundChannel.name}`);
+                            break;
+                        }
                     }
                 }
             }
@@ -618,8 +644,24 @@ class XPTracker {
             const logEnabled = guildSettings?.xpLogEnabled === true;
             if (!logEnabled) return;
 
-            // Get log channel from guild settings
-            const logChannelId = guildSettings?.xpLogChannel;
+            // Get log channel from guild settings or find default
+            let logChannelId = guildSettings?.xpLogChannel;
+            
+            if (!logChannelId) {
+                // Try to find the default leveling event log channel
+                const guild = this.client.guilds.cache.get(guildId);
+                if (guild) {
+                    const defaultLogChannel = guild.channels.cache.find(ch => 
+                        ch.name.toLowerCase().includes('leveling-event-log') && ch.isTextBased()
+                    );
+                    
+                    if (defaultLogChannel) {
+                        logChannelId = defaultLogChannel.id;
+                        console.log(`[XP LOG] Using default log channel: ${defaultLogChannel.name}`);
+                    }
+                }
+            }
+            
             if (!logChannelId) return;
 
             // Check specific logging settings (fallback to environment variables)
