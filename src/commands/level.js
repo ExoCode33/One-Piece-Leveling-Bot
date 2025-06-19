@@ -161,12 +161,12 @@ module.exports = {
                 return "MONITORING";
             }
 
-            // Create Marine Intelligence report with EXACT SAME format as leaderboard
+            // Create Marine Intelligence report - GOLD for Pirate King, RED for others
             const embed = new EmbedBuilder()
                 .setAuthor({ 
                     name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                 })
-                .setColor(0xFF0000);
+                .setColor(isPirateKing ? 0xFFD700 : 0xFF0000); // Gold for Pirate King, Red for others
 
             // Intelligence summary for this pirate - ALL RED TEXT
             let intelligenceValue = `\`\`\`diff\n- Alias: ${member.displayName}\n- Bounty: ฿${currentBounty.toLocaleString()}\n- Level: ${currentLevel} | Rank: ${isPirateKing ? 'PIRATE KING' : `#${userRank}`}\n- Threat: ${getThreatLevelName(currentLevel, isPirateKing)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
