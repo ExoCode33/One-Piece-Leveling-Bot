@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Fixed to announce EVERY level gained with red text admin logs
+// src/utils/xpTracker.js - Complete fixed file with working settings and admin permissions
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -206,7 +206,7 @@ class XPTracker {
             // Get guild settings for multiplier
             const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
             
-            // Apply YOUR XP multiplier
+            // Apply guild XP multiplier (database setting takes priority over environment)
             const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
             const finalXP = Math.floor(xpAmount * multiplier);
 
@@ -320,14 +320,22 @@ class XPTracker {
                 return;
             }
 
-            // Get notification channel
-            let channelId = process.env.LEVELUP_CHANNEL;
+            // Get guild settings from database/memory
+            const guildSettings = global.guildSettings?.get(guildId);
             
             // Check if levelup is enabled
-            const levelupEnabled = process.env.LEVELUP_ENABLED !== 'false';
+            const levelupEnabled = guildSettings?.levelupEnabled !== false; // Default to true
             if (!levelupEnabled) {
-                console.log('[LEVEL UP] Level up announcements disabled');
+                console.log('[LEVEL UP] Level up announcements disabled for this guild');
                 return;
+            }
+
+            // Get notification channel from guild settings
+            let channelId = guildSettings?.levelupChannel;
+            
+            // Fallback to environment variable if not set in database
+            if (!channelId) {
+                channelId = process.env.LEVELUP_CHANNEL;
             }
 
             if (!channelId || channelId === 'your_levelup_channel_id') {
@@ -518,16 +526,21 @@ class XPTracker {
         }
     }
 
-    // XP Logging function for admin purposes - FIXED with red text and no surveillance line
+    // XP Logging function for admin purposes - FIXED with red text and guild settings
     async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
         try {
-            // Check if XP logging is enabled
-            const logChannelId = process.env.XP_LOG_CHANNEL;
-            const logEnabled = process.env.XP_LOG_ENABLED === 'true';
+            // Get guild settings from database/memory
+            const guildSettings = global.guildSettings?.get(guildId);
             
-            if (!logChannelId || !logEnabled) return;
+            // Check if XP logging is enabled for this guild
+            const logEnabled = guildSettings?.xpLogEnabled === true;
+            if (!logEnabled) return;
 
-            // Check specific logging settings
+            // Get log channel from guild settings
+            const logChannelId = guildSettings?.xpLogChannel;
+            if (!logChannelId) return;
+
+            // Check specific logging settings (fallback to environment variables)
             const logSettings = {
                 message: process.env.XP_LOG_MESSAGES !== 'false',
                 reaction: process.env.XP_LOG_REACTIONS !== 'false',
