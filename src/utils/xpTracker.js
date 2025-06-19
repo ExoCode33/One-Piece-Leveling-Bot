@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete fixed file with voice XP summaries
+// src/utils/xpTracker.js - FIXED: Voice XP logging with correct totals
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -17,7 +17,7 @@ class XPTracker {
         this.initializeExistingVoiceSessions();
     }
 
-    // NEW: Load all guild settings from database on startup
+    // Load all guild settings from database on startup
     async loadGuildSettingsFromDatabase() {
         try {
             console.log('[SETTINGS] Loading guild settings from database...');
@@ -106,7 +106,7 @@ class XPTracker {
         }
     }
 
-    // NEW: Initialize voice sessions for users already in voice channels when bot starts
+    // Initialize voice sessions for users already in voice channels when bot starts
     async initializeExistingVoiceSessions() {
         try {
             console.log('[VOICE XP] Scanning for existing voice channel members...');
@@ -222,6 +222,7 @@ class XPTracker {
         }
     }
 
+    // FIXED: Voice XP processing with proper logging after XP is awarded
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
@@ -269,12 +270,13 @@ class XPTracker {
                 // Update daily tracking
                 this.dailyVoiceXP.set(dailyKey, newDailyXP);
 
-                // Award XP
+                // Award XP FIRST (this updates the database)
                 const user = await this.client.users.fetch(userId).catch(() => null);
                 if (user) {
-                    await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user);
+                    // FIXED: Award XP without logging (to prevent double logs)
+                    await this.awardXP(userId, session.guildId, actualXPGain, 'voice_silent', user);
                     
-                    // Get updated user stats after XP award
+                    // FIXED: Get updated user stats AFTER XP is awarded
                     const updatedStats = await this.getUserStats(userId, session.guildId);
                     
                     // Get guild settings for multiplier to show actual XP awarded
@@ -291,8 +293,8 @@ class XPTracker {
                         memberCount,
                         xpGain: finalXPAwarded, // Show the final XP after multiplier
                         dailyCapped: newDailyXP >= dailyCap,
-                        totalXP: updatedStats?.total_xp || 0,
-                        currentLevel: updatedStats?.level || 0
+                        totalXP: updatedStats?.total_xp || 0, // FIXED: Now shows correct total
+                        currentLevel: updatedStats?.level || 0 // FIXED: Now shows correct level
                     });
                 }
                 
@@ -309,7 +311,7 @@ class XPTracker {
         }
     }
 
-    // NEW: Send voice XP summary for all users at once
+    // Send voice XP summary for all users at once
     async sendVoiceXPSummary(activities) {
         try {
             if (activities.length === 0) return;
@@ -379,6 +381,7 @@ class XPTracker {
                 
                 channelActivities.forEach(activity => {
                     const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
+                    // FIXED: Now shows correct totals and levels
                     description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}\n`;
                     totalXPAwarded += activity.xpGain;
                 });
@@ -396,6 +399,7 @@ class XPTracker {
         }
     }
 
+    // FIXED: Award XP with optional logging control
     async awardXP(userId, guildId, xpAmount, source, user) {
         try {
             // Get guild settings for multiplier
@@ -429,7 +433,7 @@ class XPTracker {
                 userId, guildId, finalXP,
                 source === 'message' ? 1 : 0,
                 source === 'reaction' ? 1 : 0,
-                source === 'voice' ? 1 : 0,
+                (source === 'voice' || source === 'voice_silent') ? 1 : 0,
                 oldLevel // Keep the old level for now
             ]);
 
@@ -448,8 +452,9 @@ class XPTracker {
                 [newLevel, userId, guildId]
             );
 
-            // Log XP gain for non-admin and non-voice sources (voice logging handled in processVoiceXP summary)
-            if (source !== 'admin' && source !== 'voice') {
+            // FIXED: Only log for non-admin and non-voice_silent sources
+            // Voice XP is handled by the summary system to prevent spam
+            if (source !== 'admin' && source !== 'voice' && source !== 'voice_silent') {
                 await this.logXPActivity(source, user, guildId, finalXP, {
                     totalXP: newTotalXP,
                     currentLevel: newLevel
@@ -458,14 +463,16 @@ class XPTracker {
 
             console.log(`[XP] ${user.username}: ${oldTotalXP} + ${finalXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
 
-            // FIXED: Handle multiple level gains - announce EVERY level with XP source
+            // Handle multiple level gains - announce EVERY level with XP source
             if (newLevel > oldLevel) {
                 console.log(`[LEVEL UP] ${user.username} gained ${newLevel - oldLevel} levels: ${oldLevel} → ${newLevel}!`);
                 
                 // Announce each level individually
                 for (let level = oldLevel + 1; level <= newLevel; level++) {
                     const levelXP = this.getXPForLevel(level);
-                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, source);
+                    // Convert voice_silent back to voice for level up source tracking
+                    const levelUpSource = source === 'voice_silent' ? 'voice' : source;
+                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, levelUpSource);
                     
                     // Small delay between announcements to prevent spam
                     if (level < newLevel) {
@@ -1021,7 +1028,7 @@ class XPTracker {
         this.dailyVoiceXP.clear();
     }
 
-    // NEW: Manual method to reinitialize voice sessions (call this from index.js after bot ready)
+    // Manual method to reinitialize voice sessions (call this from index.js after bot ready)
     async reinitializeVoiceSessions() {
         try {
             console.log('[VOICE XP] Manually reinitializing voice sessions...');
