@@ -185,6 +185,11 @@ class XPTracker {
                     // Get updated user stats after XP award
                     const updatedStats = await this.getUserStats(userId, session.guildId);
                     
+                    // Get guild settings for multiplier to show actual XP awarded
+                    const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
+                    const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+                    const finalXPAwarded = Math.floor(actualXPGain * multiplier);
+                    
                     // Add to voice activities collection for batch logging
                     voiceActivities.push({
                         user,
@@ -192,7 +197,7 @@ class XPTracker {
                         channelName: channel.name,
                         sessionDuration: Math.floor((now - session.joinTime) / 60000),
                         memberCount,
-                        xpGain: actualXPGain,
+                        xpGain: finalXPAwarded, // Show the final XP after multiplier
                         dailyCapped: newDailyXP >= dailyCap,
                         totalXP: updatedStats?.total_xp || 0,
                         currentLevel: updatedStats?.level || 0
