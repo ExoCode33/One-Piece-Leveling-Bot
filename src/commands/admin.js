@@ -1,6 +1,4 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
-// Use your existing database connection - adjust path as needed
-const pool = require('../../database'); // or whatever your database file is called
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -30,7 +28,7 @@ module.exports = {
         }
 
         const subcommand = interaction.options.getSubcommand();
-        const pool = require('../../database'); // Use your existing database connection
+        const { pool } = require('../../index'); // Get pool from index.js
 
         try {
             if (subcommand === 'stats') {
