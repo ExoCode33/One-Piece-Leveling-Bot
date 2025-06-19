@@ -9,6 +9,56 @@ class XPTracker {
         this.voiceSessions = new Map();
         this.cooldowns = new Map();
         this.dailyVoiceXP = new Map();
+        
+        // Initialize voice sessions for users already in voice channels
+        this.initializeExistingVoiceSessions();
+    }
+
+    // NEW: Initialize voice sessions for users already in voice channels when bot starts
+    async initializeExistingVoiceSessions() {
+        try {
+            console.log('[VOICE XP] Scanning for existing voice channel members...');
+            
+            // Wait a moment for the client to be fully ready
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            let totalFound = 0;
+            
+            // Scan all guilds the bot is in
+            for (const [guildId, guild] of this.client.guilds.cache) {
+                try {
+                    // Check all voice channels in this guild
+                    const voiceChannels = guild.channels.cache.filter(channel => 
+                        channel.type === 2 && // Voice channel type
+                        channel.members && 
+                        channel.members.size > 0
+                    );
+                    
+                    for (const [channelId, channel] of voiceChannels) {
+                        // Add each non-bot member to voice sessions
+                        for (const [memberId, member] of channel.members) {
+                            if (!member.user.bot) {
+                                this.voiceSessions.set(memberId, {
+                                    guildId: guildId,
+                                    channelId: channelId,
+                                    joinTime: Date.now(), // Use current time as join time
+                                    lastXPTime: Date.now()
+                                });
+                                totalFound++;
+                                console.log(`[VOICE XP] Added existing member: ${member.user.username} in ${channel.name}`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[VOICE XP] Error scanning guild ${guild.name}:`, error);
+                }
+            }
+            
+            console.log(`[VOICE XP] Initialized ${totalFound} existing voice sessions`);
+            
+        } catch (error) {
+            console.error('[VOICE XP] Error initializing existing voice sessions:', error);
+        }
     }
 
     async handleMessageXP(message) {
@@ -755,6 +805,62 @@ class XPTracker {
         this.voiceSessions.clear();
         this.cooldowns.clear();
         this.dailyVoiceXP.clear();
+    }
+
+    // NEW: Manual method to reinitialize voice sessions (call this from index.js after bot ready)
+    async reinitializeVoiceSessions() {
+        try {
+            console.log('[VOICE XP] Manually reinitializing voice sessions...');
+            this.voiceSessions.clear(); // Clear existing sessions first
+            
+            let totalFound = 0;
+            
+            for (const [guildId, guild] of this.client.guilds.cache) {
+                try {
+                    // Fetch fresh guild data
+                    await guild.fetch();
+                    
+                    // Get all voice channels
+                    const voiceChannels = guild.channels.cache.filter(channel => 
+                        channel.type === 2 // Voice channel
+                    );
+                    
+                    for (const [channelId, channel] of voiceChannels) {
+                        try {
+                            // Fetch fresh channel members
+                            await channel.fetch();
+                            
+                            if (channel.members && channel.members.size > 0) {
+                                for (const [memberId, member] of channel.members) {
+                                    if (!member.user.bot) {
+                                        this.voiceSessions.set(memberId, {
+                                            guildId: guildId,
+                                            channelId: channelId,
+                                            joinTime: Date.now(),
+                                            lastXPTime: Date.now()
+                                        });
+                                        totalFound++;
+                                        console.log(`[VOICE XP] Reinitialized: ${member.user.username} in ${channel.name} (${guild.name})`);
+                                    }
+                                }
+                            }
+                        } catch (channelError) {
+                            console.error(`[VOICE XP] Error with channel ${channel.name}:`, channelError);
+                        }
+                    }
+                    
+                } catch (guildError) {
+                    console.error(`[VOICE XP] Error with guild ${guild.name}:`, guildError);
+                }
+            }
+            
+            console.log(`[VOICE XP] Successfully reinitialized ${totalFound} voice sessions`);
+            return totalFound;
+            
+        } catch (error) {
+            console.error('[VOICE XP] Error reinitializing voice sessions:', error);
+            return 0;
+        }
     }
 
     // EXACT SAME createWantedPoster function from level.js
