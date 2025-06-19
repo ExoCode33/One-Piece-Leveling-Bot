@@ -4,18 +4,14 @@ const { createCanvas, loadImage, registerFont } = require('canvas');
 const { getBountyForLevel } = require('../utils/bountySystem');
 const path = require('path');
 
-// Register custom fonts - Railway safe version
+// Register custom fonts - Keep your original font loading
 try {
-    if (process.env.NODE_ENV !== 'production') {
-        registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
-        registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
-        registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
-        console.log('[DEBUG] Level command: Successfully registered custom fonts');
-    } else {
-        console.log('[INFO] Level command: Using system fonts in production mode');
-    }
+    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+    console.log('[DEBUG] Level command: Successfully registered custom fonts');
 } catch (error) {
-    console.log('[INFO] Level command: Font registration skipped, using system fonts');
+    console.error('[ERROR] Level command: Failed to register custom fonts:', error.message);
 }
 
 module.exports = {
@@ -172,7 +168,7 @@ module.exports = {
                 })
                 .setColor(0xFF0000);
 
-            // Intelligence summary for this pirate (EXACT SAME as leaderboard)
+            // Intelligence summary for this pirate - ALL RED TEXT
             let intelligenceValue = `\`\`\`diff\n- Alias: ${member.displayName}\n- Bounty: ฿${currentBounty.toLocaleString()}\n- Level: ${currentLevel} | Rank: ${isPirateKing ? 'PIRATE KING' : `#${userRank}`}\n- Threat: ${getThreatLevelName(currentLevel, isPirateKing)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
             embed.addFields({
@@ -197,9 +193,10 @@ module.exports = {
             }
 
             if (isPirateKing) {
+                // FIXED: Remove "EXCLUDED FROM BOUNTY TRACKING" and make all text red
                 embed.addFields({
                     name: '👑 SPECIAL CLASSIFICATION',
-                    value: `\`\`\`diff\n+ EMPEROR STATUS CONFIRMED\n+ EXCLUDED FROM BOUNTY TRACKING\n+ MAXIMUM THREAT DESIGNATION\n! APPROACH WITH EXTREME CAUTION\n\`\`\``,
+                    value: `\`\`\`diff\n- EMPEROR STATUS CONFIRMED\n- MAXIMUM THREAT DESIGNATION\n- APPROACH WITH EXTREME CAUTION\n\`\`\``,
                     inline: false
                 });
             }
@@ -341,7 +338,7 @@ async function createWantedPoster(userData, guild) {
     const nameX = (50/100) * width; // Horiz 50: centered
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
+    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS WITH PIRATE KING SUPPORT
     const berryBountyGap = 5; // Fixed gap in our 1-100 scale
     
     // FIXED: Get BOUNTY amount for user's level and check if Pirate King
