@@ -107,7 +107,7 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
                     })
                     .setTitle('MANUAL XP ADJUSTMENT')
-                    .setDescription(`\`\`\`ansi\n\u001b[0;31m- ADMINISTRATIVE ACTION\n- TARGET: ${user.username} (${user.id})\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown Officer'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason specified'}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- NEW LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ADMIN COMMAND\u001b[0m\n\`\`\``);
+                    .setDescription(`\`\`\`ansi\n\u001b[0;31m- ADMINISTRATIVE ACTION\n- TARGET: ${user.username}\n- TARGET ID: ${user.id}\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown Officer'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason specified'}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- NEW LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ADMIN COMMAND\u001b[0m\n\`\`\``);
                 break;
 
             default:
