@@ -1,4 +1,4 @@
-// index.js - Complete fixed version with proper client setup
+// index.js - Complete fixed version with Pirate King exclusion
 
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { Pool } = require('pg');
@@ -270,9 +270,11 @@ client.on('messageCreate', async message => {
         // Get guild settings
         const guildSettings = await getGuildSettings(message.guild.id);
         
-        // Check if user has excluded role
+        // Check if user has excluded role (Pirate King)
         const member = message.member;
-        if (guildSettings.excludedRole && member && member.roles.cache.has(guildSettings.excludedRole)) {
+        const excludedRoleId = guildSettings.excludedRole || process.env.LEADERBOARD_EXCLUDE_ROLE;
+        if (excludedRoleId && member && member.roles.cache.has(excludedRoleId)) {
+            console.log(`[XP] Skipping XP for Pirate King: ${member.displayName}`);
             return; // Skip XP for excluded role (Pirate King)
         }
         
@@ -315,9 +317,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
         // Get guild settings
         const guildSettings = await getGuildSettings(reaction.message.guild.id);
         
-        // Check if user has excluded role
+        // Check if user has excluded role (Pirate King)
         const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
-        if (guildSettings.excludedRole && member && member.roles.cache.has(guildSettings.excludedRole)) {
+        const excludedRoleId = guildSettings.excludedRole || process.env.LEADERBOARD_EXCLUDE_ROLE;
+        if (excludedRoleId && member && member.roles.cache.has(excludedRoleId)) {
+            console.log(`[XP] Skipping reaction XP for Pirate King: ${member.displayName}`);
             return; // Skip XP for excluded role (Pirate King)
         }
         
