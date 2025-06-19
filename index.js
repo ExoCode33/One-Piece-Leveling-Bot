@@ -1,44 +1,93 @@
-const { Client, Collection, GatewayIntentBits, REST, Routes, ActivityType } = require('discord.js');
+// index.js - Complete fixed version with proper client setup
+
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-
-// Database connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
-
-// Initialize Discord client
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMembers
-    ]
-});
-
-// Initialize commands collection
-client.commands = new Collection();
+const XPTracker = require('./src/utils/xpTracker');
 
 // Environment validation
 const requiredEnvVars = ['DISCORD_TOKEN', 'DATABASE_URL'];
-const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
-
-if (missingEnvVars.length > 0) {
-    console.error(`[ERROR] Missing required environment variables: ${missingEnvVars.join(', ')}`);
-    process.exit(1);
+for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) {
+        console.error(`[ERROR] Missing required environment variable: ${envVar}`);
+        process.exit(1);
+    }
 }
 
 console.log('[INFO] Starting Discord Leveling Bot...');
 console.log('[INFO] Environment validation passed');
 
-// Load guild settings
-const { loadGuildSettings } = require('./src/utils/settings');
-loadGuildSettings();
+// Initialize database connection
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+// Test database connection and create tables
+async function initializeDatabase() {
+    try {
+        await db.query('SELECT NOW()');
+        console.log('[INFO] Database connection established');
+
+        // Create tables if they don't exist
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS user_levels (
+                user_id VARCHAR(20) NOT NULL,
+                guild_id VARCHAR(20) NOT NULL,
+                total_xp INTEGER DEFAULT 0,
+                level INTEGER DEFAULT 0,
+                messages INTEGER DEFAULT 0,
+                reactions INTEGER DEFAULT 0,
+                voice_time INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, guild_id)
+            )
+        `);
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id VARCHAR(20) PRIMARY KEY,
+                levelup_channel VARCHAR(20),
+                excluded_role VARCHAR(20),
+                xp_multiplier DECIMAL(3,1) DEFAULT 1.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        console.log('[INFO] Database tables initialized');
+    } catch (error) {
+        console.error('[ERROR] Database initialization failed:', error);
+        process.exit(1);
+    }
+}
+
+// Create client with required intents
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildMembers
+    ]
+});
+
+// Initialize collections
+client.commands = new Collection();
+
+// Set global client reference IMMEDIATELY
+global.client = client;
+
+// Initialize guild settings cache
+global.guildSettings = new Map();
+
+// Initialize XP Tracker with database
+const xpTracker = new XPTracker(client, db);
+global.xpTracker = xpTracker;
 
 // Load commands
 const commandsPath = path.join(__dirname, 'src', 'commands');
@@ -52,142 +101,151 @@ for (const file of commandFiles) {
         client.commands.set(command.data.name, command);
         console.log(`[DEBUG] ✅ Loaded command: ${command.data.name}`);
     } else {
-        console.log(`[WARNING] Command at ${filePath} is missing required "data" or "execute" property.`);
+        console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
     }
 }
 
-// Initialize XP tracking utilities
-const xpTracker = require('./src/utils/xpTracker');
-const messageXP = require('./src/utils/messageXP');
-const reactionXP = require('./src/utils/reactionXP');
-const voiceXP = require('./src/utils/voiceXP');
+// Helper function to get guild settings
+async function getGuildSettings(guildId) {
+    // Check cache first
+    if (global.guildSettings.has(guildId)) {
+        return global.guildSettings.get(guildId);
+    }
 
-// Initialize database tables
-async function initializeDatabase() {
     try {
-        // Create users table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                user_id VARCHAR(20) NOT NULL,
-                guild_id VARCHAR(20) NOT NULL,
-                username VARCHAR(255),
-                total_xp INTEGER DEFAULT 0,
-                level INTEGER DEFAULT 0,
-                message_count INTEGER DEFAULT 0,
-                voice_time INTEGER DEFAULT 0,
-                last_message TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, guild_id)
-            )
-        `);
+        // Get from database
+        const result = await db.query(
+            'SELECT * FROM guild_settings WHERE guild_id = $1',
+            [guildId]
+        );
 
-        // Create guild_settings table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS guild_settings (
-                id SERIAL PRIMARY KEY,
-                guild_id VARCHAR(20) UNIQUE NOT NULL,
-                excluded_role VARCHAR(20),
-                levelup_channel VARCHAR(20),
-                xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
-                levelup_enabled BOOLEAN DEFAULT true,
-                xp_log_enabled BOOLEAN DEFAULT false,
-                xp_log_channel VARCHAR(20),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
+        let settings;
+        if (result.rows.length > 0) {
+            settings = {
+                levelupChannel: result.rows[0].levelup_channel,
+                excludedRole: result.rows[0].excluded_role,
+                xpMultiplier: parseFloat(result.rows[0].xp_multiplier) || 1.0
+            };
+        } else {
+            // Create default settings
+            settings = {
+                levelupChannel: null,
+                excludedRole: null,
+                xpMultiplier: 1.0
+            };
+            
+            // Insert default settings into database
+            await db.query(
+                'INSERT INTO guild_settings (guild_id, xp_multiplier) VALUES ($1, $2) ON CONFLICT (guild_id) DO NOTHING',
+                [guildId, 1.0]
+            );
+        }
 
-        // Create daily_voice_xp table for voice XP cap tracking
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS daily_voice_xp (
-                id SERIAL PRIMARY KEY,
-                user_id VARCHAR(20) NOT NULL,
-                guild_id VARCHAR(20) NOT NULL,
-                date DATE DEFAULT CURRENT_DATE,
-                xp_earned INTEGER DEFAULT 0,
-                UNIQUE(user_id, guild_id, date)
-            )
-        `);
-
-        // Create indexes for better performance
-        await pool.query('CREATE INDEX IF NOT EXISTS idx_users_guild_xp ON users(guild_id, total_xp DESC)');
-        await pool.query('CREATE INDEX IF NOT EXISTS idx_users_user_guild ON users(user_id, guild_id)');
-        await pool.query('CREATE INDEX IF NOT EXISTS idx_daily_voice_date ON daily_voice_xp(date)');
-        
-        console.log('[INFO] Database tables initialized successfully');
+        // Cache the settings
+        global.guildSettings.set(guildId, settings);
+        return settings;
     } catch (error) {
-        console.error('[ERROR] Database initialization failed:', error);
-        throw error;
+        console.error('[ERROR] Error getting guild settings:', error);
+        return {
+            levelupChannel: null,
+            excludedRole: null,
+            xpMultiplier: 1.0
+        };
     }
 }
 
-// Bot ready event
+// Event handlers
 client.once('ready', async () => {
     console.log(`[INFO] Bot logged in as ${client.user.tag}`);
     
     try {
-        // Initialize database
+        // Initialize database first
         await initializeDatabase();
-        console.log('[INFO] Database connection established');
-        console.log('[INFO] Database tables initialized');
         
         // Register slash commands
         const commands = Array.from(client.commands.values()).map(command => command.data.toJSON());
         console.log(`[DEBUG] Registering ${commands.length} slash commands: ${commands.map(c => c.name).join(', ')}`);
+        console.log(`[DEBUG] Using bot application ID: ${client.application.id}`);
         
-        const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-        const applicationId = client.user.id;
-        console.log(`[DEBUG] Using bot application ID: ${applicationId}`);
-        
-        await rest.put(
-            Routes.applicationCommands(applicationId),
-            { body: commands }
-        );
-        
+        await client.application.commands.set(commands);
         console.log('[INFO] Successfully registered slash commands');
         
-        // Start periodic tasks
+        // Start periodic tasks ONLY after client is ready
         console.log('[INFO] Starting periodic tasks...');
-        startPeriodicTasks();
         
-        // Set bot status
-        client.user.setActivity('Marine Operations', { type: ActivityType.Watching });
+        // Process voice XP every minute
+        setInterval(() => {
+            if (client.isReady()) {
+                xpTracker.processVoiceXP().catch(error => {
+                    console.error('[ERROR] Error in voice XP processing:', error);
+                });
+            }
+        }, 60000);
+        
+        // Cleanup daily voice XP (run every 24 hours)
+        setInterval(() => {
+            if (client.isReady()) {
+                xpTracker.cleanupDailyVoiceXP().catch(error => {
+                    console.error('[ERROR] Error in daily cleanup:', error);
+                });
+            }
+        }, 24 * 60 * 60 * 1000);
+        
+        // Run initial cleanup
+        await xpTracker.cleanupDailyVoiceXP();
         
         console.log('[INFO] Discord Leveling Bot is fully operational!');
         console.log(`[INFO] Bot is in ${client.guilds.cache.size} servers`);
         console.log(`[INFO] Monitoring ${client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)} total members`);
-        console.log(`[INFO] Daily voice XP cap: ${process.env.DAILY_VOICE_XP_CAP || 4000} XP per user`);
-        
-        // Initialize voice XP tracking for existing members
-        setTimeout(() => {
-            voiceXP.scanExistingMembers(client);
-        }, 5000);
+        console.log(`[INFO] Daily voice XP cap: ${process.env.DAILY_VOICE_XP_CAP || 6000} XP per user`);
         
     } catch (error) {
-        console.error('[ERROR] Failed to initialize bot:', error);
-        process.exit(1);
+        console.error('[ERROR] Error during bot initialization:', error);
     }
 });
 
-// Slash command interactions
+// Handle button interactions for leaderboard first
 client.on('interactionCreate', async interaction => {
-    if (interaction.isCommand()) {
-        const command = client.commands.get(interaction.commandName);
+    if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
+        const leaderboardCommand = client.commands.get('leaderboard');
+        if (leaderboardCommand && leaderboardCommand.handleButtonInteraction) {
+            try {
+                await leaderboardCommand.handleButtonInteraction(interaction, xpTracker);
+            } catch (error) {
+                console.error('[ERROR] Button interaction error:', error);
+            }
+        }
+        return;
+    }
+    
+    // Handle admin nuclear buttons
+    if (interaction.isButton() && ['cleanup_inactive', 'optimize_db', 'backup_stats', 'nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
         
-        if (!command) {
-            console.error(`[ERROR] No command matching ${interaction.commandName} was found.`);
-            return;
+        // Security check
+        if (!interaction.member.permissions.has('Administrator')) {
+            return interaction.reply({
+                content: '```diff\n- ACCESS DENIED - NUCLEAR AUTHORIZATION REQUIRED\n- ADMINISTRATOR PERMISSIONS MANDATORY```',
+                ephemeral: true
+            });
         }
         
         try {
-            await command.execute(interaction);
+            const adminCommand = client.commands.get('admin');
+            
+            // Handle maintenance buttons
+            if (['cleanup_inactive', 'optimize_db', 'backup_stats'].includes(interaction.customId)) {
+                await adminCommand.handleMaintenanceButtons(interaction, db);
+            }
+            
+            // Handle nuclear buttons  
+            if (['nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
+                await adminCommand.handleNuclearButtons(interaction, db);
+            }
         } catch (error) {
-            console.error('[ERROR] Error executing command:', error);
+            console.error('[ERROR] Admin button error:', error);
             
             const errorMessage = {
-                content: '```diff\n- MARINE INTELLIGENCE SYSTEM ERROR\n- Command execution failed. Please try again.```',
+                content: '```diff\n- MARINE INTELLIGENCE SYSTEM ERROR\n- Button interaction failed. Please try again.```',
                 ephemeral: true
             };
             
@@ -197,134 +255,150 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply(errorMessage);
             }
         }
-    } else if (interaction.isButton()) {
-        // Handle button interactions for admin command
-        await handleAdminButtons(interaction);
+        return;
     }
 });
 
-// Button interaction handler for admin command
-async function handleAdminButtons(interaction) {
+// Interaction handler for slash commands
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const command = client.commands.get(interaction.commandName);
+
+    if (!command) {
+        console.error(`[ERROR] No command matching ${interaction.commandName} was found.`);
+        return;
+    }
+
     try {
-        // Check for admin buttons
-        if (['cleanup_inactive', 'optimize_db', 'backup_stats', 'nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
-            
-            // Security check
-            if (!interaction.member.permissions.has('Administrator')) {
-                return interaction.reply({
-                    content: '```diff\n- ACCESS DENIED - NUCLEAR AUTHORIZATION REQUIRED\n- ADMINISTRATOR PERMISSIONS MANDATORY```',
-                    ephemeral: true
-                });
-            }
-            
-            const adminCommand = require('./src/commands/admin');
-            
-            // Handle maintenance buttons
-            if (['cleanup_inactive', 'optimize_db', 'backup_stats'].includes(interaction.customId)) {
-                await adminCommand.handleMaintenanceButtons(interaction, pool);
-            }
-            
-            // Handle nuclear buttons  
-            if (['nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
-                await adminCommand.handleNuclearButtons(interaction, pool);
-            }
-        }
+        await command.execute(interaction);
     } catch (error) {
-        console.error('[ERROR] Admin button error:', error);
+        console.error(`[ERROR] Error executing command ${interaction.commandName}:`, error);
         
         const errorMessage = {
-            content: '```diff\n- MARINE INTELLIGENCE SYSTEM ERROR\n- Button interaction failed. Please try again.```',
+            content: 'There was an error while executing this command!',
             ephemeral: true
         };
-        
+
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp(errorMessage);
         } else {
             await interaction.reply(errorMessage);
         }
     }
-}
+});
 
-// Message events for XP tracking
+// Message handler for XP tracking
 client.on('messageCreate', async message => {
+    // Ignore bots and system messages
     if (message.author.bot || !message.guild) return;
     
-    // Check if user has excluded role (Pirate King)
-    const excludedRoleId = process.env.LEADERBOARD_EXCLUDE_ROLE;
-    if (excludedRoleId && message.member.roles.cache.has(excludedRoleId)) {
-        return; // Skip XP tracking for Pirate King
-    }
-    
     try {
-        await messageXP.handleMessage(message);
-        await xpTracker.updateUserXP(message.author.id, message.guild.id, 'message');
+        // Check cooldown (simple implementation)
+        const cooldownKey = `${message.author.id}_${message.guild.id}_message`;
+        const now = Date.now();
+        
+        if (!xpTracker.cooldowns) xpTracker.cooldowns = new Map();
+        
+        const lastUse = xpTracker.cooldowns.get(cooldownKey);
+        const cooldownTime = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
+        
+        if (lastUse && (now - lastUse) < cooldownTime) {
+            return;
+        }
+        
+        // Get guild settings
+        const guildSettings = await getGuildSettings(message.guild.id);
+        
+        // Check if user has excluded role
+        const member = message.member;
+        if (guildSettings.excludedRole && member && member.roles.cache.has(guildSettings.excludedRole)) {
+            return; // Skip XP for excluded role (Pirate King)
+        }
+        
+        // Calculate XP
+        const messageXPMin = parseInt(process.env.MESSAGE_XP_MIN) || 25;
+        const messageXPMax = parseInt(process.env.MESSAGE_XP_MAX) || 35;
+        const baseXP = Math.floor(Math.random() * (messageXPMax - messageXPMin + 1)) + messageXPMin;
+        const finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
+        
+        // Add XP for message
+        await xpTracker.awardXP(message.author.id, message.guild.id, finalXP, 'message', message.author);
+        
+        // Set cooldown
+        xpTracker.cooldowns.set(cooldownKey, now);
+        
     } catch (error) {
-        console.error('[ERROR] Message XP tracking error:', error);
+        console.error('[ERROR] Error processing message XP:', error);
     }
 });
 
-// Reaction events for XP tracking
+// Reaction handler for XP tracking
 client.on('messageReactionAdd', async (reaction, user) => {
+    // Ignore bots
     if (user.bot || !reaction.message.guild) return;
     
-    // Check if user has excluded role (Pirate King)
-    const excludedRoleId = process.env.LEADERBOARD_EXCLUDE_ROLE;
-    const member = reaction.message.guild.members.cache.get(user.id);
-    if (excludedRoleId && member && member.roles.cache.has(excludedRoleId)) {
-        return; // Skip XP tracking for Pirate King
-    }
-    
     try {
-        await reactionXP.handleReaction(reaction, user);
-        await xpTracker.updateUserXP(user.id, reaction.message.guild.id, 'reaction');
+        // Check cooldown
+        const cooldownKey = `${user.id}_${reaction.message.guild.id}_reaction`;
+        const now = Date.now();
+        
+        if (!xpTracker.cooldowns) xpTracker.cooldowns = new Map();
+        
+        const lastUse = xpTracker.cooldowns.get(cooldownKey);
+        const cooldownTime = parseInt(process.env.REACTION_COOLDOWN) || 300000;
+        
+        if (lastUse && (now - lastUse) < cooldownTime) {
+            return;
+        }
+        
+        // Get guild settings
+        const guildSettings = await getGuildSettings(reaction.message.guild.id);
+        
+        // Check if user has excluded role
+        const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
+        if (guildSettings.excludedRole && member && member.roles.cache.has(guildSettings.excludedRole)) {
+            return; // Skip XP for excluded role (Pirate King)
+        }
+        
+        // Calculate XP
+        const reactionXPMin = parseInt(process.env.REACTION_XP_MIN) || 25;
+        const reactionXPMax = parseInt(process.env.REACTION_XP_MAX) || 35;
+        const baseXP = Math.floor(Math.random() * (reactionXPMax - reactionXPMin + 1)) + reactionXPMin;
+        const finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
+        
+        // Add XP for reaction
+        await xpTracker.awardXP(user.id, reaction.message.guild.id, finalXP, 'reaction', user);
+        
+        // Set cooldown
+        xpTracker.cooldowns.set(cooldownKey, now);
+        
     } catch (error) {
-        console.error('[ERROR] Reaction XP tracking error:', error);
+        console.error('[ERROR] Error processing reaction XP:', error);
     }
 });
 
-// Voice state events for XP tracking
+// Voice state update handler
 client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-        await voiceXP.handleVoiceStateUpdate(oldState, newState);
+        await xpTracker.handleVoiceStateUpdate(oldState, newState);
     } catch (error) {
-        console.error('[ERROR] Voice XP tracking error:', error);
+        console.error('[ERROR] Error processing voice state update:', error);
     }
 });
 
-// Guild member events
-client.on('guildMemberAdd', member => {
-    console.log(`[INFO] New member joined: ${member.user.tag} in ${member.guild.name}`);
-});
-
-client.on('guildMemberRemove', member => {
-    console.log(`[INFO] Member left: ${member.user.tag} from ${member.guild.name}`);
-});
-
-// Guild events
-client.on('guildCreate', guild => {
-    console.log(`[INFO] Bot added to new guild: ${guild.name} (${guild.id})`);
-});
-
-client.on('guildDelete', guild => {
-    console.log(`[INFO] Bot removed from guild: ${guild.name} (${guild.id})`);
-});
-
-// Error handling
+// Error handlers
 client.on('error', error => {
     console.error('[ERROR] Discord client error:', error);
 });
 
-client.on('warn', warning => {
-    console.warn('[WARNING] Discord client warning:', warning);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('[ERROR] Unhandled promise rejection:', reason);
+process.on('unhandledRejection', error => {
+    console.error('[ERROR] Unhandled promise rejection:', error);
 });
 
 process.on('uncaughtException', error => {
-    console.error('[ERROR] Uncaught exception:', error);
-    process.exit(1);
+    console.error('[ERROR] Uncaught Exception:', error);
+    // Don't exit the process, just log the error
 });
 
 // Graceful shutdown
@@ -332,14 +406,19 @@ process.on('SIGINT', async () => {
     console.log('[INFO] Received SIGINT, shutting down gracefully...');
     
     try {
-        await client.destroy();
-        console.log('[INFO] Discord client destroyed');
-        
-        if (pool) {
-            await pool.end();
-            console.log('[INFO] Database connection closed');
+        if (xpTracker && xpTracker.cleanup) {
+            await xpTracker.cleanup();
         }
         
+        if (db) {
+            await db.end();
+        }
+        
+        if (client) {
+            client.destroy();
+        }
+        
+        console.log('[INFO] Shutdown complete');
         process.exit(0);
     } catch (error) {
         console.error('[ERROR] Error during shutdown:', error);
@@ -351,10 +430,19 @@ process.on('SIGTERM', async () => {
     console.log('[INFO] Received SIGTERM, shutting down gracefully...');
     
     try {
-        await client.destroy();
-        if (pool) {
-            await pool.end();
+        if (xpTracker && xpTracker.cleanup) {
+            await xpTracker.cleanup();
         }
+        
+        if (db) {
+            await db.end();
+        }
+        
+        if (client) {
+            client.destroy();
+        }
+        
+        console.log('[INFO] Shutdown complete');
         process.exit(0);
     } catch (error) {
         console.error('[ERROR] Error during shutdown:', error);
@@ -362,38 +450,8 @@ process.on('SIGTERM', async () => {
     }
 });
 
-// Periodic tasks
-function startPeriodicTasks() {
-    // Health check every 5 minutes
-    setInterval(() => {
-        const memoryUsage = process.memoryUsage();
-        const memoryMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
-        
-        if (memoryMB > 450) { // Warning at 450MB
-            console.warn(`[WARNING] High memory usage: ${memoryMB}MB`);
-        }
-        
-        console.log(`[HEALTH] Memory: ${memoryMB}MB | Guilds: ${client.guilds.cache.size} | Uptime: ${Math.floor(process.uptime() / 60)}min`);
-    }, 5 * 60 * 1000);
-    
-    // Database cleanup every hour
-    setInterval(async () => {
-        try {
-            // Clean up old voice sessions that might be stuck
-            await pool.query(`
-                DELETE FROM daily_voice_xp 
-                WHERE date < CURRENT_DATE - INTERVAL '7 days'
-            `);
-            
-            console.log('[CLEANUP] Cleaned old voice XP records');
-        } catch (error) {
-            console.error('[ERROR] Cleanup task failed:', error);
-        }
-    }, 60 * 60 * 1000);
-}
-
-// Export pool for use in commands
-module.exports = { pool };
+// Export database for admin command
+module.exports = { db };
 
 // Login to Discord
 client.login(process.env.DISCORD_TOKEN);
