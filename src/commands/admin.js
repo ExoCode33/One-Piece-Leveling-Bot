@@ -1,4 +1,4 @@
-// src/commands/admin.js - Updated for your original system with red Marine theme
+// src/commands/admin.js - Fixed version with proper syntax
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 
@@ -145,8 +145,18 @@ module.exports = {
         try {
             await interaction.deferReply({ ephemeral: true });
 
+            // Get XP tracker and database
+            const xpTracker = global.xpTracker;
+            if (!xpTracker || !xpTracker.db) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE COMMAND FAILED')
+                    .setDescription('XP Tracker not initialized.')
+                    .setColor('#DC143C');
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
             // Update database
-            await global.db.query(`
+            await xpTracker.db.query(`
                 INSERT INTO guild_settings (guild_id, levelup_channel, excluded_role, xp_multiplier)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (guild_id)
@@ -158,8 +168,10 @@ module.exports = {
             `, [guildId, levelupChannel?.id, excludedRole?.id, xpMultiplier]);
 
             // Update global cache
-            const currentSettings = global.guildSettings.get(guildId) || {};
+            const currentSettings = global.guildSettings?.get(guildId) || {};
+            global.guildSettings = global.guildSettings || new Map();
             global.guildSettings.set(guildId, {
+                ...currentSettings,
                 levelupChannel: levelupChannel?.id || currentSettings.levelupChannel,
                 excludedRole: excludedRole?.id || currentSettings.excludedRole,
                 xpMultiplier: xpMultiplier || currentSettings.xpMultiplier || 1.0
@@ -200,8 +212,18 @@ module.exports = {
         try {
             await interaction.deferReply({ ephemeral: true });
 
+            // Get XP tracker
+            const xpTracker = global.xpTracker;
+            if (!xpTracker || !xpTracker.db) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE COMMAND FAILED')
+                    .setDescription('XP Tracker not initialized.')
+                    .setColor('#DC143C');
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
             // Get current user stats
-            const currentStats = await global.db.query(
+            const currentStats = await xpTracker.db.query(
                 'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                 [user.id, guildId]
             );
@@ -211,7 +233,7 @@ module.exports = {
             const newXP = oldXP + amount;
 
             // Update or insert user stats
-            await global.db.query(`
+            await xpTracker.db.query(`
                 INSERT INTO user_levels (user_id, guild_id, total_xp, level)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (user_id, guild_id)
@@ -224,7 +246,7 @@ module.exports = {
             const newLevel = this.calculateLevel(newXP);
             
             // Update level in database
-            await global.db.query(
+            await xpTracker.db.query(
                 'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
                 [newLevel, user.id, guildId]
             );
@@ -235,6 +257,21 @@ module.exports = {
                 .setTitle('🚨 MARINE COMMAND EXECUTED 🚨')
                 .setDescription(`**MARINE INTELLIGENCE BUREAU - XP MODIFICATION**`)
                 .addFields([
+                    {
+                        name: '👤 SUBJECT',
+                        value: `${user}`,
+                        inline: true
+                    },
+                    {
+                        name: '📊 XP MODIFICATION',
+                        value: `**Added:** ${amount.toLocaleString()} XP\n**New Total:** ${newXP.toLocaleString()} XP\n**Level:** ${oldLevel} → ${newLevel}`,
+                        inline: true
+                    },
+                    {
+                        name: '⚓ AUTHORIZED BY',
+                        value: `Marine Officer: ${interaction.user.tag}`,
+                        inline: false
+                    },
                     {
                         name: '📝 REASON',
                         value: reason,
@@ -280,8 +317,18 @@ module.exports = {
         try {
             await interaction.deferReply({ ephemeral: true });
 
+            // Get XP tracker
+            const xpTracker = global.xpTracker;
+            if (!xpTracker || !xpTracker.db) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE COMMAND FAILED')
+                    .setDescription('XP Tracker not initialized.')
+                    .setColor('#DC143C');
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
             // Get current user stats
-            const currentStats = await global.db.query(
+            const currentStats = await xpTracker.db.query(
                 'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                 [user.id, guildId]
             );
@@ -300,14 +347,14 @@ module.exports = {
             const newXP = Math.max(0, oldXP - amount); // Prevent negative XP
 
             // Update XP
-            await global.db.query(
+            await xpTracker.db.query(
                 'UPDATE user_levels SET total_xp = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND guild_id = $3',
                 [newXP, user.id, guildId]
             );
 
             // Calculate new level
             const newLevel = this.calculateLevel(newXP);
-            await global.db.query(
+            await xpTracker.db.query(
                 'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
                 [newLevel, user.id, guildId]
             );
@@ -364,11 +411,21 @@ module.exports = {
         try {
             await interaction.deferReply({ ephemeral: true });
 
+            // Get XP tracker
+            const xpTracker = global.xpTracker;
+            if (!xpTracker || !xpTracker.db) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE COMMAND FAILED')
+                    .setDescription('XP Tracker not initialized.')
+                    .setColor('#DC143C');
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
             // Calculate required XP for target level
             const requiredXP = this.getXPForLevel(targetLevel);
 
             // Get current stats
-            const currentStats = await global.db.query(
+            const currentStats = await xpTracker.db.query(
                 'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                 [user.id, guildId]
             );
@@ -377,7 +434,7 @@ module.exports = {
             const oldLevel = currentStats.rows.length > 0 ? currentStats.rows[0].level : 0;
 
             // Update or insert user stats
-            await global.db.query(`
+            await xpTracker.db.query(`
                 INSERT INTO user_levels (user_id, guild_id, total_xp, level)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (user_id, guild_id)
@@ -445,8 +502,18 @@ module.exports = {
         try {
             await interaction.deferReply({ ephemeral: true });
 
+            // Get XP tracker
+            const xpTracker = global.xpTracker;
+            if (!xpTracker || !xpTracker.db) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE COMMAND FAILED')
+                    .setDescription('XP Tracker not initialized.')
+                    .setColor('#DC143C');
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
             // Delete user data
-            const result = await global.db.query(
+            const result = await xpTracker.db.query(
                 'DELETE FROM user_levels WHERE user_id = $1 AND guild_id = $2 RETURNING *',
                 [user.id, guildId]
             );
@@ -509,28 +576,38 @@ module.exports = {
         try {
             await interaction.deferReply({ ephemeral: true });
 
+            // Get XP tracker
+            const xpTracker = global.xpTracker;
+            if (!xpTracker || !xpTracker.db) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ MARINE COMMAND FAILED')
+                    .setDescription('XP Tracker not initialized.')
+                    .setColor('#DC143C');
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
             // Get server statistics
-            const totalUsers = await global.db.query(
+            const totalUsers = await xpTracker.db.query(
                 'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
                 [guildId]
             );
 
-            const totalXP = await global.db.query(
+            const totalXP = await xpTracker.db.query(
                 'SELECT SUM(total_xp) FROM user_levels WHERE guild_id = $1',
                 [guildId]
             );
 
-            const totalMessages = await global.db.query(
+            const totalMessages = await xpTracker.db.query(
                 'SELECT SUM(messages) FROM user_levels WHERE guild_id = $1',
                 [guildId]
             );
 
-            const topUser = await global.db.query(
+            const topUser = await xpTracker.db.query(
                 'SELECT user_id, total_xp, level FROM user_levels WHERE guild_id = $1 ORDER BY total_xp DESC LIMIT 1',
                 [guildId]
             );
 
-            const settings = global.guildSettings.get(guildId) || {};
+            const settings = global.guildSettings?.get(guildId) || {};
 
             const embed = new EmbedBuilder()
                 .setTitle('🚨 MARINE INTELLIGENCE REPORT 🚨')
@@ -607,19 +684,4 @@ module.exports = {
         
         return Math.floor(100 * Math.pow(level, multiplier));
     }
-};👤 SUBJECT',
-                        value: `${user}`,
-                        inline: true
-                    },
-                    {
-                        name: '📊 XP MODIFICATION',
-                        value: `**Added:** ${amount.toLocaleString()} XP\n**New Total:** ${newXP.toLocaleString()} XP\n**Level:** ${oldLevel} → ${newLevel}`,
-                        inline: true
-                    },
-                    {
-                        name: '⚓ AUTHORIZED BY',
-                        value: `Marine Officer: ${interaction.user.tag}`,
-                        inline: false
-                    },
-                    {
-                        name: '
+};
