@@ -65,7 +65,7 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         iconURL: user.displayAvatarURL({ size: 32 })
                     })
                     .setTitle('MESSAGE ACTIVITY DETECTED')
-                    .setDescription(`\`\`\`ansi\n\u001b[0;31m- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\u001b[0m\n\`\`\``);
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                 break;
 
             case 'reaction':
@@ -75,7 +75,7 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         iconURL: user.displayAvatarURL({ size: 32 })
                     })
                     .setTitle('REACTION ACTIVITY DETECTED')
-                    .setDescription(`\`\`\`ansi\n\u001b[0;31m- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\u001b[0m\n\`\`\``);
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                 break;
 
             case 'voice':
@@ -89,7 +89,7 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         iconURL: user.displayAvatarURL({ size: 32 })
                     })
                     .setTitle('VOICE ACTIVITY DETECTED')
-                    .setDescription(`\`\`\`ansi\n\u001b[0;31m- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${sessionDuration} minute(s)\n- MEMBERS PRESENT: ${memberCount}\n- XP AWARDED: +${xpGain}${dailyCap}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\u001b[0m\n\`\`\``);
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${sessionDuration} minute(s)\n- MEMBERS PRESENT: ${memberCount}\n- XP AWARDED: +${xpGain}${dailyCap}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
                 break;
 
             case 'levelup':
@@ -107,7 +107,7 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         iconURL: user.displayAvatarURL({ size: 32 })
                     })
                     .setTitle('⚠️ THREAT LEVEL INCREASED ⚠️')
-                    .setDescription(`\`\`\`ansi\n\u001b[0;31m+ BOUNTY UPDATE CONFIRMED\n+ SUBJECT: ${user.username} (${user.id})\n+ GUILD: ${additionalInfo.guildName || 'Unknown'}\n+ LEVEL PROGRESSION: ${oldLevel} → ${newLevel}\n+ TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n+ OLD BOUNTY: ฿${oldBounty.toLocaleString()}\n+ NEW BOUNTY: ฿${newBounty.toLocaleString()}\n+ BOUNTY INCREASE: +฿${bountyIncrease.toLocaleString()}\n+ XP SOURCE: ${xpSource.toUpperCase()}\n${additionalInfo.roleReward ? `+ ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\u001b[0m\n\`\`\``);
+                    .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- LEVEL PROGRESSION: ${oldLevel} → ${newLevel}\n- TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n- OLD BOUNTY: ฿${oldBounty.toLocaleString()}\n- NEW BOUNTY: ฿${newBounty.toLocaleString()}\n- BOUNTY INCREASE: +฿${bountyIncrease.toLocaleString()}\n- XP SOURCE: ${xpSource.toUpperCase()}\n${additionalInfo.roleReward ? `- ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\`\`\``);
                 break;
 
             case 'admin':
@@ -117,7 +117,7 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
                     })
                     .setTitle('MANUAL XP ADJUSTMENT')
-                    .setDescription(`\`\`\`ansi\n\u001b[0;31m- ADMINISTRATIVE ACTION\n- TARGET: ${user.username}\n- TARGET ID: ${user.id}\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown Officer'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason specified'}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- NEW LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n- XP SOURCE: ADMIN COMMAND\u001b[0m\n\`\`\``);
+                    .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username}\n- TARGET ID: ${user.id}\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown Officer'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason specified'}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- NEW LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n- XP SOURCE: ADMIN COMMAND\n\`\`\``);
                 break;
 
             default:
