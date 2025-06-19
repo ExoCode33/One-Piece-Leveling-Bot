@@ -1,6 +1,7 @@
-// src/utils/xpTracker.js - Your original system with environment variable support
+// src/utils/xpTracker.js - Complete fixed version with working level up announcements
 
 const { EmbedBuilder } = require('discord.js');
+const { quickLog } = require('./xpLogger'); // Import logging
 
 class XPTracker {
     constructor(client, database) {
@@ -128,6 +129,21 @@ class XPTracker {
                 const user = await this.client.users.fetch(userId).catch(() => null);
                 if (user) {
                     await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user);
+                    
+                    // Log voice XP with enhanced details
+                    const sessionDuration = Math.floor((now - session.joinTime) / 60000); // minutes
+                    const dailyCapped = newDailyXP >= dailyCap;
+                    
+                    await quickLog.voice(
+                        this.client, 
+                        user, 
+                        session.guildId, 
+                        actualXPGain, 
+                        channel, 
+                        sessionDuration, 
+                        memberCount, 
+                        dailyCapped
+                    );
                 }
                 
                 session.lastXPTime = now;
@@ -140,23 +156,26 @@ class XPTracker {
 
     async awardXP(userId, guildId, xpAmount, source, user) {
         try {
+            // Get guild settings for multiplier
+            const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
+            
             // Apply YOUR XP multiplier
-            const multiplier = parseFloat(process.env.XP_MULTIPLIER) || 1.0;
-            xpAmount = Math.floor(xpAmount * multiplier);
+            const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+            const finalXP = Math.floor(xpAmount * multiplier);
 
-            // Get current user stats using YOUR database structure
-            const currentResult = await this.db.query(
+            // Get current user stats BEFORE update
+            const beforeResult = await this.db.query(
                 'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                 [userId, guildId]
             );
 
-            const oldLevel = currentResult.rows.length > 0 ? currentResult.rows[0].level : 0;
-            const oldTotalXP = currentResult.rows.length > 0 ? currentResult.rows[0].total_xp : 0;
+            const oldLevel = beforeResult.rows.length > 0 ? beforeResult.rows[0].level : 0;
+            const oldTotalXP = beforeResult.rows.length > 0 ? beforeResult.rows[0].total_xp : 0;
 
             // Update user stats using YOUR database structure
-            const result = await this.db.query(`
-                INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time)
-                VALUES ($1, $2, $3, $4, $5, $6)
+            await this.db.query(`
+                INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time, level)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (user_id, guild_id)
                 DO UPDATE SET
                     total_xp = user_levels.total_xp + $3,
@@ -164,28 +183,35 @@ class XPTracker {
                     reactions = user_levels.reactions + $5,
                     voice_time = user_levels.voice_time + $6,
                     updated_at = CURRENT_TIMESTAMP
-                RETURNING total_xp, level
             `, [
-                userId, guildId, xpAmount,
+                userId, guildId, finalXP,
                 source === 'message' ? 1 : 0,
                 source === 'reaction' ? 1 : 0,
-                source === 'voice' ? 1 : 0
+                source === 'voice' ? 1 : 0,
+                oldLevel // Keep the old level for now
             ]);
 
-            const userStats = result.rows[0];
-            const newLevel = this.calculateLevel(userStats.total_xp);
+            // Get the NEW total XP after update
+            const afterResult = await this.db.query(
+                'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [userId, guildId]
+            );
 
-            // Check for level up - ONLY trigger Marine level-up for admin commands
-            if (newLevel > oldLevel && source === 'admin') {
-                await this.handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, userStats.total_xp, user);
-            }
+            const newTotalXP = afterResult.rows[0].total_xp;
+            const newLevel = this.calculateLevel(newTotalXP);
 
-            // Update level in database if it changed
-            if (newLevel !== userStats.level) {
-                await this.db.query(
-                    'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
-                    [newLevel, userId, guildId]
-                );
+            // Update the level in database
+            await this.db.query(
+                'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
+                [newLevel, userId, guildId]
+            );
+
+            console.log(`[XP] ${user.username}: ${oldTotalXP} + ${finalXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
+
+            // Check for level up - CRITICAL FIX: Only trigger if ACTUALLY leveled up
+            if (newLevel > oldLevel) {
+                console.log(`[LEVEL UP] ${user.username} leveled up from ${oldLevel} to ${newLevel}!`);
+                await this.handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user);
             }
 
         } catch (error) {
@@ -195,90 +221,171 @@ class XPTracker {
 
     async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user) {
         try {
-            // Award level roles using YOUR level role system
-            await this.awardLevelRoles(userId, guildId, newLevel);
+            console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
 
-            // Send Marine-themed level up notification ONLY for admin commands
-            await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user);
+            // Award level roles using YOUR level role system
+            const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
+
+            // Send Marine-themed level up notification - FIXED
+            await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward);
+
+            // Log the level up with enhanced details
+            await quickLog.levelup(this.client, user, guildId, oldLevel, newLevel, newTotalXP, roleReward);
+
+            console.log(`[LEVEL UP] Completed level up processing for ${user.username}`);
 
         } catch (error) {
             console.error('Error handling level up:', error);
         }
     }
 
-    async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user) {
+    async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward = null) {
         try {
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) return;
+            console.log(`[LEVEL UP] Sending notification for ${user.username}: ${oldLevel} → ${newLevel}`);
 
-            // Get notification channel using YOUR environment variable
-            const channelId = process.env.LEVELUP_CHANNEL;
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) {
+                console.log('[LEVEL UP] Guild not found');
+                return;
+            }
+
+            // Get notification channel - FIXED: Better channel detection
+            let channelId = process.env.LEVELUP_CHANNEL;
             
-            if (!channelId) return;
+            // Check if levelup is enabled
+            const levelupEnabled = process.env.LEVELUP_ENABLED !== 'false'; // Default to enabled
+            if (!levelupEnabled) {
+                console.log('[LEVEL UP] Level up announcements disabled');
+                return;
+            }
+
+            if (!channelId || channelId === 'your_levelup_channel_id') {
+                // Try to find a default channel
+                const defaultChannels = ['general', 'chat', 'levelup', 'announcements'];
+                for (const name of defaultChannels) {
+                    const foundChannel = guild.channels.cache.find(ch => 
+                        ch.name.toLowerCase().includes(name) && ch.isTextBased()
+                    );
+                    if (foundChannel) {
+                        channelId = foundChannel.id;
+                        console.log(`[LEVEL UP] Using default channel: ${foundChannel.name}`);
+                        break;
+                    }
+                }
+            }
+
+            if (!channelId) {
+                console.log('[LEVEL UP] No suitable channel found for announcements');
+                return;
+            }
 
             const channel = guild.channels.cache.get(channelId);
-            if (!channel) return;
+            if (!channel || !channel.isTextBased()) {
+                console.log(`[LEVEL UP] Channel ${channelId} not found or not text-based`);
+                return;
+            }
 
-            // Create clean Marine notification using YOUR bounty system
-            const embed = this.createCleanMarineEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP);
+            // Create Marine notification using YOUR bounty system
+            const embed = this.createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward);
 
             // Send the notification
-            await channel.send({ embeds: [embed] });
+            const message = await channel.send({ embeds: [embed] });
+            console.log(`[LEVEL UP] Notification sent successfully for ${user.username} in #${channel.name}`);
+
+            return message;
 
         } catch (error) {
             console.error('Error sending Marine level up notification:', error);
         }
     }
 
-    createCleanMarineEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP) {
-        const { getBountyForLevel } = require('./bountySystem');
-        
-        const oldBounty = getBountyForLevel(oldLevel);
-        const newBounty = getBountyForLevel(newLevel);
-        const bountyIncrease = newBounty - oldBounty;
+    createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward = null) {
+        try {
+            const { getBountyForLevel } = require('./bountySystem');
+            
+            const oldBounty = getBountyForLevel(oldLevel);
+            const newBounty = getBountyForLevel(newLevel);
+            const bountyIncrease = newBounty - oldBounty;
 
-        const embed = new EmbedBuilder()
-            .setColor('#DC143C')
-            .setTitle('🚨 WORLD GOVERNMENT BOUNTY UPDATE 🚨')
-            .setDescription(`**${user.username}** has reached a new level of infamy!\n\nSubject has crossed into Grand Line territory. Enhanced surveillance required.`)
-            .setThumbnail(user.displayAvatarURL({ size: 128 }))
-            .addFields(
-                {
-                    name: '📑 Previous Bounty',
-                    value: `Level ${oldLevel}\n฿${oldBounty.toLocaleString()}`,
-                    inline: true
-                },
-                {
-                    name: '🔥 NEW BOUNTY',
-                    value: `Level ${newLevel}\n฿${newBounty.toLocaleString()}`,
-                    inline: true
-                },
-                {
-                    name: '💰 Bounty Increase',
-                    value: `+฿${bountyIncrease.toLocaleString()}`,
-                    inline: true
-                },
-                {
-                    name: '📊 Marine Intelligence Report',
-                    value: `Multiple incidents involving Marine personnel. Elevated threat status.`,
+            // Get threat level message
+            function getThreatLevelName(level) {
+                if (level >= 55) return "LEGENDARY THREAT";
+                if (level >= 50) return "EMPEROR CLASS";
+                if (level >= 45) return "EXTRAORDINARY";
+                if (level >= 40) return "ELITE LEVEL";
+                if (level >= 35) return "TERRITORIAL";
+                if (level >= 30) return "ADVANCED COMBATANT";
+                if (level >= 25) return "HIGH PRIORITY";
+                if (level >= 20) return "DANGEROUS";
+                if (level >= 15) return "GRAND LINE";
+                if (level >= 10) return "ELEVATED";
+                if (level >= 5) return "CONFIRMED CRIMINAL";
+                return "MONITORING";
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor('#DC143C')
+                .setTitle('🚨 WORLD GOVERNMENT BOUNTY UPDATE 🚨')
+                .setDescription(`**${user.username}** has reached a new level of infamy!\n\n*${getThreatLevelName(newLevel)} threat level confirmed. Enhanced surveillance protocols activated.*`)
+                .setThumbnail(user.displayAvatarURL({ size: 128 }))
+                .addFields(
+                    {
+                        name: '📑 Previous Status',
+                        value: `Level ${oldLevel}\n฿${oldBounty.toLocaleString()}`,
+                        inline: true
+                    },
+                    {
+                        name: '🔥 NEW BOUNTY',
+                        value: `Level ${newLevel}\n฿${newBounty.toLocaleString()}`,
+                        inline: true
+                    },
+                    {
+                        name: '💰 Bounty Increase',
+                        value: `+฿${bountyIncrease.toLocaleString()}`,
+                        inline: true
+                    },
+                    {
+                        name: '📊 Intelligence Summary',
+                        value: `Total Criminal Activity: ${newTotalXP.toLocaleString()} XP\nThreat Classification: ${getThreatLevelName(newLevel)}`,
+                        inline: false
+                    }
+                );
+
+            // Add role reward if any
+            if (roleReward) {
+                embed.addFields({
+                    name: '👑 New Authority Granted',
+                    value: `**${roleReward}** role assigned for reaching Level ${newLevel}`,
                     inline: false
-                }
-            )
-            .setFooter({ 
+                });
+            }
+
+            embed.setFooter({ 
                 text: `⚓ Marine Intelligence • BOUNTY INCREASE CONFIRMED • ${new Date().toLocaleDateString()}` 
             })
             .setTimestamp();
 
-        return embed;
+            return embed;
+        } catch (error) {
+            console.error('Error creating Marine level up embed:', error);
+            
+            // Fallback embed if bounty system fails
+            return new EmbedBuilder()
+                .setColor('#DC143C')
+                .setTitle('🚨 LEVEL UP! 🚨')
+                .setDescription(`**${user.username}** leveled up from ${oldLevel} to ${newLevel}!`)
+                .setThumbnail(user.displayAvatarURL({ size: 128 }))
+                .setTimestamp();
+        }
     }
 
     async awardLevelRoles(userId, guildId, level) {
         try {
             const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) return;
+            if (!guild) return null;
 
             const member = await guild.members.fetch(userId).catch(() => null);
-            if (!member) return;
+            if (!member) return null;
 
             // Check for level-specific roles using YOUR environment variables
             const levelRoles = [
@@ -294,18 +401,25 @@ class XPTracker {
                 { level: 50, roleId: process.env.LEVEL_50_ROLE }
             ];
 
+            let roleReward = null;
+
             for (const { level: reqLevel, roleId } of levelRoles) {
-                if (level >= reqLevel && roleId) {
+                if (level >= reqLevel && roleId && roleId !== `role_id_${reqLevel}`) {
                     const role = guild.roles.cache.get(roleId);
                     if (role && !member.roles.cache.has(roleId)) {
                         await member.roles.add(role);
-                        console.log(`[INFO] Added level ${reqLevel} role to ${member.user.username}`);
+                        roleReward = role.name;
+                        console.log(`[LEVEL UP] Added level ${reqLevel} role (${role.name}) to ${member.user.username}`);
+                        break; // Only award the highest role achieved
                     }
                 }
             }
 
+            return roleReward;
+
         } catch (error) {
             console.error('Error awarding level roles:', error);
+            return null;
         }
     }
 
@@ -478,6 +592,13 @@ class XPTracker {
                 this.dailyVoiceXP.delete(key);
             }
         }
+    }
+
+    async cleanup() {
+        // Cleanup method for graceful shutdown
+        this.voiceSessions.clear();
+        this.cooldowns.clear();
+        this.dailyVoiceXP.clear();
     }
 }
 
