@@ -1,17 +1,21 @@
-// src/commands/level.js - Enhanced Marine themed version with Wanted Poster Canvas
+// src/commands/level.js - Enhanced Marine themed version with Pirate King support
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
 const { getBountyForLevel } = require('../utils/bountySystem');
 const path = require('path');
 
-// Register custom fonts
+// Register custom fonts - Railway safe version
 try {
-    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
-    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
-    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
-    console.log('[DEBUG] Level command: Successfully registered custom fonts');
+    if (process.env.NODE_ENV !== 'production') {
+        registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+        registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+        registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+        console.log('[DEBUG] Level command: Successfully registered custom fonts');
+    } else {
+        console.log('[INFO] Level command: Using system fonts in production mode');
+    }
 } catch (error) {
-    console.error('[ERROR] Level command: Failed to register custom fonts:', error.message);
+    console.log('[INFO] Level command: Font registration skipped, using system fonts');
 }
 
 module.exports = {
@@ -57,60 +61,96 @@ module.exports = {
             // Defer reply for Canvas processing
             await interaction.deferReply();
 
-            // Get user stats from database directly
-            console.log(`[DEBUG] Getting stats for user ${targetUser.id} in guild ${interaction.guild.id}`);
-            
-            const userStats = await global.xpTracker.db.query(
-                'SELECT * FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                [targetUser.id, interaction.guild.id]
-            );
-            
-            if (!userStats.rows || userStats.rows.length === 0) {
-                return await interaction.editReply({
-                    embeds: [new EmbedBuilder()
-                        .setColor(0xFF0000)
-                        .setTitle('MARINE INTELLIGENCE BUREAU')
-                        .setDescription('```diff\n- NO CRIMINAL RECORD FOUND\n- TARGET NOT IN DATABASE\n```')
-                        .setFooter({ text: 'World Government Intelligence Division' })
-                        .setTimestamp()]
-                });
+            // Check if user has excluded role (Pirate King)
+            const settings = global.guildSettings?.get(interaction.guild.id) || {};
+            const excludedRoleId = settings.excludedRole || process.env.LEADERBOARD_EXCLUDE_ROLE;
+            const isPirateKing = excludedRoleId && member.roles.cache.has(excludedRoleId);
+
+            let userData;
+            let currentLevel;
+            let totalXP;
+            let currentBounty;
+            let nextBounty;
+            let neededXP = 0;
+            let userRank = 'Unknown';
+
+            if (isPirateKing) {
+                // Pirate King data - fixed level 55
+                console.log(`[LEVEL] Displaying Pirate King data for ${targetUser.username}`);
+                
+                currentLevel = 55;
+                totalXP = 999999999; // High XP for display
+                currentBounty = getBountyForLevel(currentLevel, true); // true = isPirateKing
+                nextBounty = currentBounty; // No next level for Pirate King
+                userRank = 'PIRATE KING';
+                
+                userData = {
+                    userId: targetUser.id,
+                    level: currentLevel,
+                    total_xp: totalXP,
+                    messages: 0,
+                    reactions: 0,
+                    voice_time: 0,
+                    member: member,
+                    isPirateKing: true
+                };
+            } else {
+                // Regular user data from database
+                console.log(`[DEBUG] Getting stats for user ${targetUser.id} in guild ${interaction.guild.id}`);
+                
+                const userStats = await global.xpTracker.db.query(
+                    'SELECT * FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                    [targetUser.id, interaction.guild.id]
+                );
+                
+                if (!userStats.rows || userStats.rows.length === 0) {
+                    return await interaction.editReply({
+                        embeds: [new EmbedBuilder()
+                            .setColor(0xFF0000)
+                            .setTitle('MARINE INTELLIGENCE BUREAU')
+                            .setDescription('```diff\n- NO CRIMINAL RECORD FOUND\n- TARGET NOT IN DATABASE\n```')
+                            .setFooter({ text: 'World Government Intelligence Division' })
+                            .setTimestamp()]
+                    });
+                }
+
+                const dbData = userStats.rows[0];
+                currentLevel = global.xpTracker.calculateLevel(dbData.total_xp);
+                totalXP = dbData.total_xp;
+                currentBounty = getBountyForLevel(currentLevel);
+                nextBounty = getBountyForLevel(currentLevel + 1);
+                
+                // Calculate XP needed for next level
+                const currentLevelXP = global.xpTracker.getXPForLevel(currentLevel);
+                const nextLevelXP = global.xpTracker.getXPForLevel(currentLevel + 1);
+                neededXP = nextLevelXP - totalXP;
+
+                // Get user rank
+                const rankQuery = await global.xpTracker.db.query(
+                    'SELECT COUNT(*) + 1 as rank FROM user_levels WHERE guild_id = $1 AND total_xp > $2',
+                    [interaction.guild.id, totalXP]
+                );
+                userRank = rankQuery.rows[0]?.rank || 'Unknown';
+
+                userData = {
+                    userId: targetUser.id,
+                    level: currentLevel,
+                    total_xp: totalXP,
+                    messages: dbData.messages || 0,
+                    reactions: dbData.reactions || 0,
+                    voice_time: dbData.voice_time || 0,
+                    member: member,
+                    isPirateKing: false
+                };
             }
 
-            const userData = userStats.rows[0];
-            const currentLevel = global.xpTracker.calculateLevel(userData.total_xp);
-            const totalXP = userData.total_xp;
-            const currentBounty = getBountyForLevel(currentLevel);
-            const nextBounty = getBountyForLevel(currentLevel + 1);
-            
-            // Calculate XP needed for next level
-            const currentLevelXP = global.xpTracker.getXPForLevel(currentLevel);
-            const nextLevelXP = global.xpTracker.getXPForLevel(currentLevel + 1);
-            const neededXP = nextLevelXP - totalXP;
-
-            // Get user rank
-            const rankQuery = await global.xpTracker.db.query(
-                'SELECT COUNT(*) + 1 as rank FROM user_levels WHERE guild_id = $1 AND total_xp > $2',
-                [interaction.guild.id, totalXP]
-            );
-            const userRank = rankQuery.rows[0]?.rank || 'Unknown';
-
-            // Create the userData object for the wanted poster (same format as leaderboard)
-            const wantedPosterData = {
-                userId: targetUser.id,
-                level: currentLevel,
-                total_xp: totalXP,
-                messages: userData.messages || 0,
-                reactions: userData.reactions || 0,
-                voice_time: userData.voice_time || 0,
-                member: member
-            };
-
             // Create Canvas wanted poster (EXACT SAME as leaderboard)
-            const canvas = await createWantedPoster(wantedPosterData, interaction.guild);
+            const canvas = await createWantedPoster(userData, interaction.guild);
             const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${targetUser.id}.png` });
 
             // Helper function to get threat level name (same as leaderboard)
-            function getThreatLevelName(level) {
+            function getThreatLevelName(level, isPirateKingCheck = false) {
+                if (isPirateKingCheck) return "PIRATE KING";
                 if (level >= 55) return "LEGENDARY THREAT";
                 if (level >= 50) return "EMPEROR CLASS";
                 if (level >= 45) return "EXTRAORDINARY";
@@ -125,11 +165,6 @@ module.exports = {
                 return "MONITORING";
             }
 
-            // Check if user has excluded role (Pirate King)
-            const settings = global.guildSettings?.get(interaction.guild.id) || {};
-            const excludedRoleId = settings.excludedRole;
-            const isPirateKing = excludedRoleId && member.roles.cache.has(excludedRoleId);
-
             // Create Marine Intelligence report with EXACT SAME format as leaderboard
             const embed = new EmbedBuilder()
                 .setAuthor({ 
@@ -138,7 +173,7 @@ module.exports = {
                 .setColor(0xFF0000);
 
             // Intelligence summary for this pirate (EXACT SAME as leaderboard)
-            let intelligenceValue = `\`\`\`diff\n- Alias: ${member.displayName}\n- Bounty: ฿${currentBounty.toLocaleString()}\n- Level: ${currentLevel} | Rank: #${userRank}\n- Threat: ${getThreatLevelName(currentLevel)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
+            let intelligenceValue = `\`\`\`diff\n- Alias: ${member.displayName}\n- Bounty: ฿${currentBounty.toLocaleString()}\n- Level: ${currentLevel} | Rank: ${isPirateKing ? 'PIRATE KING' : `#${userRank}`}\n- Threat: ${getThreatLevelName(currentLevel, isPirateKing)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
             embed.addFields({
                 name: '📊 INTELLIGENCE SUMMARY',
@@ -146,16 +181,20 @@ module.exports = {
                 inline: false
             });
 
-            // Add progress to next level
-            const progressXP = totalXP - currentLevelXP;
-            const totalLevelXP = nextLevelXP - currentLevelXP;
-            const progressPercent = Math.max(0, Math.min(100, Math.round((progressXP / totalLevelXP) * 100)));
+            // Add progress to next level (only for regular users)
+            if (!isPirateKing) {
+                const currentLevelXP = global.xpTracker.getXPForLevel(currentLevel);
+                const nextLevelXP = global.xpTracker.getXPForLevel(currentLevel + 1);
+                const progressXP = totalXP - currentLevelXP;
+                const totalLevelXP = nextLevelXP - currentLevelXP;
+                const progressPercent = Math.max(0, Math.min(100, Math.round((progressXP / totalLevelXP) * 100)));
 
-            embed.addFields({
-                name: '📈 ADVANCEMENT ANALYSIS',
-                value: `\`\`\`diff\n- Progress to Next Level: ${progressPercent}%\n- XP Required: ${neededXP.toLocaleString()}\n- Next Bounty: ฿${nextBounty.toLocaleString()}\n- Total Criminal Activity: ${totalXP.toLocaleString()} XP\n\`\`\``,
-                inline: false
-            });
+                embed.addFields({
+                    name: '📈 ADVANCEMENT ANALYSIS',
+                    value: `\`\`\`diff\n- Progress to Next Level: ${progressPercent}%\n- XP Required: ${neededXP.toLocaleString()}\n- Next Bounty: ฿${nextBounty.toLocaleString()}\n- Total Criminal Activity: ${totalXP.toLocaleString()} XP\n\`\`\``,
+                    inline: false
+                });
+            }
 
             if (isPirateKing) {
                 embed.addFields({
@@ -192,7 +231,7 @@ module.exports = {
     }
 };
 
-// EXACT SAME createWantedPoster function from leaderboard.js
+// EXACT SAME createWantedPoster function from leaderboard.js with Pirate King support
 async function createWantedPoster(userData, guild) {
     const width = 600, height = 900;
     const canvas = createCanvas(width, height);
@@ -305,11 +344,12 @@ async function createWantedPoster(userData, guild) {
     // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
     const berryBountyGap = 5; // Fixed gap in our 1-100 scale
     
-    // FIXED: Get BOUNTY amount for user's level instead of XP
-    const bountyAmount = getBountyForLevel(userData.level);
+    // FIXED: Get BOUNTY amount for user's level and check if Pirate King
+    const isPirateKingData = userData.isPirateKing || false;
+    const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
     const bountyStr = bountyAmount.toLocaleString();
     
-    console.log(`[LEVEL] Level ${userData.level} = Bounty ฿${bountyStr}`);
+    console.log(`[LEVEL] Level ${userData.level} ${isPirateKingData ? '(PIRATE KING)' : ''} = Bounty ฿${bountyStr}`);
     
     ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
     const bountyTextWidth = ctx.measureText(bountyStr).width;
