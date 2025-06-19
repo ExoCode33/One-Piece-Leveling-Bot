@@ -300,11 +300,45 @@ class XPTracker {
                 return;
             }
 
-            // Create Marine notification using YOUR bounty system
+            // Create the userData object for the wanted poster (same format as /level command)
+            const wantedPosterData = {
+                userId: user.id,
+                level: newLevel,
+                total_xp: newTotalXP,
+                messages: 0, // We don't need exact counts for level up announcements
+                reactions: 0,
+                voice_time: 0,
+                member: await guild.members.fetch(user.id).catch(() => null)
+            };
+
+            // Create Canvas wanted poster (same as /level command)
+            let canvas = null;
+            let attachment = null;
+            
+            try {
+                canvas = await this.createWantedPoster(wantedPosterData, guild);
+                const { AttachmentBuilder } = require('discord.js');
+                attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${user.id}.png` });
+            } catch (canvasError) {
+                console.error('[LEVEL UP] Error creating wanted poster:', canvasError);
+                // Continue without the poster
+            }
+
+            // Create Marine notification with red text
             const embed = this.createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward);
+            
+            // Add the wanted poster image if successfully created
+            if (attachment) {
+                embed.setImage(`attachment://wanted_${user.id}.png`);
+            }
 
             // Send the notification
-            const message = await channel.send({ embeds: [embed] });
+            const messageOptions = { embeds: [embed] };
+            if (attachment) {
+                messageOptions.files = [attachment];
+            }
+            
+            const message = await channel.send(messageOptions);
             console.log(`[LEVEL UP] Notification sent successfully for ${user.username} in #${channel.name}`);
 
             return message;
@@ -346,22 +380,22 @@ class XPTracker {
                 .addFields(
                     {
                         name: '📑 Previous Status',
-                        value: `Level ${oldLevel}\n฿${oldBounty.toLocaleString()}`,
+                        value: `\`\`\`ansi\n\u001b[0;31mLevel ${oldLevel}\n฿${oldBounty.toLocaleString()}\u001b[0m\n\`\`\``,
                         inline: true
                     },
                     {
                         name: '🔥 NEW BOUNTY',
-                        value: `Level ${newLevel}\n฿${newBounty.toLocaleString()}`,
+                        value: `\`\`\`ansi\n\u001b[0;31mLevel ${newLevel}\n฿${newBounty.toLocaleString()}\u001b[0m\n\`\`\``,
                         inline: true
                     },
                     {
                         name: '💰 Bounty Increase',
-                        value: `+฿${bountyIncrease.toLocaleString()}`,
+                        value: `\`\`\`ansi\n\u001b[0;31m+฿${bountyIncrease.toLocaleString()}\u001b[0m\n\`\`\``,
                         inline: true
                     },
                     {
                         name: '📊 Intelligence Summary',
-                        value: `Total Criminal Activity: ${newTotalXP.toLocaleString()} XP\nThreat Classification: ${getThreatLevelName(newLevel)}`,
+                        value: `\`\`\`ansi\n\u001b[0;31mTotal Criminal Activity: ${newTotalXP.toLocaleString()} XP\nThreat Classification: ${getThreatLevelName(newLevel)}\u001b[0m\n\`\`\``,
                         inline: false
                     }
                 );
@@ -370,7 +404,7 @@ class XPTracker {
             if (roleReward) {
                 embed.addFields({
                     name: '👑 New Authority Granted',
-                    value: `**${roleReward}** role assigned for reaching Level ${newLevel}`,
+                    value: `\`\`\`ansi\n\u001b[0;31m**${roleReward}** role assigned for reaching Level ${newLevel}\u001b[0m\n\`\`\``,
                     inline: false
                 });
             }
@@ -705,6 +739,204 @@ class XPTracker {
         this.voiceSessions.clear();
         this.cooldowns.clear();
         this.dailyVoiceXP.clear();
+    }
+
+    // EXACT SAME createWantedPoster function from level.js
+    async createWantedPoster(userData, guild) {
+        const { createCanvas, loadImage } = require('canvas');
+        const path = require('path');
+        
+        const width = 600, height = 900;
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+
+        // Load and draw scroll texture background
+        try {
+            const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+            
+            // Draw the texture to fill the entire canvas
+            ctx.drawImage(scrollTexture, 0, 0, width, height);
+            
+            console.log('[DEBUG] Successfully loaded scroll texture background');
+        } catch (error) {
+            console.log('[DEBUG] Scroll texture not found, using fallback parchment color');
+            // Fallback to original parchment background if texture fails to load
+            ctx.fillStyle = '#f5e6c5';
+            ctx.fillRect(0, 0, width, height);
+        }
+        
+        // All borders and elements go on top of the texture
+        // All borders now black for consistency
+        ctx.strokeStyle = '#000000'; // Outer border - black
+        ctx.lineWidth = 8;
+        ctx.strokeRect(0, 0, width, height);
+        
+        ctx.strokeStyle = '#000000'; // Middle border - black
+        ctx.lineWidth = 2;
+        ctx.strokeRect(10, 10, width - 20, height - 20);
+        
+        ctx.strokeStyle = '#000000'; // Inner border - black
+        ctx.lineWidth = 3;
+        ctx.strokeRect(18, 18, width - 36, height - 36);
+
+        // WANTED title - Size 27, Horiz 50, Vert 92
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
+        const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
+        const wantedX = (50/100) * width; // Horiz 50: centered
+        ctx.fillText('WANTED', wantedX, wantedY);
+
+        // Image Box - Size 95, Horiz 50, Vert 65 with slightly wider border
+        const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
+        const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
+        const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
+        
+        // Slightly wider black border
+        ctx.strokeStyle = '#000000'; // Black border
+        ctx.lineWidth = 3; // Increased from 1 to 3 for wider border
+        ctx.strokeRect(photoX, photoY, photoSize, photoSize);
+        
+        // No white background - image goes directly on texture
+
+        let member = null;
+        try {
+            if (guild && userData.userId) member = await guild.members.fetch(userData.userId);
+        } catch {}
+        
+        const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 }; // Adjusted for wider border
+        if (member) {
+            try {
+                const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
+                const avatar = await loadImage(avatarURL);
+                
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.clip();
+                
+                // Subtle weathering effect
+                ctx.filter = 'contrast(0.95) sepia(0.05)';
+                ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.filter = 'none';
+                
+                ctx.restore();
+            } catch {
+                // If no avatar, just leave the texture showing through with border
+                console.log('[DEBUG] No avatar found, texture will show through');
+            }
+        }
+
+        // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 39
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
+        const deadOrAliveY = height * (1 - 39/100); // Vert 39: 39% from bottom
+        const deadOrAliveX = (50/100) * width; // Horiz 50: centered
+        ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
+
+        // Name ("SHANKS") - Size 23, Horiz 50, Vert 30
+        ctx.font = '69px CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
+        let displayName = 'UNKNOWN PIRATE';
+        if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+        else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
+        
+        // Check if name is too long and adjust
+        ctx.textAlign = 'center';
+        let nameWidth = ctx.measureText(displayName).width;
+        if (nameWidth > width - 60) {
+            ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
+        }
+        
+        const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
+        const nameX = (50/100) * width; // Horiz 50: centered
+        ctx.fillText(displayName, nameX, nameY);
+
+        // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
+        const berryBountyGap = 5; // Fixed gap in our 1-100 scale
+        
+        // FIXED: Get BOUNTY amount for user's level instead of XP
+        const { getBountyForLevel } = require('./bountySystem');
+        const bountyAmount = getBountyForLevel(userData.level);
+        const bountyStr = bountyAmount.toLocaleString();
+        
+        console.log(`[LEVEL UP] Level ${userData.level} = Bounty ฿${bountyStr}`);
+        
+        ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
+        const bountyTextWidth = ctx.measureText(bountyStr).width;
+        
+        // Berry symbol size
+        const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
+        
+        // Calculate total width of the bounty unit (berry + gap + text)
+        const gapPixels = (berryBountyGap/100) * width; // Convert gap to pixels
+        const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+        
+        // Center the entire bounty unit horizontally
+        const bountyUnitStartX = (width - totalBountyWidth) / 2;
+        
+        // Position berry symbol at the start of the centered unit
+        const berryX = bountyUnitStartX + (berrySize/2); // Center of berry symbol
+        const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
+        
+        let berryImg;
+        try {
+            const berryPath = path.join(__dirname, '../../assets/berry.png');
+            berryImg = await loadImage(berryPath);
+        } catch {
+            // Create simple berry symbol
+            const berryCanvas = createCanvas(berrySize, berrySize);
+            const berryCtx = berryCanvas.getContext('2d');
+            berryCtx.fillStyle = '#111';
+            berryCtx.font = `bold ${berrySize}px serif`;
+            berryCtx.textAlign = 'center';
+            berryCtx.textBaseline = 'middle';
+            berryCtx.fillText('฿', berrySize/2, berrySize/2);
+            berryImg = berryCanvas;
+        }
+        
+        ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
+
+        // Position bounty numbers with fixed gap from berry
+        const bountyX = bountyUnitStartX + berrySize + gapPixels; // Start after berry + gap
+        const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
+        
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#111';
+        ctx.fillText(bountyStr, bountyX, bountyY);
+
+        // One Piece logo - Size 26, Horiz 50, Vert 4.5
+        try {
+            const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
+            const onePieceLogo = await loadImage(onePieceLogoPath);
+            const logoSize = (26/100) * 200; // Size 26/100 * reasonable max = 52px
+            const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
+            const logoY = height * (1 - 4.5/100) - (logoSize/2); // Vert 4.5: 4.5% from bottom
+            
+            ctx.globalAlpha = 0.6;
+            ctx.filter = 'sepia(0.2) brightness(0.9)';
+            ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+            ctx.globalAlpha = 1.0;
+            ctx.filter = 'none';
+        } catch {
+            console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
+        }
+
+        // "MARINE" - Size 8, Horiz 96, Vert 2
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
+        ctx.fillStyle = '#111';
+        
+        const marineText = 'M A R I N E';
+        const marineX = (96/100) * width; // Horiz 96: very far right
+        const marineY = height * (1 - 2/100); // Vert 2: 2% from bottom
+        ctx.fillText(marineText, marineX, marineY);
+
+        return canvas;
     }
 }
 
