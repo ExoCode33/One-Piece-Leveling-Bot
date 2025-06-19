@@ -3,29 +3,24 @@
 A Discord bot for role management, leveling, leaderboards, and more — inspired by One Piece!  
 Designed for easy deployment on [Railway](https://railway.app) or locally.
 
----
-
 ## 📁 Project Structure
 
+```
 one-piece-leveling-bot/
 │
-├── assets/ # Images and fonts for image-based features
+├── assets/                  # Images and fonts for image-based features
 ├── src/
-│ ├── commands/ # All command modules (leaderboard, admin, etc.)
-│ └── utils/ # Utility scripts for XP, bounty, tracking, etc.
+│   ├── commands/            # All command modules (leaderboard, admin, etc.)
+│   └── utils/               # Utility scripts for XP, bounty, tracking, etc.
 │
-├── index.js # Main bot entrypoint
-├── package.json # Node.js dependencies & project info
-├── railway.toml # Railway project config
-├── Dockerfile # For containerized deployment
-├── .env.example # Example environment variables
-├── README.md # This file!
+├── index.js                 # Main bot entrypoint
+├── package.json             # Node.js dependencies & project info
+├── railway.toml             # Railway project config
+├── Dockerfile               # For containerized deployment
+├── .env.example             # Example environment variables
+├── README.md                # This file!
+```
 
-yaml
-Copy
-Edit
-
----
 
 ## ⚡ Features
 
