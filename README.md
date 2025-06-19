@@ -21,96 +21,89 @@ one-piece-leveling-bot/
 ├── .env.example # Example environment variables
 ├── README.md # This file!
 
+yaml
+Copy
+Edit
+
 ---
 
 ## ⚡ Features
 
-- **Leveling system** — XP from messages, voice, and reactions
-- **Leaderboard** with custom One Piece styling
-- **Role management** (`/add`, `/delete`, `/settings`, etc.)
-- **Admin commands**
-- **Supports custom images and fonts for embeds/posters**
-- **Easy deployment on Railway or locally**
+- Leveling system — XP from messages, voice, and reactions
+- Leaderboard with custom One Piece styling
+- Role management (`/add`, `/delete`, `/settings`, etc.)
+- Admin commands
+- Supports custom images and fonts for embeds/posters
+- Easy deployment on Railway or locally
 
 ---
 
 ## 🚀 Quick Start (Railway)
 
-### 1. **Clone/Upload the Bot**
+1. **Clone/Upload the Bot**  
+   Upload all files or link your repo to Railway.
 
-If not already on Railway, upload all files or link your repo.
+2. **Set Environment Variables**  
+   In the Railway project dashboard, set these variables:
 
-### 2. **Set Environment Variables**
+   | Variable         | Description                        |
+   |------------------|------------------------------------|
+   | `DISCORD_TOKEN`  | Your Discord bot token             |
+   | `CLIENT_ID`      | Your Discord Application ID        |
+   | `DATABASE_URL`   | Your PostgreSQL URL (if used)      |
 
-In the Railway project dashboard, go to the "Variables" tab and set:
+   For local dev, copy `.env.example` to `.env` and fill in your values.
 
-| Variable         | Description                      |
-|------------------|---------------------------------|
-| `DISCORD_TOKEN`  | Your Discord bot token           |
-| `CLIENT_ID`      | Your Discord Application ID      |
-| `DATABASE_URL`   | Your PostgreSQL URL (if used)    |
+3. **Enable Privileged Intents**  
+   - Go to your bot's page in the [Discord Developer Portal](https://discord.com/developers/applications).
+   - Click **Bot** in the sidebar.
+   - Enable **SERVER MEMBERS INTENT**.
+   - Save changes and restart the bot!
 
-*For local use, copy `.env.example` to `.env` and fill in your values.*
+4. **Set Bot Permissions**  
+   - Bot’s role must be **above** the roles it manages (Server Settings > Roles).
+   - Bot needs **Manage Roles** and **Read Messages/Members** permissions.
 
-### 3. **Enable Privileged Intents**
-
-- Go to your bot's page in the [Discord Developer Portal](https://discord.com/developers/applications).
-- Click **Bot** in the sidebar.
-- Enable **SERVER MEMBERS INTENT**.
-- Save changes and restart the bot!
-
-### 4. **Set Bot Permissions**
-
-- The bot’s role must be **above** the roles it will manage in Server Settings > Roles.
-- The bot needs **Manage Roles** and **Read Messages/Members** permissions.
-
-### 5. **Deploy!**
-
-- Railway will automatically install dependencies and start the bot.
-- If using Dockerfile/railway.toml, ensure the start command matches your main file (`index.js`).
+5. **Deploy!**  
+   Railway will auto-install dependencies and start the bot.
 
 ---
 
 ## 🛠️ Usage
 
-### **Main Slash Commands**
+### Main Slash Commands
 
-| Command               | Description                                  | Permissions         |
-|-----------------------|----------------------------------------------|---------------------|
-| `/leaderboard`        | Show the leveling leaderboard                | Everyone            |
-| `/add`                | Add a role to a user or everyone             | Admin only          |
-| `/delete`             | Remove a role from a user or everyone        | Admin only          |
-| `/settings`           | Adjust leveling and bot settings             | Admin only          |
-| ...                   | See `src/commands/` for more                 |                     |
+| Command         | Description                            | Permissions  |
+|-----------------|----------------------------------------|--------------|
+| `/leaderboard`  | Show the leveling leaderboard          | Everyone     |
+| `/add`          | Add a role to a user or everyone       | Admin only   |
+| `/delete`       | Remove a role from a user or everyone  | Admin only   |
+| `/settings`     | Adjust leveling and bot settings       | Admin only   |
+| *(more)*        | See `src/commands/` for details        |              |
 
 ---
 
 ## 📝 Customization
 
-- **Edit/Add Commands:**  
-  Modify or add command files in `src/commands/`.
-
-- **Change XP/Level Logic:**  
-  Tweak XP/bounty systems in `src/utils/`.
-
-- **Custom Images/Fonts:**  
-  Replace files in `assets/` for different styles.
+- **Edit/Add Commands:** Modify or add command files in `src/commands/`.
+- **Change XP/Level Logic:** Adjust logic in `src/utils/`.
+- **Custom Images/Fonts:** Replace files in `assets/` for your own style.
 
 ---
 
 ## 🧩 Troubleshooting
 
-- **Bot says “0 members”:**  
+- **Bot says “0 members”:**
   - Enable SERVER MEMBERS INTENT in Developer Portal  
-  - Bot’s role must be above the role it’s managing  
-  - Give bot “Manage Roles” permission
+  - Bot’s role must be above the managed roles  
+  - Bot must have “Manage Roles” permission
 
-- **Bot not responding:**  
+- **Bot not responding:**
   - Check Railway logs  
   - Ensure environment variables are set
 
-- **Roles not being managed:**  
-  - Confirm bot's role hierarchy and permissions
+- **Roles not managed:**
+  - Check bot's role hierarchy and permissions
 
 ---
 
@@ -132,6 +125,3 @@ Created by ExoCode.
 ## 📄 License
 
 Open source — free to use and modify!
-
----
-
