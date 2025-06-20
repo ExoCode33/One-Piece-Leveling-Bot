@@ -1,4 +1,4 @@
-// src/utils/xpBoost.js - Complete XP Boost Management System with ONLY calculation fixes
+// src/utils/xpBoost.js - Complete XP Boost Management System with ADDITIVE STACKING
 
 class XPBoostManager {
     constructor(database) {
@@ -46,10 +46,10 @@ class XPBoostManager {
         }
     }
 
-    // FIXED: Add or update XP boost for a role with proper validation
+    // Add or update XP boost for a role with proper validation
     async setRoleBoost(guildId, roleId, multiplier, boostName = null) {
         try {
-            // FIXED: Validate multiplier more strictly
+            // Validate multiplier more strictly
             const validMultiplier = parseFloat(multiplier);
             
             if (isNaN(validMultiplier)) {
@@ -101,7 +101,7 @@ class XPBoostManager {
         }
     }
 
-    // FIXED: Calculate XP multiplier for a user based on their roles
+    // ➕ ADDITIVE STACKING: Calculate XP multiplier for a user based on their roles
     async calculateUserBoost(guildId, member) {
         try {
             // Check cache first
@@ -117,13 +117,13 @@ class XPBoostManager {
                 return { multiplier: 1.0, appliedBoosts: [] }; // No boosts configured
             }
 
-            let highestBoost = 1.0;
+            // ADDITIVE STACKING: Start at 1.0, add bonus amounts
+            let totalMultiplier = 1.0;
             let appliedBoosts = [];
 
-            // FIXED: Check each role the user has against configured boosts
+            // Check each role the user has against configured boosts
             for (const boost of guildBoosts) {
                 if (member.roles.cache.has(boost.role_id)) {
-                    // FIXED: Convert boost_multiplier to number and validate
                     const boostMultiplier = parseFloat(boost.boost_multiplier);
                     
                     if (isNaN(boostMultiplier)) {
@@ -131,31 +131,46 @@ class XPBoostManager {
                         continue;
                     }
                     
-                    // FIXED: Only use the highest boost (don't stack role boosts)
-                    if (boostMultiplier > highestBoost) {
-                        highestBoost = boostMultiplier;
-                    }
+                    // ADDITIVE: Add the bonus (multiplier - 1.0) to total
+                    // Example: 1.5x role adds 0.5, 2.0x role adds 1.0
+                    const bonusAmount = Math.max(0, boostMultiplier - 1.0);
+                    totalMultiplier += bonusAmount;
                     
                     appliedBoosts.push({
                         roleId: boost.role_id,
                         multiplier: boostMultiplier,
+                        bonusAdded: bonusAmount,
                         name: boost.boost_name
                     });
                 }
             }
 
-            // FIXED: Ensure we return a valid multiplier
-            const finalMultiplier = Math.max(1.0, highestBoost);
+            // Optional: Apply maximum cap to prevent extreme stacking (adjust as needed)
+            const maxMultiplier = 10.0; // Adjust this value or remove cap entirely
+            let finalMultiplier = Math.max(1.0, totalMultiplier);
+            const wasCapped = finalMultiplier > maxMultiplier;
+            
+            if (wasCapped) {
+                finalMultiplier = maxMultiplier;
+            }
 
-            console.log(`[XP BOOST] User ${member.displayName} boost: ${finalMultiplier}x (from ${appliedBoosts.length} roles)`);
+            console.log(`[XP BOOST] User ${member.displayName} ADDITIVE boost: ${finalMultiplier.toFixed(2)}x${wasCapped ? ' (CAPPED)' : ''} (from ${appliedBoosts.length} roles)`);
             
             if (appliedBoosts.length > 0) {
-                console.log(`[XP BOOST] Applied roles: ${appliedBoosts.map(b => `${b.name || 'Unknown'} (${b.multiplier}x)`).join(', ')}`);
+                console.log(`[XP BOOST] Applied roles: ${appliedBoosts.map(b => `${b.name || 'Unknown'} (+${b.bonusAdded.toFixed(1)})`).join(', ')}`);
+                
+                if (appliedBoosts.length > 1) {
+                    const calculation = `1.0 + ${appliedBoosts.map(b => b.bonusAdded.toFixed(1)).join(' + ')} = ${totalMultiplier.toFixed(2)}x`;
+                    console.log(`[XP BOOST] Calculation: ${calculation}${wasCapped ? ` → ${finalMultiplier}x (capped)` : ''}`);
+                }
             }
             
             return { 
                 multiplier: finalMultiplier, 
-                appliedBoosts: appliedBoosts 
+                appliedBoosts: appliedBoosts,
+                stackingMode: 'additive',
+                wasCapped: wasCapped,
+                uncappedMultiplier: totalMultiplier
             };
 
         } catch (error) {
@@ -217,6 +232,45 @@ class XPBoostManager {
         }
     }
 
+    // Enhanced boost statistics for additive stacking
+    async getAdditiveBoostStats(guildId) {
+        try {
+            const boosts = await this.getGuildBoosts(guildId);
+            
+            if (boosts.length === 0) {
+                return {
+                    totalBoosts: 0,
+                    maxPossibleMultiplier: 1.0,
+                    averageBonus: 0,
+                    totalBonus: 0
+                };
+            }
+
+            // Calculate additive statistics
+            let totalBonus = 0;
+            let maxPossibleMultiplier = 1.0;
+            
+            for (const boost of boosts) {
+                const bonusAmount = Math.max(0, parseFloat(boost.boost_multiplier) - 1.0);
+                totalBonus += bonusAmount;
+                maxPossibleMultiplier += bonusAmount;
+            }
+
+            const averageBonus = totalBonus / boosts.length;
+
+            return {
+                totalBoosts: boosts.length,
+                maxPossibleMultiplier: maxPossibleMultiplier,
+                averageBonus: averageBonus,
+                totalBonus: totalBonus,
+                stackingMode: 'additive'
+            };
+        } catch (error) {
+            console.error('[XP BOOST ERROR] Failed to get additive boost stats:', error);
+            return { totalBoosts: 0, maxPossibleMultiplier: 1.0, averageBonus: 0, totalBonus: 0 };
+        }
+    }
+
     // Preset boost configurations for common roles
     getPresetBoosts() {
         return {
@@ -242,6 +296,76 @@ class XPBoostManager {
 
         return await this.setRoleBoost(guildId, roleId, preset.multiplier, preset.name);
     }
+
+    // Helper method to simulate boost calculation for planning
+    simulateAdditiveBoost(multipliers) {
+        if (!Array.isArray(multipliers) || multipliers.length === 0) {
+            return { result: 1.0, calculation: "No boosts" };
+        }
+
+        let totalMultiplier = 1.0;
+        const bonuses = [];
+
+        for (const mult of multipliers) {
+            const bonus = Math.max(0, parseFloat(mult) - 1.0);
+            totalMultiplier += bonus;
+            bonuses.push(bonus.toFixed(1));
+        }
+
+        const calculation = `1.0 + ${bonuses.join(' + ')} = ${totalMultiplier.toFixed(2)}x`;
+        
+        return {
+            result: totalMultiplier,
+            calculation: calculation,
+            bonuses: bonuses.map(b => parseFloat(b))
+        };
+    }
 }
 
 module.exports = XPBoostManager;
+
+/* 
+ADDITIVE STACKING EXAMPLES:
+
+EXAMPLE 1: VIP + Premium
+- VIP Role: 1.5x (adds +0.5 bonus)
+- Premium Role: 2.0x (adds +1.0 bonus)
+- Result: 1.0 + 0.5 + 1.0 = 2.5x total
+
+EXAMPLE 2: Multiple Small Boosts
+- Supporter: 1.3x (adds +0.3)
+- Booster: 1.25x (adds +0.25)
+- Active: 1.2x (adds +0.2)
+- Helper: 1.15x (adds +0.15)
+- Result: 1.0 + 0.3 + 0.25 + 0.2 + 0.15 = 1.9x total
+
+EXAMPLE 3: All Preset Roles
+- Premium: 2.0x (+1.0)
+- VIP: 1.5x (+0.5)
+- Veteran: 1.4x (+0.4)
+- Supporter: 1.3x (+0.3)
+- Booster: 1.25x (+0.25)
+- Active: 1.2x (+0.2)
+- Helper: 1.15x (+0.15)
+- Moderator: 1.1x (+0.1)
+- Result: 1.0 + 1.0 + 0.5 + 0.4 + 0.3 + 0.25 + 0.2 + 0.15 + 0.1 = 3.9x total
+
+PROS OF ADDITIVE STACKING:
+✅ Rewards users with multiple roles
+✅ Moderate power scaling - not too extreme
+✅ Easy to understand and predict
+✅ Good balance between excitement and control
+✅ Each new role always adds meaningful value
+
+BALANCE CONSIDERATIONS:
+- With 10.0x cap: Even someone with ALL boost roles won't exceed 10x
+- Without cap: Maximum theoretical is sum of all role bonuses
+- Recommended: Keep individual role boosts between 1.1x - 2.5x for balance
+- Sweet spot: Most users will end up between 1.5x - 4.0x total
+
+CONFIGURATION TIPS:
+- Common roles (Active, Helper): 1.1x - 1.2x
+- Special roles (VIP, Supporter): 1.3x - 1.5x  
+- Premium roles (Premium, Veteran): 1.5x - 2.5x
+- Exclusive roles: Up to 3.0x individual boost
+*/
