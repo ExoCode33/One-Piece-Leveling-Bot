@@ -278,11 +278,12 @@ module.exports = {
                 if (level >= 15) return "GRAND LINE";
                 if (level >= 10) return "ELEVATED";
                 if (level >= 5) return "CONFIRMED CRIMINAL";
-                return "MONITORING";
+                if (level >= 1) return "WANTED CRIMINAL";
+                return "CIVILIAN";
             }
 
             if (type === 'posters') {
-                // TOP 3 BOUNTIES - Show Pirate King + Top 3 with canvas and red intelligence embeds
+                // TOP 3 BOUNTIES - Show Pirate King + Top 3 Level 1+ with canvas and red intelligence embeds
                 const headerEmbed = new EmbedBuilder()
                     .setAuthor({ 
                         name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
@@ -306,12 +307,16 @@ module.exports = {
                     await interaction.editReply({ embeds: [headerEmbed] });
                 }
 
-                // Create posters for Pirate King + Top 3
+                // FIXED: Only get Level 1+ users for canvas generation
+                const level1PlusUsers = filteredUsers.filter(user => user.level >= 1);
+                console.log('[DEBUG] Level 1+ users for canvas:', level1PlusUsers.length);
+
+                // Create posters for Pirate King + Top 3 Level 1+ users
                 const postersToShow = [];
                 if (pirateKing) postersToShow.push(pirateKing);
-                postersToShow.push(...filteredUsers.slice(0, 3));
+                postersToShow.push(...level1PlusUsers.slice(0, 3));
 
-                console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 3');
+                console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 3 (Level 1+ only)');
 
                 // Send each poster with red intelligence embed
                 for (let i = 0; i < postersToShow.length; i++) {
@@ -343,7 +348,6 @@ module.exports = {
                         });
 
                         if (isPirateKingData) {
-                            // FIXED: Remove "EXCLUDED FROM BOUNTY TRACKING" and make all text red
                             embed.addFields({
                                 name: '👑 SPECIAL CLASSIFICATION',
                                 value: `\`\`\`diff\n- EMPEROR STATUS CONFIRMED\n- MAXIMUM THREAT DESIGNATION\n- APPROACH WITH EXTREME CAUTION\n\`\`\``,
@@ -372,7 +376,7 @@ module.exports = {
                 }
 
             } else if (type === 'long') {
-                // TOP 10 BOUNTIES - Same as Top 3 but for 10 users
+                // TOP 10 BOUNTIES - Same as Top 3 but for 10 Level 1+ users
                 const headerEmbed = new EmbedBuilder()
                     .setAuthor({ 
                         name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
@@ -396,12 +400,16 @@ module.exports = {
                     await interaction.editReply({ embeds: [headerEmbed] });
                 }
 
-                // Create posters for Pirate King + Top 10
+                // FIXED: Only get Level 1+ users for canvas generation
+                const level1PlusUsers = filteredUsers.filter(user => user.level >= 1);
+                console.log('[DEBUG] Level 1+ users for canvas:', level1PlusUsers.length);
+
+                // Create posters for Pirate King + Top 10 Level 1+ users
                 const postersToShow = [];
                 if (pirateKing) postersToShow.push(pirateKing);
-                postersToShow.push(...filteredUsers.slice(0, 10));
+                postersToShow.push(...level1PlusUsers.slice(0, 10));
 
-                console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 10');
+                console.log('[DEBUG] Creating', postersToShow.length, 'posters for Top 10 (Level 1+ only)');
 
                 // Send each poster with red intelligence embed
                 for (let i = 0; i < postersToShow.length; i++) {
@@ -433,7 +441,6 @@ module.exports = {
                         });
 
                         if (isPirateKingData) {
-                            // FIXED: Remove "EXCLUDED FROM BOUNTY TRACKING" and make all text red
                             embed.addFields({
                                 name: '👑 SPECIAL CLASSIFICATION',
                                 value: `\`\`\`diff\n- EMPEROR STATUS CONFIRMED\n- MAXIMUM THREAT DESIGNATION\n- APPROACH WITH EXTREME CAUTION\n\`\`\``,
@@ -486,7 +493,7 @@ module.exports = {
                 }
 
                 // First field with header info - ALL IN RED
-                let headerInfo = `\`\`\`diff\n- COMPLETE SURVEILLANCE DATABASE\n- Active Threats: ${level1Plus.length + (pirateKing ? 1 : 0)}\n- Last Updated: ${new Date().toLocaleString()}\n\`\`\``;
+                let headerInfo = `\`\`\`diff\n- COMPLETE SURVEILLANCE DATABASE\n- Active Threats: ${level1Plus.length + (pirateKing ? 1 : 0)}\n- Last Updated: ${new Date().toLocaleString()}\n- Civilian Count: ${filteredUsers.filter(user => user.level === 0).length}\n\`\`\``;
                 
                 embed.addFields({
                     name: '📊 DATABASE STATUS',
