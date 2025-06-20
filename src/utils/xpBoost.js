@@ -1,4 +1,4 @@
-// src/utils/xpBoost.js - XP Boost Management System
+// src/utils/xpBoost.js - Complete XP Boost Management System with ONLY calculation fixes
 
 class XPBoostManager {
     constructor(database) {
@@ -46,11 +46,17 @@ class XPBoostManager {
         }
     }
 
-    // Add or update XP boost for a role
+    // FIXED: Add or update XP boost for a role with proper validation
     async setRoleBoost(guildId, roleId, multiplier, boostName = null) {
         try {
-            // Validate multiplier (0.1x to 10.0x)
-            if (multiplier < 0.1 || multiplier > 10.0) {
+            // FIXED: Validate multiplier more strictly
+            const validMultiplier = parseFloat(multiplier);
+            
+            if (isNaN(validMultiplier)) {
+                throw new Error(`Invalid multiplier value: ${multiplier}. Must be a number.`);
+            }
+            
+            if (validMultiplier < 0.1 || validMultiplier > 10.0) {
                 throw new Error('Boost multiplier must be between 0.1x and 10.0x');
             }
 
@@ -63,12 +69,12 @@ class XPBoostManager {
                     boost_name = $4,
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING *
-            `, [guildId, roleId, multiplier, boostName]);
+            `, [guildId, roleId, validMultiplier, boostName]);
 
             // Clear cache for this guild
             this.boostCache.delete(guildId);
 
-            console.log(`[XP BOOST] Set boost for role ${roleId} in guild ${guildId}: ${multiplier}x`);
+            console.log(`[XP BOOST] Set boost for role ${roleId} in guild ${guildId}: ${validMultiplier}x`);
             return result.rows[0];
         } catch (error) {
             console.error('[XP BOOST ERROR] Failed to set role boost:', error);
@@ -95,7 +101,7 @@ class XPBoostManager {
         }
     }
 
-    // Calculate XP multiplier for a user based on their roles
+    // FIXED: Calculate XP multiplier for a user based on their roles
     async calculateUserBoost(guildId, member) {
         try {
             // Check cache first
@@ -108,28 +114,49 @@ class XPBoostManager {
             }
 
             if (guildBoosts.length === 0) {
-                return 1.0; // No boosts configured
+                return { multiplier: 1.0, appliedBoosts: [] }; // No boosts configured
             }
 
             let highestBoost = 1.0;
             let appliedBoosts = [];
 
-            // Check each role the user has against configured boosts
+            // FIXED: Check each role the user has against configured boosts
             for (const boost of guildBoosts) {
                 if (member.roles.cache.has(boost.role_id)) {
-                    if (boost.boost_multiplier > highestBoost) {
-                        highestBoost = boost.boost_multiplier;
+                    // FIXED: Convert boost_multiplier to number and validate
+                    const boostMultiplier = parseFloat(boost.boost_multiplier);
+                    
+                    if (isNaN(boostMultiplier)) {
+                        console.warn(`[XP BOOST WARNING] Invalid multiplier for role ${boost.role_id}: ${boost.boost_multiplier}`);
+                        continue;
                     }
+                    
+                    // FIXED: Only use the highest boost (don't stack role boosts)
+                    if (boostMultiplier > highestBoost) {
+                        highestBoost = boostMultiplier;
+                    }
+                    
                     appliedBoosts.push({
                         roleId: boost.role_id,
-                        multiplier: boost.boost_multiplier,
+                        multiplier: boostMultiplier,
                         name: boost.boost_name
                     });
                 }
             }
 
-            console.log(`[XP BOOST] User ${member.displayName} boost: ${highestBoost}x (${appliedBoosts.length} roles)`);
-            return { multiplier: highestBoost, appliedBoosts };
+            // FIXED: Ensure we return a valid multiplier
+            const finalMultiplier = Math.max(1.0, highestBoost);
+
+            console.log(`[XP BOOST] User ${member.displayName} boost: ${finalMultiplier}x (from ${appliedBoosts.length} roles)`);
+            
+            if (appliedBoosts.length > 0) {
+                console.log(`[XP BOOST] Applied roles: ${appliedBoosts.map(b => `${b.name || 'Unknown'} (${b.multiplier}x)`).join(', ')}`);
+            }
+            
+            return { 
+                multiplier: finalMultiplier, 
+                appliedBoosts: appliedBoosts 
+            };
 
         } catch (error) {
             console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
