@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete fixed file with voice XP logging and multiplier formula
+// src/utils/xpTracker.js - Complete fixed file with ONLY XP calculation fixes
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -222,7 +222,7 @@ class XPTracker {
         }
     }
 
-    // FIXED: Voice XP processing with proper logging after XP is awarded
+    // FIXED: Voice XP processing with proper boost and multiplier calculation order
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
@@ -258,48 +258,75 @@ class XPTracker {
                 
                 if (dailyXP >= dailyCap) continue;
 
-                // Calculate XP using YOUR environment variables
-                const xpGain = this.getRandomXP('voice');
-                const newDailyXP = dailyXP + xpGain;
+                // FIXED: Calculate BASE XP first
+                const voiceXPMin = parseInt(process.env.VOICE_XP_MIN) || 45;
+                const voiceXPMax = parseInt(process.env.VOICE_XP_MAX) || 55;
+                const baseXP = Math.floor(Math.random() * (voiceXPMax - voiceXPMin + 1)) + voiceXPMin;
+
+                const user = await this.client.users.fetch(userId).catch(() => null);
+                if (!user) continue;
+
+                const member = await guild.members.fetch(userId).catch(() => null);
+                if (!member) continue;
+
+                // FIXED: Apply XP boost FIRST, then global multiplier, then daily cap
+                let finalXP = baseXP;
+                
+                // Apply role-based XP boost first
+                if (global.xpBoostManager && member) {
+                    try {
+                        const boostResult = await global.xpBoostManager.calculateUserBoost(session.guildId, member);
+                        if (boostResult.multiplier > 1.0) {
+                            finalXP = Math.round(baseXP * boostResult.multiplier);
+                            console.log(`[XP BOOST] ${user.username} voice: ${baseXP} base → ${finalXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
+                        }
+                    } catch (error) {
+                        console.error('[XP BOOST ERROR] Failed to calculate user boost for voice:', error);
+                    }
+                }
+                
+                // Apply global multiplier AFTER boost
+                const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
+                const globalMultiplier = guildSettings.xpMultiplier || 1.0;
+                if (globalMultiplier !== 1.0) {
+                    const afterGlobal = Math.round(finalXP * globalMultiplier);
+                    console.log(`[XP CALC] ${user.username} voice: ${finalXP} boosted → ${afterGlobal} final (${globalMultiplier}x global)`);
+                    finalXP = afterGlobal;
+                }
+
+                // Check daily cap AFTER all multipliers are applied
+                const newDailyXP = dailyXP + finalXP;
+                let actualXPGain = finalXP;
                 
                 // Cap the XP gain if it would exceed daily limit
-                const actualXPGain = Math.min(xpGain, dailyCap - dailyXP);
+                if (newDailyXP > dailyCap) {
+                    actualXPGain = Math.max(0, dailyCap - dailyXP);
+                    console.log(`[VOICE XP] Daily cap hit: ${finalXP} → ${actualXPGain} (daily: ${dailyXP}/${dailyCap})`);
+                }
                 
                 if (actualXPGain <= 0) continue;
 
-                // Update daily tracking
-                this.dailyVoiceXP.set(dailyKey, newDailyXP);
+                // Update daily tracking with actual XP gained
+                this.dailyVoiceXP.set(dailyKey, dailyXP + actualXPGain);
 
-                const user = await this.client.users.fetch(userId).catch(() => null);
-                if (user) {
-                    // FIXED: Calculate the EXACT final XP that will be awarded
-                    const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
-                    const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
-                    
-                    // Apply the same logic as awardXP
-                    const rawFinalXP = actualXPGain * multiplier;
-                    const calculatedFinalXP = Math.round(rawFinalXP);
-                    const finalXPAwarded = (actualXPGain > 0 && calculatedFinalXP === 0) ? 1 : calculatedFinalXP;
-
-                    // Award XP without logging (to prevent double logs)
-                    await this.awardXP(userId, session.guildId, actualXPGain, 'voice_silent', user);
-                    
-                    // FIXED: Get updated user stats AFTER XP is awarded
-                    const updatedStats = await this.getUserStats(userId, session.guildId);
-                    
-                    // Add to voice activities collection for batch logging
-                    voiceActivities.push({
-                        user,
-                        guildId: session.guildId,
-                        channelName: channel.name,
-                        sessionDuration: Math.floor((now - session.joinTime) / 60000),
-                        memberCount,
-                        xpGain: finalXPAwarded, // Show the EXACT amount that was actually awarded
-                        dailyCapped: newDailyXP >= dailyCap,
-                        totalXP: updatedStats?.total_xp || 0, // FIXED: Now shows correct total
-                        currentLevel: updatedStats?.level || 0 // FIXED: Now shows correct level
-                    });
-                }
+                // FIXED: Award XP with FINAL calculated amount (skip multiplier in awardXP)
+                await this.awardXP(userId, session.guildId, actualXPGain, 'voice_silent', user, true);
+                
+                // Get updated user stats AFTER XP is awarded
+                const updatedStats = await this.getUserStats(userId, session.guildId);
+                
+                // Add to voice activities collection for batch logging
+                voiceActivities.push({
+                    user,
+                    guildId: session.guildId,
+                    channelName: channel.name,
+                    sessionDuration: Math.floor((now - session.joinTime) / 60000),
+                    memberCount,
+                    xpGain: actualXPGain,
+                    dailyCapped: (dailyXP + actualXPGain) >= dailyCap,
+                    totalXP: updatedStats?.total_xp || 0,
+                    currentLevel: updatedStats?.level || 0
+                });
                 
                 session.lastXPTime = now;
 
@@ -384,7 +411,6 @@ class XPTracker {
                 
                 channelActivities.forEach(activity => {
                     const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
-                    // FIXED: Now shows correct totals and levels
                     description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}\n`;
                     totalXPAwarded += activity.xpGain;
                 });
@@ -402,23 +428,30 @@ class XPTracker {
         }
     }
 
-    // FIXED: Award XP with proper multiplier formula and optional logging control
-    async awardXP(userId, guildId, xpAmount, source, user) {
+    // FIXED: Award XP with optional multiplier skip parameter
+    async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         try {
-            // Get guild settings for multiplier
-            const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
+            let finalXP = xpAmount;
             
-            // Apply guild XP multiplier (database setting takes priority over environment)
-            const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+            // FIXED: Only apply multiplier if not already applied (skipMultiplier = false)
+            if (!skipMultiplier) {
+                // Get guild settings for multiplier
+                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
+                
+                // Apply guild XP multiplier only if not already applied
+                const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+                
+                if (multiplier !== 1.0) {
+                    const rawFinalXP = xpAmount * multiplier;
+                    finalXP = Math.round(rawFinalXP);
+                    console.log(`[XP CALC - AWARD] Applying multiplier: ${xpAmount} × ${multiplier} = ${rawFinalXP} → ${finalXP}`);
+                }
+            }
             
-            // FIXED: Use Math.round for ALL multiplier calculations to handle decimals properly
-            const rawFinalXP = xpAmount * multiplier;
-            const finalXP = Math.round(rawFinalXP);
-            
-            // Ensure minimum 1 XP if original amount was > 0 and multiplier result is 0
+            // Ensure minimum 1 XP if original amount was > 0 and final is 0
             const actualXP = (xpAmount > 0 && finalXP === 0) ? 1 : finalXP;
 
-            console.log(`[XP CALC] Base: ${xpAmount} × ${multiplier} = ${rawFinalXP} → Rounded: ${finalXP} → Final: ${actualXP}`);
+            console.log(`[XP AWARD] Final XP to award: ${actualXP} (source: ${source}, skipMultiplier: ${skipMultiplier})`);
 
             // Get current user stats BEFORE update
             const beforeResult = await this.db.query(
@@ -441,11 +474,11 @@ class XPTracker {
                     voice_time = user_levels.voice_time + $6,
                     updated_at = CURRENT_TIMESTAMP
             `, [
-                userId, guildId, actualXP, // Use actualXP with proper rounding
+                userId, guildId, actualXP,
                 source === 'message' ? 1 : 0,
                 source === 'reaction' ? 1 : 0,
                 (source === 'voice' || source === 'voice_silent') ? 1 : 0,
-                oldLevel // Keep the old level for now
+                oldLevel
             ]);
 
             // Get the NEW total XP after update
@@ -463,8 +496,7 @@ class XPTracker {
                 [newLevel, userId, guildId]
             );
 
-            // FIXED: Only log for non-admin and non-voice_silent sources
-            // Voice XP is handled by the summary system to prevent spam
+            // Log XP activity (only for non-admin and non-voice_silent sources)
             if (source !== 'admin' && source !== 'voice' && source !== 'voice_silent') {
                 await this.logXPActivity(source, user, guildId, actualXP, {
                     totalXP: newTotalXP,
@@ -481,7 +513,6 @@ class XPTracker {
                 // Announce each level individually
                 for (let level = oldLevel + 1; level <= newLevel; level++) {
                     const levelXP = this.getXPForLevel(level);
-                    // Convert voice_silent back to voice for level up source tracking
                     const levelUpSource = source === 'voice_silent' ? 'voice' : source;
                     await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, levelUpSource);
                     
@@ -587,18 +618,18 @@ class XPTracker {
                 return;
             }
 
-            // Create the userData object for the wanted poster (same format as /level command)
+            // Create the userData object for the wanted poster
             const wantedPosterData = {
                 userId: user.id,
                 level: newLevel,
                 total_xp: newTotalXP,
-                messages: 0, // We don't need exact counts for level up announcements
+                messages: 0,
                 reactions: 0,
                 voice_time: 0,
                 member: await guild.members.fetch(user.id).catch(() => null)
             };
 
-            // Create Canvas wanted poster (same as /level command)
+            // Create Canvas wanted poster
             let canvas = null;
             let attachment = null;
             
@@ -749,7 +780,7 @@ class XPTracker {
         }
     }
 
-    // XP Logging function for admin purposes - FIXED with red text and guild settings
+    // XP Logging function for admin purposes
     async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
         try {
             // Get guild settings from database/memory
@@ -1039,27 +1070,24 @@ class XPTracker {
         this.dailyVoiceXP.clear();
     }
 
-    // Manual method to reinitialize voice sessions (call this from index.js after bot ready)
+    // Manual method to reinitialize voice sessions
     async reinitializeVoiceSessions() {
         try {
             console.log('[VOICE XP] Manually reinitializing voice sessions...');
-            this.voiceSessions.clear(); // Clear existing sessions first
+            this.voiceSessions.clear();
             
             let totalFound = 0;
             
             for (const [guildId, guild] of this.client.guilds.cache) {
                 try {
-                    // Fetch fresh guild data
                     await guild.fetch();
                     
-                    // Get all voice channels
                     const voiceChannels = guild.channels.cache.filter(channel => 
-                        channel.type === 2 // Voice channel
+                        channel.type === 2
                     );
                     
                     for (const [channelId, channel] of voiceChannels) {
                         try {
-                            // Fetch fresh channel members
                             await channel.fetch();
                             
                             if (channel.members && channel.members.size > 0) {
@@ -1095,7 +1123,7 @@ class XPTracker {
         }
     }
 
-    // EXACT SAME createWantedPoster function from level.js
+    // Canvas wanted poster creation
     async createWantedPoster(userData, guild) {
         const { createCanvas, loadImage } = require('canvas');
         const path = require('path');
@@ -1107,59 +1135,51 @@ class XPTracker {
         // Load and draw scroll texture background
         try {
             const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
-            
-            // Draw the texture to fill the entire canvas
             ctx.drawImage(scrollTexture, 0, 0, width, height);
-            
             console.log('[DEBUG] Successfully loaded scroll texture background');
         } catch (error) {
             console.log('[DEBUG] Scroll texture not found, using fallback parchment color');
-            // Fallback to original parchment background if texture fails to load
             ctx.fillStyle = '#f5e6c5';
             ctx.fillRect(0, 0, width, height);
         }
         
-        // All borders and elements go on top of the texture
-        // All borders now black for consistency
-        ctx.strokeStyle = '#000000'; // Outer border - black
+        // All borders black
+        ctx.strokeStyle = '#000000';
         ctx.lineWidth = 8;
         ctx.strokeRect(0, 0, width, height);
         
-        ctx.strokeStyle = '#000000'; // Middle border - black
+        ctx.strokeStyle = '#000000';
         ctx.lineWidth = 2;
         ctx.strokeRect(10, 10, width - 20, height - 20);
         
-        ctx.strokeStyle = '#000000'; // Inner border - black
+        ctx.strokeStyle = '#000000';
         ctx.lineWidth = 3;
         ctx.strokeRect(18, 18, width - 36, height - 36);
 
-        // WANTED title - Size 27, Horiz 50, Vert 92
+        // WANTED title
         ctx.fillStyle = '#111';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
-        const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
-        const wantedX = (50/100) * width; // Horiz 50: centered
+        ctx.font = '81px CaptainKiddNF, Arial, sans-serif';
+        const wantedY = height * (1 - 92/100);
+        const wantedX = (50/100) * width;
         ctx.fillText('WANTED', wantedX, wantedY);
 
-        // Image Box - Size 95, Horiz 50, Vert 65 with slightly wider border
-        const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
-        const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
-        const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
+        // Image Box
+        const photoSize = (95/100) * 400;
+        const photoX = ((50/100) * width) - (photoSize/2);
+        const photoY = height * (1 - 65/100) - (photoSize/2);
         
-        // Slightly wider black border
-        ctx.strokeStyle = '#000000'; // Black border
-        ctx.lineWidth = 3; // Increased from 1 to 3 for wider border
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
         ctx.strokeRect(photoX, photoY, photoSize, photoSize);
-        
-        // No white background - image goes directly on texture
 
         let member = null;
         try {
             if (guild && userData.userId) member = await guild.members.fetch(userData.userId);
         } catch {}
         
-        const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 }; // Adjusted for wider border
+        const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
         if (member) {
             try {
                 const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -1170,77 +1190,66 @@ class XPTracker {
                 ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
                 ctx.clip();
                 
-                // Subtle weathering effect
                 ctx.filter = 'contrast(0.95) sepia(0.05)';
                 ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
                 ctx.filter = 'none';
                 
                 ctx.restore();
             } catch {
-                // If no avatar, just leave the texture showing through with border
                 console.log('[DEBUG] No avatar found, texture will show through');
             }
         }
 
-        // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 39
+        // "DEAD OR ALIVE"
         ctx.fillStyle = '#111';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
-        const deadOrAliveY = height * (1 - 39/100); // Vert 39: 39% from bottom
-        const deadOrAliveX = (50/100) * width; // Horiz 50: centered
+        ctx.font = '57px CaptainKiddNF, Arial, sans-serif';
+        const deadOrAliveY = height * (1 - 39/100);
+        const deadOrAliveX = (50/100) * width;
         ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-        // Name ("SHANKS") - Size 23, Horiz 50, Vert 30
-        ctx.font = '69px CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
+        // Name
+        ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
         let displayName = 'UNKNOWN PIRATE';
         if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
         else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
         
-        // Check if name is too long and adjust
         ctx.textAlign = 'center';
         let nameWidth = ctx.measureText(displayName).width;
         if (nameWidth > width - 60) {
             ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
         }
         
-        const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
-        const nameX = (50/100) * width; // Horiz 50: centered
+        const nameY = height * (1 - 30/100);
+        const nameX = (50/100) * width;
         ctx.fillText(displayName, nameX, nameY);
 
-        // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS
-        const berryBountyGap = 5; // Fixed gap in our 1-100 scale
+        // Bounty with berry symbol
+        const berryBountyGap = 5;
         
-        // FIXED: Get BOUNTY amount for user's level instead of XP
         const { getBountyForLevel } = require('./bountySystem');
         const bountyAmount = getBountyForLevel(userData.level);
         const bountyStr = bountyAmount.toLocaleString();
         
         console.log(`[LEVEL UP] Level ${userData.level} = Bounty ฿${bountyStr}`);
         
-        ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
+        ctx.font = '54px Cinzel, Georgia, serif';
         const bountyTextWidth = ctx.measureText(bountyStr).width;
         
-        // Berry symbol size
-        const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
-        
-        // Calculate total width of the bounty unit (berry + gap + text)
-        const gapPixels = (berryBountyGap/100) * width; // Convert gap to pixels
+        const berrySize = (32/100) * 150;
+        const gapPixels = (berryBountyGap/100) * width;
         const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
-        
-        // Center the entire bounty unit horizontally
         const bountyUnitStartX = (width - totalBountyWidth) / 2;
         
-        // Position berry symbol at the start of the centered unit
-        const berryX = bountyUnitStartX + (berrySize/2); // Center of berry symbol
-        const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
+        const berryX = bountyUnitStartX + (berrySize/2);
+        const berryY = height * (1 - 22/100) - (berrySize/2);
         
         let berryImg;
         try {
             const berryPath = path.join(__dirname, '../../assets/berry.png');
             berryImg = await loadImage(berryPath);
         } catch {
-            // Create simple berry symbol
             const berryCanvas = createCanvas(berrySize, berrySize);
             const berryCtx = berryCanvas.getContext('2d');
             berryCtx.fillStyle = '#111';
@@ -1253,22 +1262,21 @@ class XPTracker {
         
         ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
 
-        // Position bounty numbers with fixed gap from berry
-        const bountyX = bountyUnitStartX + berrySize + gapPixels; // Start after berry + gap
-        const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
+        const bountyX = bountyUnitStartX + berrySize + gapPixels;
+        const bountyY = height * (1 - 22/100);
         
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#111';
         ctx.fillText(bountyStr, bountyX, bountyY);
 
-        // One Piece logo - Size 26, Horiz 50, Vert 4.5
+        // One Piece logo
         try {
             const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
             const onePieceLogo = await loadImage(onePieceLogoPath);
-            const logoSize = (26/100) * 200; // Size 26/100 * reasonable max = 52px
-            const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
-            const logoY = height * (1 - 4.5/100) - (logoSize/2); // Vert 4.5: 4.5% from bottom
+            const logoSize = (26/100) * 200;
+            const logoX = ((50/100) * width) - (logoSize/2);
+            const logoY = height * (1 - 4.5/100) - (logoSize/2);
             
             ctx.globalAlpha = 0.6;
             ctx.filter = 'sepia(0.2) brightness(0.9)';
@@ -1279,15 +1287,15 @@ class XPTracker {
             console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
         }
 
-        // "MARINE" - Size 8, Horiz 96, Vert 2
+        // "MARINE"
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
+        ctx.font = '24px TimesNewNormal, Times, serif';
         ctx.fillStyle = '#111';
         
         const marineText = 'M A R I N E';
-        const marineX = (96/100) * width; // Horiz 96: very far right
-        const marineY = height * (1 - 2/100); // Vert 2: 2% from bottom
+        const marineX = (96/100) * width;
+        const marineY = height * (1 - 2/100);
         ctx.fillText(marineText, marineX, marineY);
 
         return canvas;
