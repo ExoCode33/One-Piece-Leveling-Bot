@@ -1,10 +1,11 @@
-// index.js - Complete fixed version with proper client setup
+// index.js - Complete fixed version with XP Boost System integrated
 
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const XPTracker = require('./src/utils/xpTracker');
+const XPBoostManager = require('./src/utils/xpBoost'); // ADDED: XP Boost System
 
 // Environment validation
 const requiredEnvVars = ['DISCORD_TOKEN', 'DATABASE_URL'];
@@ -23,6 +24,9 @@ const db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+// ADDED: XP Boost Manager
+let xpBoostManager;
 
 // Test database connection and create tables
 async function initializeDatabase() {
@@ -61,6 +65,17 @@ async function initializeDatabase() {
     } catch (error) {
         console.error('[ERROR] Database initialization failed:', error);
         process.exit(1);
+    }
+}
+
+// ADDED: Initialize XP Boost System
+async function initializeXPBoostSystem() {
+    try {
+        xpBoostManager = new XPBoostManager(db);
+        global.xpBoostManager = xpBoostManager; // Make available globally
+        console.log('[INFO] XP Boost system initialized successfully');
+    } catch (error) {
+        console.error('[ERROR] Failed to initialize XP Boost system:', error);
     }
 }
 
@@ -161,6 +176,9 @@ client.once('ready', async () => {
     try {
         // Initialize database first
         await initializeDatabase();
+        
+        // ADDED: Initialize XP Boost system
+        await initializeXPBoostSystem();
         
         // Register slash commands
         const commands = Array.from(client.commands.values()).map(command => command.data.toJSON());
@@ -288,7 +306,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Message handler for XP tracking
+// Message handler for XP tracking - UPDATED WITH XP BOOST INTEGRATION
 client.on('messageCreate', async message => {
     // Ignore bots and system messages
     if (message.author.bot || !message.guild) return;
@@ -316,11 +334,28 @@ client.on('messageCreate', async message => {
             return; // Skip XP for excluded role (Pirate King)
         }
         
-        // Calculate XP
+        // Calculate base XP
         const messageXPMin = parseInt(process.env.MESSAGE_XP_MIN) || 25;
         const messageXPMax = parseInt(process.env.MESSAGE_XP_MAX) || 35;
         const baseXP = Math.floor(Math.random() * (messageXPMax - messageXPMin + 1)) + messageXPMin;
-        const finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
+        
+        // Apply global multiplier
+        let finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
+        
+        // ADDED: Apply role-based XP boost
+        if (xpBoostManager && member) {
+            try {
+                const boostResult = await xpBoostManager.calculateUserBoost(message.guild.id, member);
+                if (boostResult.multiplier > 1.0) {
+                    const boostedXP = Math.floor(finalXP * boostResult.multiplier);
+                    console.log(`[XP BOOST] ${message.author.username}: ${baseXP} base → ${finalXP} global → ${boostedXP} final (${boostResult.multiplier}x boost from ${boostResult.appliedBoosts.length} roles)`);
+                    finalXP = boostedXP;
+                }
+            } catch (error) {
+                console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
+                // Continue with non-boosted XP if boost calculation fails
+            }
+        }
         
         // Add XP for message
         await xpTracker.awardXP(message.author.id, message.guild.id, finalXP, 'message', message.author);
@@ -333,7 +368,7 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Reaction handler for XP tracking
+// Reaction handler for XP tracking - UPDATED WITH XP BOOST INTEGRATION
 client.on('messageReactionAdd', async (reaction, user) => {
     // Ignore bots
     if (user.bot || !reaction.message.guild) return;
@@ -361,11 +396,27 @@ client.on('messageReactionAdd', async (reaction, user) => {
             return; // Skip XP for excluded role (Pirate King)
         }
         
-        // Calculate XP
+        // Calculate base XP
         const reactionXPMin = parseInt(process.env.REACTION_XP_MIN) || 25;
         const reactionXPMax = parseInt(process.env.REACTION_XP_MAX) || 35;
         const baseXP = Math.floor(Math.random() * (reactionXPMax - reactionXPMin + 1)) + reactionXPMin;
-        const finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
+        
+        // Apply global multiplier
+        let finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
+        
+        // ADDED: Apply role-based XP boost
+        if (xpBoostManager && member) {
+            try {
+                const boostResult = await xpBoostManager.calculateUserBoost(reaction.message.guild.id, member);
+                if (boostResult.multiplier > 1.0) {
+                    const boostedXP = Math.floor(finalXP * boostResult.multiplier);
+                    console.log(`[XP BOOST] ${user.username} reaction: ${baseXP} base → ${finalXP} global → ${boostedXP} final (${boostResult.multiplier}x boost)`);
+                    finalXP = boostedXP;
+                }
+            } catch (error) {
+                console.error('[XP BOOST ERROR] Failed to calculate user boost for reaction:', error);
+            }
+        }
         
         // Add XP for reaction
         await xpTracker.awardXP(user.id, reaction.message.guild.id, finalXP, 'reaction', user);
@@ -378,10 +429,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
     }
 });
 
-// Voice state update handler
+// Voice state update handler - UPDATED WITH XP BOOST INTEGRATION
 client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-        await xpTracker.handleVoiceStateUpdate(oldState, newState);
+        // UPDATED: Pass XP boost manager to voice XP handler
+        await xpTracker.handleVoiceStateUpdate(oldState, newState, xpBoostManager);
     } catch (error) {
         console.error('[ERROR] Error processing voice state update:', error);
     }
@@ -450,8 +502,8 @@ process.on('SIGTERM', async () => {
     }
 });
 
-// Export database for admin command
-module.exports = { db };
+// UPDATED: Export database and XP boost manager for use in commands
+module.exports = { db, xpBoostManager };
 
 // Login to Discord
 client.login(process.env.DISCORD_TOKEN);
