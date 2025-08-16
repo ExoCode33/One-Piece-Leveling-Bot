@@ -1,4 +1,4 @@
-// index.js - Complete fixed version with XP Boost System integrated
+// index.js - Complete fixed version with XP Boost System integrated and voice handling
 
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { Pool } = require('pg');
@@ -306,7 +306,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Message handler for XP tracking - UPDATED WITH XP BOOST INTEGRATION
+// FIXED: Message handler with proper XP boost integration
 client.on('messageCreate', async message => {
     // Ignore bots and system messages
     if (message.author.bot || !message.guild) return;
@@ -334,31 +334,8 @@ client.on('messageCreate', async message => {
             return; // Skip XP for excluded role (Pirate King)
         }
         
-        // Calculate base XP
-        const messageXPMin = parseInt(process.env.MESSAGE_XP_MIN) || 25;
-        const messageXPMax = parseInt(process.env.MESSAGE_XP_MAX) || 35;
-        const baseXP = Math.floor(Math.random() * (messageXPMax - messageXPMin + 1)) + messageXPMin;
-        
-        // Apply global multiplier
-        let finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
-        
-        // ADDED: Apply role-based XP boost
-        if (xpBoostManager && member) {
-            try {
-                const boostResult = await xpBoostManager.calculateUserBoost(message.guild.id, member);
-                if (boostResult.multiplier > 1.0) {
-                    const boostedXP = Math.floor(finalXP * boostResult.multiplier);
-                    console.log(`[XP BOOST] ${message.author.username}: ${baseXP} base → ${finalXP} global → ${boostedXP} final (${boostResult.multiplier}x boost from ${boostResult.appliedBoosts.length} roles)`);
-                    finalXP = boostedXP;
-                }
-            } catch (error) {
-                console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
-                // Continue with non-boosted XP if boost calculation fails
-            }
-        }
-        
-        // Add XP for message
-        await xpTracker.awardXP(message.author.id, message.guild.id, finalXP, 'message', message.author);
+        // FIXED: Pass the XP boost manager to awardXP
+        await xpTracker.awardXP(message.author.id, message.guild.id, null, 'message', message.author);
         
         // Set cooldown
         xpTracker.cooldowns.set(cooldownKey, now);
@@ -368,7 +345,7 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Reaction handler for XP tracking - UPDATED WITH XP BOOST INTEGRATION
+// FIXED: Reaction handler with proper XP boost integration
 client.on('messageReactionAdd', async (reaction, user) => {
     // Ignore bots
     if (user.bot || !reaction.message.guild) return;
@@ -396,30 +373,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
             return; // Skip XP for excluded role (Pirate King)
         }
         
-        // Calculate base XP
-        const reactionXPMin = parseInt(process.env.REACTION_XP_MIN) || 25;
-        const reactionXPMax = parseInt(process.env.REACTION_XP_MAX) || 35;
-        const baseXP = Math.floor(Math.random() * (reactionXPMax - reactionXPMin + 1)) + reactionXPMin;
-        
-        // Apply global multiplier
-        let finalXP = Math.floor(baseXP * guildSettings.xpMultiplier);
-        
-        // ADDED: Apply role-based XP boost
-        if (xpBoostManager && member) {
-            try {
-                const boostResult = await xpBoostManager.calculateUserBoost(reaction.message.guild.id, member);
-                if (boostResult.multiplier > 1.0) {
-                    const boostedXP = Math.floor(finalXP * boostResult.multiplier);
-                    console.log(`[XP BOOST] ${user.username} reaction: ${baseXP} base → ${finalXP} global → ${boostedXP} final (${boostResult.multiplier}x boost)`);
-                    finalXP = boostedXP;
-                }
-            } catch (error) {
-                console.error('[XP BOOST ERROR] Failed to calculate user boost for reaction:', error);
-            }
-        }
-        
-        // Add XP for reaction
-        await xpTracker.awardXP(user.id, reaction.message.guild.id, finalXP, 'reaction', user);
+        // FIXED: Pass the XP boost manager to awardXP
+        await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
         
         // Set cooldown
         xpTracker.cooldowns.set(cooldownKey, now);
@@ -429,11 +384,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
     }
 });
 
-// Voice state update handler - UPDATED WITH XP BOOST INTEGRATION
+// FIXED: Voice state update handler - simplified call
 client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-        // UPDATED: Pass XP boost manager to voice XP handler
-        await xpTracker.handleVoiceStateUpdate(oldState, newState, xpBoostManager);
+        await xpTracker.handleVoiceStateUpdate(oldState, newState);
     } catch (error) {
         console.error('[ERROR] Error processing voice state update:', error);
     }
