@@ -1021,20 +1021,23 @@ class XPTracker {
         }
     }
 
-    // Fixed XP calculation method using environment variables
+    // Fixed XP calculation method using environment variables with slower early game
     getXPForLevel(level) {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500; // NEW: Base XP amount (default 500)
         
         if (curve === 'exponential') {
-            return Math.floor(100 * Math.pow(level, multiplier));
+            // Modified formula: baseXP * (level^multiplier) instead of 100 * (level^multiplier)
+            // This makes early levels require more XP while maintaining the same curve shape
+            return Math.floor(baseXP * Math.pow(level, multiplier));
         } else if (curve === 'linear') {
-            return 100 * level * multiplier;
+            return baseXP * level * multiplier;
         } else if (curve === 'logarithmic') {
-            return Math.floor(100 * Math.log(level + 1) * multiplier * 10);
+            return Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
         }
         
-        return Math.floor(100 * Math.pow(level, multiplier));
+        return Math.floor(baseXP * Math.pow(level, multiplier));
     }
 
     // Fixed XP generation using environment variables
@@ -1066,16 +1069,18 @@ class XPTracker {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
         const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500; // NEW: Base XP amount
 
         for (let level = 1; level <= maxLevel; level++) {
             let requiredXP;
             
             if (curve === 'exponential') {
-                requiredXP = Math.floor(100 * Math.pow(level, multiplier));
+                // Modified formula: baseXP * (level^multiplier) instead of 100 * (level^multiplier)
+                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
             } else if (curve === 'linear') {
-                requiredXP = 100 * level * multiplier;
+                requiredXP = baseXP * level * multiplier;
             } else if (curve === 'logarithmic') {
-                requiredXP = Math.floor(100 * Math.log(level + 1) * multiplier * 10);
+                requiredXP = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
             }
 
             if (totalXP < requiredXP) {
