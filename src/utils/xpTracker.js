@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete fixed file with XP boost integration and proper voice handling
+// src/utils/xpTracker.js - Complete fixed file with XP boost integration, voice handling, and user ping feature
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -65,9 +65,15 @@ class XPTracker {
                 await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_log_channel VARCHAR(20)');
             }
 
+            // NEW: Add levelup_ping_user column
+            if (!existingColumns.includes('levelup_ping_user')) {
+                console.log('[SETTINGS] Adding levelup_ping_user column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS levelup_ping_user BOOLEAN DEFAULT false');
+            }
+
             // Load all guild settings from database
             const result = await this.db.query(`
-                SELECT guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier
+                SELECT guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier, levelup_ping_user
                 FROM guild_settings
             `);
 
@@ -80,7 +86,8 @@ class XPTracker {
                     levelupEnabled: row.levelup_enabled,
                     xpLogChannel: row.xp_log_channel,
                     xpLogEnabled: row.xp_log_enabled,
-                    xpMultiplier: parseFloat(row.xp_multiplier)
+                    xpMultiplier: parseFloat(row.xp_multiplier),
+                    levelupPingUser: row.levelup_ping_user || false
                 };
 
                 global.guildSettings.set(row.guild_id, guildSettings);
@@ -90,6 +97,7 @@ class XPTracker {
                 console.log(`  - XP Multiplier: ${row.xp_multiplier}x`);
                 console.log(`  - Level Up: ${row.levelup_enabled ? 'enabled' : 'disabled'}`);
                 console.log(`  - Level Up Channel: ${row.levelup_channel || 'not set'}`);
+                console.log(`  - Level Up Ping: ${row.levelup_ping_user ? 'enabled' : 'disabled'}`);
                 console.log(`  - XP Log: ${row.xp_log_enabled ? 'enabled' : 'disabled'}`);
                 console.log(`  - XP Log Channel: ${row.xp_log_channel || 'not set'}`);
             }
@@ -135,7 +143,7 @@ class XPTracker {
                                     channelId: channelId,
                                     joinTime: Date.now(), // Use current time as join time
                                     lastXPTime: Date.now(),
-                                    // ADDED: Track voice state for mute/deafen detection
+                                    // Track voice state for mute/deafen detection
                                     isMuted: member.voice.mute || member.voice.selfMute,
                                     isDeafened: member.voice.deaf || member.voice.selfDeaf
                                 });
@@ -156,7 +164,7 @@ class XPTracker {
         }
     }
 
-    // FIXED: Voice state update handler with mute/deafen tracking
+    // Voice state update handler with mute/deafen tracking
     async handleVoiceStateUpdate(oldState, newState) {
         const userId = newState.id || oldState.id;
         const guildId = newState.guild?.id || oldState.guild?.id;
@@ -197,7 +205,7 @@ class XPTracker {
                 session.isDeafened = newState.deaf || newState.selfDeaf;
             }
         }
-        // ADDED: Mute/deafen state changed
+        // Mute/deafen state changed
         else if (oldState.channelId && newState.channelId) {
             const oldMuted = oldState.mute || oldState.selfMute;
             const newMuted = newState.mute || newState.selfMute;
@@ -215,7 +223,7 @@ class XPTracker {
         }
     }
 
-    // FIXED: Voice XP processing with proper mute handling and XP boost integration
+    // Voice XP processing with proper mute handling and XP boost integration
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
@@ -265,14 +273,14 @@ class XPTracker {
                 
                 if (dailyXP >= dailyCap) continue;
 
-                // FIXED: Calculate BASE XP first
+                // Calculate BASE XP first
                 const voiceXPMin = parseInt(process.env.VOICE_XP_MIN) || 45;
                 const voiceXPMax = parseInt(process.env.VOICE_XP_MAX) || 55;
                 const baseXP = Math.floor(Math.random() * (voiceXPMax - voiceXPMin + 1)) + voiceXPMin;
 
                 let finalXP = baseXP;
 
-                // ADDED: Apply mute penalty (25% XP if muted/deafened)
+                // Apply mute penalty (25% XP if muted/deafened)
                 let muteMultiplier = 1.0;
                 if (antiAFK && (session.isMuted || session.isDeafened)) {
                     muteMultiplier = 0.25; // 25% XP when muted/deafened
@@ -439,7 +447,7 @@ class XPTracker {
         }
     }
 
-    // FIXED: Award XP with XP boost integration and proper multiplier handling
+    // Award XP with XP boost integration and proper multiplier handling
     async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         try {
             // Get member for XP boost calculation
@@ -454,7 +462,7 @@ class XPTracker {
                 console.log(`[XP CALC] Generated base XP for ${source}: ${finalXP}`);
             }
             
-            // FIXED: Only apply multipliers if not already applied (skipMultiplier = false)
+            // Only apply multipliers if not already applied (skipMultiplier = false)
             if (!skipMultiplier) {
                 // Apply XP boost FIRST if available
                 if (global.xpBoostManager && member) {
@@ -608,6 +616,9 @@ class XPTracker {
                 return;
             }
 
+            // Check if user should be pinged
+            const shouldPingUser = guildSettings?.levelupPingUser || process.env.LEVELUP_PING_USER === 'true';
+
             // Get notification channel from guild settings
             let channelId = guildSettings?.levelupChannel;
             
@@ -676,22 +687,32 @@ class XPTracker {
                 // Continue without the poster
             }
 
-            // Create Marine notification with red text
-            const embed = this.createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward);
+            // Create Marine notification with red text and optional ping
+            const embed = this.createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward, shouldPingUser);
             
             // Add the wanted poster image if successfully created
             if (attachment) {
                 embed.setImage(`attachment://wanted_${user.id}.png`);
             }
 
+            // Prepare message content (ping if enabled)
+            let messageContent = '';
+            if (shouldPingUser) {
+                messageContent = `${user} 🚨 **BOUNTY UPDATE ALERT** 🚨`;
+                console.log(`[LEVEL UP] Pinging user ${user.username} for level up`);
+            }
+
             // Send the notification
-            const messageOptions = { embeds: [embed] };
+            const messageOptions = { 
+                embeds: [embed],
+                content: messageContent || undefined
+            };
             if (attachment) {
                 messageOptions.files = [attachment];
             }
             
             const message = await channel.send(messageOptions);
-            console.log(`[LEVEL UP] Notification sent successfully for ${user.username} in #${channel.name}`);
+            console.log(`[LEVEL UP] Notification sent successfully for ${user.username} in #${channel.name}${shouldPingUser ? ' with ping' : ''}`);
 
             return message;
 
@@ -700,7 +721,7 @@ class XPTracker {
         }
     }
 
-    createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward = null) {
+    createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward = null, shouldPing = false) {
         try {
             const { getBountyForLevel } = require('./bountySystem');
             
@@ -724,20 +745,28 @@ class XPTracker {
                 return "MONITORING";
             }
 
+            // Adjust description based on ping setting
+            let description;
+            if (shouldPing) {
+                description = `**${user.username}** has reached a new level of infamy!\n\n*${getThreatLevelName(newLevel)} threat level confirmed. Enhanced surveillance protocols activated.*\n\n⚠️ **IMMEDIATE ATTENTION REQUIRED** ⚠️`;
+            } else {
+                description = `**${user.username}** has reached a new level of infamy!\n\n*${getThreatLevelName(newLevel)} threat level confirmed. Enhanced surveillance protocols activated.*`;
+            }
+
             const embed = new EmbedBuilder()
                 .setColor('#DC143C')
                 .setTitle('🚨 WORLD GOVERNMENT BOUNTY UPDATE 🚨')
-                .setDescription(`**${user.username}** has reached a new level of infamy!\n\n*${getThreatLevelName(newLevel)} threat level confirmed. Enhanced surveillance protocols activated.*`)
+                .setDescription(description)
                 .setThumbnail(user.displayAvatarURL({ size: 128 }))
                 .addFields(
                     {
                         name: '💰 BOUNTY PROGRESSION',
-                        value: `\`\`\`diff\n- OLD BOUNTY: ฿${oldBounty.toLocaleString()} (Level ${oldLevel})\n- NEW BOUNTY: ฿${newBounty.toLocaleString()} (Level ${newLevel})\n\`\`\``,
+                        value: `\`\`\`diff\n- OLD BOUNTY: ฿${oldBounty.toLocaleString()} (Level ${oldLevel})\n- NEW BOUNTY: ฿${newBounty.toLocaleString()} (Level ${newLevel})\n- BOUNTY INCREASE: +฿${bountyIncrease.toLocaleString()}\n\`\`\``,
                         inline: false
                     },
                     {
                         name: '📊 Intelligence Summary',
-                        value: `\`\`\`diff\n- Total Criminal Activity: ${newTotalXP.toLocaleString()} XP (Level ${newLevel})\n- Threat Classification: ${getThreatLevelName(newLevel)}\n\`\`\``,
+                        value: `\`\`\`diff\n- Total Criminal Activity: ${newTotalXP.toLocaleString()} XP (Level ${newLevel})\n- Threat Classification: ${getThreatLevelName(newLevel)}\n- Marine Response: ${getThreatLevelName(newLevel) === 'EMPEROR CLASS' ? 'ADMIRAL REQUIRED' : 'ENHANCED SURVEILLANCE'}\n\`\`\``,
                         inline: false
                     }
                 );
@@ -746,7 +775,16 @@ class XPTracker {
             if (roleReward) {
                 embed.addFields({
                     name: '👑 New Authority Granted',
-                    value: `\`\`\`diff\n- **${roleReward}** role assigned for reaching Level ${newLevel}\n\`\`\``,
+                    value: `\`\`\`diff\n+ **${roleReward}** role assigned for reaching Level ${newLevel}\n+ New privileges and access granted\n\`\`\``,
+                    inline: false
+                });
+            }
+
+            // Add ping indicator if enabled
+            if (shouldPing) {
+                embed.addFields({
+                    name: '🔔 URGENT NOTIFICATION',
+                    value: `\`\`\`diff\n+ MARINE ALERT SYSTEM ACTIVATED\n+ IMMEDIATE RESPONSE REQUIRED\n+ BOUNTY HUNTER TEAMS NOTIFIED\n\`\`\``,
                     inline: false
                 });
             }
@@ -764,7 +802,7 @@ class XPTracker {
             return new EmbedBuilder()
                 .setColor('#DC143C')
                 .setTitle('🚨 LEVEL UP! 🚨')
-                .setDescription(`**${user.username}** leveled up from ${oldLevel} to ${newLevel}!`)
+                .setDescription(`**${user.username}** leveled up from ${oldLevel} to ${newLevel}!${shouldPing ? '\n\n🔔 **CONGRATULATIONS!** 🔔' : ''}`)
                 .setThumbnail(user.displayAvatarURL({ size: 128 }))
                 .setTimestamp();
         }
@@ -1194,7 +1232,44 @@ class XPTracker {
 
         // WANTED title
         ctx.fillStyle = '#111';
-        ctx.textAlign = 'center';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#111';
+        ctx.fillText(bountyStr, bountyX, bountyY);
+
+        // One Piece logo
+        try {
+            const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
+            const onePieceLogo = await loadImage(onePieceLogoPath);
+            const logoSize = (26/100) * 200;
+            const logoX = ((50/100) * width) - (logoSize/2);
+            const logoY = height * (1 - 4.5/100) - (logoSize/2);
+            
+            ctx.globalAlpha = 0.6;
+            ctx.filter = 'sepia(0.2) brightness(0.9)';
+            ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+            ctx.globalAlpha = 1.0;
+            ctx.filter = 'none';
+        } catch {
+            console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
+        }
+
+        // "MARINE"
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.font = '24px TimesNewNormal, Times, serif';
+        ctx.fillStyle = '#111';
+        
+        const marineText = 'M A R I N E';
+        const marineX = (96/100) * width;
+        const marineY = height * (1 - 2/100);
+        ctx.fillText(marineText, marineX, marineY);
+
+        return canvas;
+    }
+}
+
+module.exports = XPTracker; = 'center';
         ctx.textBaseline = 'middle';
         ctx.font = '81px CaptainKiddNF, Arial, sans-serif';
         const wantedY = height * (1 - 92/100);
@@ -1301,41 +1376,4 @@ class XPTracker {
         const bountyX = bountyUnitStartX + berrySize + gapPixels;
         const bountyY = height * (1 - 22/100);
         
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#111';
-        ctx.fillText(bountyStr, bountyX, bountyY);
-
-        // One Piece logo
-        try {
-            const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
-            const onePieceLogo = await loadImage(onePieceLogoPath);
-            const logoSize = (26/100) * 200;
-            const logoX = ((50/100) * width) - (logoSize/2);
-            const logoY = height * (1 - 4.5/100) - (logoSize/2);
-            
-            ctx.globalAlpha = 0.6;
-            ctx.filter = 'sepia(0.2) brightness(0.9)';
-            ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
-            ctx.globalAlpha = 1.0;
-            ctx.filter = 'none';
-        } catch {
-            console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
-        }
-
-        // "MARINE"
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'bottom';
-        ctx.font = '24px TimesNewNormal, Times, serif';
-        ctx.fillStyle = '#111';
-        
-        const marineText = 'M A R I N E';
-        const marineX = (96/100) * width;
-        const marineY = height * (1 - 2/100);
-        ctx.fillText(marineText, marineX, marineY);
-
-        return canvas;
-    }
-}
-
-module.exports = XPTracker;
+        ctx.textAlign
