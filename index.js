@@ -1,6 +1,6 @@
-// index.js - Complete fixed version with XP Boost System integrated and voice handling
+// index.js - Complete fixed version with XP Boost System integrated and Level 0 role assignment
 
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
@@ -169,6 +169,182 @@ async function getGuildSettings(guildId) {
     }
 }
 
+// ADDED: Auto-assign Level 0 role to new members
+client.on('guildMemberAdd', async member => {
+    try {
+        // Skip bots
+        if (member.user.bot) return;
+        
+        console.log(`[NEW MEMBER] ${member.user.username} joined ${member.guild.name}`);
+        
+        // Get Level 0 role ID from environment
+        const level0RoleId = process.env.LEVEL_0_ROLE || '1382198693545115658';
+        
+        if (!level0RoleId || level0RoleId === 'role_id_0') {
+            console.log('[NEW MEMBER] No Level 0 role configured');
+            return;
+        }
+        
+        // Find the role
+        const level0Role = member.guild.roles.cache.get(level0RoleId);
+        if (!level0Role) {
+            console.error(`[NEW MEMBER] Level 0 role ${level0RoleId} not found in ${member.guild.name}`);
+            return;
+        }
+        
+        // Check if member already has the role (shouldn't happen for new members)
+        if (member.roles.cache.has(level0RoleId)) {
+            console.log(`[NEW MEMBER] ${member.user.username} already has Level 0 role`);
+            return;
+        }
+        
+        // Add the Level 0 role
+        await member.roles.add(level0Role);
+        console.log(`[NEW MEMBER] ✅ Added Level 0 role "${level0Role.name}" to ${member.user.username}`);
+        
+        // Initialize user in database with 0 XP and Level 0
+        if (global.xpTracker && global.xpTracker.db) {
+            try {
+                await global.xpTracker.db.query(`
+                    INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
+                    VALUES ($1, $2, 0, 0, 0, 0, 0)
+                    ON CONFLICT (user_id, guild_id) DO NOTHING
+                `, [member.user.id, member.guild.id]);
+                
+                console.log(`[NEW MEMBER] ✅ Initialized database entry for ${member.user.username}`);
+            } catch (dbError) {
+                console.error(`[NEW MEMBER] Database error for ${member.user.username}:`, dbError);
+            }
+        }
+        
+        // Optional: Send welcome message with Marine theme
+        const welcomeChannelId = process.env.WELCOME_CHANNEL;
+        if (welcomeChannelId) {
+            const welcomeChannel = member.guild.channels.cache.get(welcomeChannelId);
+            if (welcomeChannel && welcomeChannel.isTextBased()) {
+                const welcomeEmbed = new EmbedBuilder()
+                    .setColor('#FF0000')
+                    .setTitle('🚨 NEW PIRATE DETECTED 🚨')
+                    .setDescription(`**${member.user.username}** has entered Marine surveillance!\n\n*Initial bounty: ฿0 - Classification: Civilian*`)
+                    .setThumbnail(member.user.displayAvatarURL({ size: 128 }))
+                    .addFields({
+                        name: '📋 Marine Intelligence Report',
+                        value: `\`\`\`diff\n- SUBJECT: ${member.user.username}\n- STATUS: Under Observation\n- INITIAL LEVEL: 0\n- BOUNTY: ฿0\n- THREAT LEVEL: Minimal\n\`\`\``,
+                        inline: false
+                    })
+                    .setFooter({ text: '⚓ Marine Intelligence Division • New Recruit Processing' })
+                    .setTimestamp();
+                
+                await welcomeChannel.send({ embeds: [welcomeEmbed] });
+                console.log(`[NEW MEMBER] ✅ Sent welcome message for ${member.user.username}`);
+            }
+        }
+        
+    } catch (error) {
+        console.error(`[NEW MEMBER] Error processing new member ${member.user.username}:`, error);
+    }
+});
+
+// ADDED: Function to assign missing Level 0 roles to existing members
+async function assignMissingLevel0Roles() {
+    try {
+        console.log('[LEVEL 0 AUDIT] Checking for members without Level 0 role...');
+        
+        const level0RoleId = process.env.LEVEL_0_ROLE || '1382198693545115658';
+        if (!level0RoleId || level0RoleId === 'role_id_0') {
+            console.log('[LEVEL 0 AUDIT] No Level 0 role configured, skipping audit');
+            return;
+        }
+        
+        let totalProcessed = 0;
+        let totalAssigned = 0;
+        
+        // Check each guild
+        for (const [guildId, guild] of client.guilds.cache) {
+            try {
+                const level0Role = guild.roles.cache.get(level0RoleId);
+                if (!level0Role) {
+                    console.log(`[LEVEL 0 AUDIT] Level 0 role not found in ${guild.name}, skipping`);
+                    continue;
+                }
+                
+                // Get all members (this might take a while for large servers)
+                await guild.members.fetch();
+                
+                console.log(`[LEVEL 0 AUDIT] Checking ${guild.memberCount} members in ${guild.name}...`);
+                
+                for (const [memberId, member] of guild.members.cache) {
+                    totalProcessed++;
+                    
+                    // Skip bots
+                    if (member.user.bot) continue;
+                    
+                    // Skip if already has Level 0 role
+                    if (member.roles.cache.has(level0RoleId)) continue;
+                    
+                    // Skip if has any higher level roles (Level 5+)
+                    const hasHigherRole = [
+                        process.env.LEVEL_5_ROLE,
+                        process.env.LEVEL_10_ROLE,
+                        process.env.LEVEL_15_ROLE,
+                        process.env.LEVEL_20_ROLE,
+                        process.env.LEVEL_25_ROLE,
+                        process.env.LEVEL_30_ROLE,
+                        process.env.LEVEL_35_ROLE,
+                        process.env.LEVEL_40_ROLE,
+                        process.env.LEVEL_45_ROLE,
+                        process.env.LEVEL_50_ROLE
+                    ].some(roleId => roleId && member.roles.cache.has(roleId));
+                    
+                    if (hasHigherRole) {
+                        console.log(`[LEVEL 0 AUDIT] ${member.user.username} has higher level role, skipping Level 0`);
+                        continue;
+                    }
+                    
+                    // Check their level in database
+                    if (global.xpTracker && global.xpTracker.db) {
+                        try {
+                            const userStats = await global.xpTracker.db.query(
+                                'SELECT level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                                [member.user.id, guild.id]
+                            );
+                            
+                            // If they're Level 1+ in database, don't give Level 0 role
+                            if (userStats.rows.length > 0 && userStats.rows[0].level > 0) {
+                                console.log(`[LEVEL 0 AUDIT] ${member.user.username} is Level ${userStats.rows[0].level} in database, skipping Level 0 role`);
+                                continue;
+                            }
+                        } catch (dbError) {
+                            console.error(`[LEVEL 0 AUDIT] Database check error for ${member.user.username}:`, dbError);
+                        }
+                    }
+                    
+                    // Assign Level 0 role
+                    try {
+                        await member.roles.add(level0Role);
+                        totalAssigned++;
+                        console.log(`[LEVEL 0 AUDIT] ✅ Added Level 0 role to ${member.user.username}`);
+                        
+                        // Small delay to avoid rate limits
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        
+                    } catch (roleError) {
+                        console.error(`[LEVEL 0 AUDIT] Failed to add Level 0 role to ${member.user.username}:`, roleError);
+                    }
+                }
+                
+            } catch (guildError) {
+                console.error(`[LEVEL 0 AUDIT] Error processing guild ${guild.name}:`, guildError);
+            }
+        }
+        
+        console.log(`[LEVEL 0 AUDIT] ✅ Audit complete: Processed ${totalProcessed} members, assigned ${totalAssigned} Level 0 roles`);
+        
+    } catch (error) {
+        console.error('[LEVEL 0 AUDIT] Audit failed:', error);
+    }
+}
+
 // Event handlers
 client.once('ready', async () => {
     console.log(`[INFO] Bot logged in as ${client.user.tag}`);
@@ -212,10 +388,16 @@ client.once('ready', async () => {
         // Run initial cleanup
         await xpTracker.cleanupDailyVoiceXP();
         
+        // ADDED: Check for existing members without Level 0 role (run once on startup)
+        setTimeout(async () => {
+            await assignMissingLevel0Roles();
+        }, 10000); // Wait 10 seconds after bot startup
+        
         console.log('[INFO] Discord Leveling Bot is fully operational!');
         console.log(`[INFO] Bot is in ${client.guilds.cache.size} servers`);
         console.log(`[INFO] Monitoring ${client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)} total members`);
         console.log(`[INFO] Daily voice XP cap: ${process.env.DAILY_VOICE_XP_CAP || 6000} XP per user`);
+        console.log(`[INFO] Level 0 role: ${process.env.LEVEL_0_ROLE || '1382198693545115658'}`);
         
     } catch (error) {
         console.error('[ERROR] Error during bot initialization:', error);
