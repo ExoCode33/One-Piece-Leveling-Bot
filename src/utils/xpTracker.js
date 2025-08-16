@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete fixed file with ONLY XP calculation fixes
+// src/utils/xpTracker.js - Complete fixed file with XP boost integration and proper voice handling
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -134,10 +134,13 @@ class XPTracker {
                                     guildId: guildId,
                                     channelId: channelId,
                                     joinTime: Date.now(), // Use current time as join time
-                                    lastXPTime: Date.now()
+                                    lastXPTime: Date.now(),
+                                    // ADDED: Track voice state for mute/deafen detection
+                                    isMuted: member.voice.mute || member.voice.selfMute,
+                                    isDeafened: member.voice.deaf || member.voice.selfDeaf
                                 });
                                 totalFound++;
-                                console.log(`[VOICE XP] Added existing member: ${member.user.username} in ${channel.name}`);
+                                console.log(`[VOICE XP] Added existing member: ${member.user.username} in ${channel.name} (muted: ${member.voice.mute || member.voice.selfMute})`);
                             }
                         }
                     }
@@ -153,81 +156,72 @@ class XPTracker {
         }
     }
 
-    async handleMessageXP(message) {
-        if (message.author.bot || !message.guild) return;
-
-        const userId = message.author.id;
-        const guildId = message.guild.id;
-        const cooldownKey = `${userId}_${guildId}_message`;
-
-        // Check cooldown using YOUR environment variables
-        if (this.isOnCooldown(cooldownKey, parseInt(process.env.MESSAGE_COOLDOWN) || 60000)) {
-            return;
-        }
-
-        // Calculate XP using YOUR environment variables
-        const xpGain = this.getRandomXP('message');
-
-        // Award XP and check for level up
-        await this.awardXP(userId, guildId, xpGain, 'message', message.author);
-        this.setCooldown(cooldownKey);
-    }
-
-    async handleReactionXP(reaction, user) {
-        if (user.bot || !reaction.message.guild) return;
-
-        const userId = user.id;
-        const guildId = reaction.message.guild.id;
-        const cooldownKey = `${userId}_${guildId}_reaction`;
-
-        // Check cooldown using YOUR environment variables
-        if (this.isOnCooldown(cooldownKey, parseInt(process.env.REACTION_COOLDOWN) || 300000)) {
-            return;
-        }
-
-        // Calculate XP using YOUR environment variables
-        const xpGain = this.getRandomXP('reaction');
-
-        // Award XP and check for level up
-        await this.awardXP(userId, guildId, xpGain, 'reaction', user);
-        this.setCooldown(cooldownKey);
-    }
-
+    // FIXED: Voice state update handler with mute/deafen tracking
     async handleVoiceStateUpdate(oldState, newState) {
         const userId = newState.id || oldState.id;
         const guildId = newState.guild?.id || oldState.guild?.id;
         
         if (!guildId) return;
 
+        const guild = this.client.guilds.cache.get(guildId);
+        if (!guild) return;
+
+        const member = guild.members.cache.get(userId);
+        if (!member || member.user.bot) return;
+
         // User joined voice channel
         if (!oldState.channelId && newState.channelId) {
+            console.log(`[VOICE] ${member.user.username} joined ${newState.channel.name}`);
             this.voiceSessions.set(userId, {
                 guildId,
                 channelId: newState.channelId,
                 joinTime: Date.now(),
-                lastXPTime: Date.now()
+                lastXPTime: Date.now(),
+                isMuted: newState.mute || newState.selfMute,
+                isDeafened: newState.deaf || newState.selfDeaf
             });
         }
         // User left voice channel
         else if (oldState.channelId && !newState.channelId) {
+            console.log(`[VOICE] ${member.user.username} left voice channel`);
             this.voiceSessions.delete(userId);
         }
         // User changed channels
         else if (oldState.channelId !== newState.channelId) {
+            console.log(`[VOICE] ${member.user.username} moved to ${newState.channel.name}`);
             if (this.voiceSessions.has(userId)) {
                 const session = this.voiceSessions.get(userId);
                 session.channelId = newState.channelId;
                 session.joinTime = Date.now();
+                session.isMuted = newState.mute || newState.selfMute;
+                session.isDeafened = newState.deaf || newState.selfDeaf;
+            }
+        }
+        // ADDED: Mute/deafen state changed
+        else if (oldState.channelId && newState.channelId) {
+            const oldMuted = oldState.mute || oldState.selfMute;
+            const newMuted = newState.mute || newState.selfMute;
+            const oldDeafened = oldState.deaf || oldState.selfDeaf;
+            const newDeafened = newState.deaf || newState.selfDeaf;
+            
+            if (oldMuted !== newMuted || oldDeafened !== newDeafened) {
+                console.log(`[VOICE] ${member.user.username} mute/deafen state changed: muted ${oldMuted}→${newMuted}, deafened ${oldDeafened}→${newDeafened}`);
+                if (this.voiceSessions.has(userId)) {
+                    const session = this.voiceSessions.get(userId);
+                    session.isMuted = newMuted;
+                    session.isDeafened = newDeafened;
+                }
             }
         }
     }
 
-    // FIXED: Voice XP processing with proper boost and multiplier calculation order
+    // FIXED: Voice XP processing with proper mute handling and XP boost integration
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
         const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
         const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 6000;
+        const antiAFK = process.env.VOICE_ANTI_AFK === 'true';
 
         // Collect all voice XP activities for batch logging
         const voiceActivities = [];
@@ -251,6 +245,19 @@ class XPTracker {
                 const memberCount = channel.members.filter(m => !m.user.bot).size;
                 if (memberCount < minMembers) continue;
 
+                // Get user and member
+                const user = await this.client.users.fetch(userId).catch(() => null);
+                if (!user) continue;
+
+                const member = await guild.members.fetch(userId).catch(() => null);
+                if (!member) continue;
+
+                // Check if user has excluded role
+                const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
+                if (guildSettings.excludedRole && member.roles.cache.has(guildSettings.excludedRole)) {
+                    continue; // Skip XP for excluded role (Pirate King)
+                }
+
                 // Check daily voice XP cap
                 const today = new Date().toDateString();
                 const dailyKey = `${userId}_${today}`;
@@ -263,22 +270,24 @@ class XPTracker {
                 const voiceXPMax = parseInt(process.env.VOICE_XP_MAX) || 55;
                 const baseXP = Math.floor(Math.random() * (voiceXPMax - voiceXPMin + 1)) + voiceXPMin;
 
-                const user = await this.client.users.fetch(userId).catch(() => null);
-                if (!user) continue;
-
-                const member = await guild.members.fetch(userId).catch(() => null);
-                if (!member) continue;
-
-                // FIXED: Apply XP boost FIRST, then global multiplier, then daily cap
                 let finalXP = baseXP;
+
+                // ADDED: Apply mute penalty (25% XP if muted/deafened)
+                let muteMultiplier = 1.0;
+                if (antiAFK && (session.isMuted || session.isDeafened)) {
+                    muteMultiplier = 0.25; // 25% XP when muted/deafened
+                    console.log(`[VOICE XP] ${user.username} is muted/deafened, applying 25% XP penalty`);
+                }
+                finalXP = Math.round(baseXP * muteMultiplier);
                 
-                // Apply role-based XP boost first
+                // Apply role-based XP boost
                 if (global.xpBoostManager && member) {
                     try {
                         const boostResult = await global.xpBoostManager.calculateUserBoost(session.guildId, member);
                         if (boostResult.multiplier > 1.0) {
-                            finalXP = Math.round(baseXP * boostResult.multiplier);
-                            console.log(`[XP BOOST] ${user.username} voice: ${baseXP} base → ${finalXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
+                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
+                            console.log(`[XP BOOST] ${user.username} voice: ${baseXP} base → ${finalXP} muted → ${boostedXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
+                            finalXP = boostedXP;
                         }
                     } catch (error) {
                         console.error('[XP BOOST ERROR] Failed to calculate user boost for voice:', error);
@@ -286,7 +295,6 @@ class XPTracker {
                 }
                 
                 // Apply global multiplier AFTER boost
-                const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
                 const globalMultiplier = guildSettings.xpMultiplier || 1.0;
                 if (globalMultiplier !== 1.0) {
                     const afterGlobal = Math.round(finalXP * globalMultiplier);
@@ -309,7 +317,7 @@ class XPTracker {
                 // Update daily tracking with actual XP gained
                 this.dailyVoiceXP.set(dailyKey, dailyXP + actualXPGain);
 
-                // FIXED: Award XP with FINAL calculated amount (skip multiplier in awardXP)
+                // Award XP with FINAL calculated amount (skip multiplier in awardXP)
                 await this.awardXP(userId, session.guildId, actualXPGain, 'voice_silent', user, true);
                 
                 // Get updated user stats AFTER XP is awarded
@@ -325,7 +333,9 @@ class XPTracker {
                     xpGain: actualXPGain,
                     dailyCapped: (dailyXP + actualXPGain) >= dailyCap,
                     totalXP: updatedStats?.total_xp || 0,
-                    currentLevel: updatedStats?.level || 0
+                    currentLevel: updatedStats?.level || 0,
+                    wasMuted: session.isMuted || session.isDeafened,
+                    muteMultiplier: muteMultiplier
                 });
                 
                 session.lastXPTime = now;
@@ -411,7 +421,8 @@ class XPTracker {
                 
                 channelActivities.forEach(activity => {
                     const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
-                    description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}\n`;
+                    const muteText = activity.wasMuted ? ` (MUTED ${Math.round(activity.muteMultiplier * 100)}%)` : '';
+                    description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}${muteText}\n`;
                     totalXPAwarded += activity.xpGain;
                 });
             }
@@ -428,23 +439,46 @@ class XPTracker {
         }
     }
 
-    // FIXED: Award XP with optional multiplier skip parameter
+    // FIXED: Award XP with XP boost integration and proper multiplier handling
     async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         try {
+            // Get member for XP boost calculation
+            const guild = this.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
             let finalXP = xpAmount;
             
-            // FIXED: Only apply multiplier if not already applied (skipMultiplier = false)
+            // If xpAmount is null, calculate base XP based on source
+            if (xpAmount === null) {
+                finalXP = this.getRandomXP(source);
+                console.log(`[XP CALC] Generated base XP for ${source}: ${finalXP}`);
+            }
+            
+            // FIXED: Only apply multipliers if not already applied (skipMultiplier = false)
             if (!skipMultiplier) {
-                // Get guild settings for multiplier
-                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
+                // Apply XP boost FIRST if available
+                if (global.xpBoostManager && member) {
+                    try {
+                        const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
+                        if (boostResult.multiplier > 1.0) {
+                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
+                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} base → ${boostedXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
+                            finalXP = boostedXP;
+                        }
+                    } catch (error) {
+                        console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
+                    }
+                }
                 
-                // Apply guild XP multiplier only if not already applied
+                // Apply guild XP multiplier AFTER boost
+                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
                 const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
                 
                 if (multiplier !== 1.0) {
-                    const rawFinalXP = xpAmount * multiplier;
-                    finalXP = Math.round(rawFinalXP);
-                    console.log(`[XP CALC - AWARD] Applying multiplier: ${xpAmount} × ${multiplier} = ${rawFinalXP} → ${finalXP}`);
+                    const rawFinalXP = finalXP * multiplier;
+                    const afterGlobal = Math.round(rawFinalXP);
+                    console.log(`[XP CALC] ${user.username} ${source}: ${finalXP} boosted → ${afterGlobal} final (${multiplier}x global)`);
+                    finalXP = afterGlobal;
                 }
             }
             
@@ -462,7 +496,7 @@ class XPTracker {
             const oldLevel = beforeResult.rows.length > 0 ? beforeResult.rows[0].level : 0;
             const oldTotalXP = beforeResult.rows.length > 0 ? beforeResult.rows[0].total_xp : 0;
 
-            // Update user stats using YOUR database structure
+            // Update user stats using database structure
             await this.db.query(`
                 INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time, level)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -532,7 +566,7 @@ class XPTracker {
         try {
             console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
 
-            // Award level roles using YOUR level role system
+            // Award level roles using level role system
             const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
 
             // Send Marine-themed level up notification
@@ -744,7 +778,7 @@ class XPTracker {
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return null;
 
-            // Check for level-specific roles using YOUR environment variables
+            // Check for level-specific roles using environment variables
             const levelRoles = [
                 { level: 5, roleId: process.env.LEVEL_5_ROLE },
                 { level: 10, roleId: process.env.LEVEL_10_ROLE },
@@ -976,7 +1010,7 @@ class XPTracker {
         }
     }
 
-    // Fixed XP calculation method using YOUR environment variables
+    // Fixed XP calculation method using environment variables
     getXPForLevel(level) {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
@@ -992,7 +1026,7 @@ class XPTracker {
         return Math.floor(100 * Math.pow(level, multiplier));
     }
 
-    // Fixed XP generation using YOUR environment variables
+    // Fixed XP generation using environment variables
     getRandomXP(type) {
         let min, max;
         
@@ -1097,7 +1131,9 @@ class XPTracker {
                                             guildId: guildId,
                                             channelId: channelId,
                                             joinTime: Date.now(),
-                                            lastXPTime: Date.now()
+                                            lastXPTime: Date.now(),
+                                            isMuted: member.voice.mute || member.voice.selfMute,
+                                            isDeafened: member.voice.deaf || member.voice.selfDeaf
                                         });
                                         totalFound++;
                                         console.log(`[VOICE XP] Reinitialized: ${member.user.username} in ${channel.name} (${guild.name})`);
