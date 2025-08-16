@@ -1,11 +1,11 @@
-// index.js - Complete fixed version with XP Boost System integrated and Level 0 role assignment
+// index.js - Complete enhanced version with XP Boost System, Level 0 roles, and robust database handling
 
 const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const XPTracker = require('./src/utils/xpTracker');
-const XPBoostManager = require('./src/utils/xpBoost'); // ADDED: XP Boost System
+const XPBoostManager = require('./src/utils/xpBoost');
 
 // Environment validation
 const requiredEnvVars = ['DISCORD_TOKEN', 'DATABASE_URL'];
@@ -19,60 +19,153 @@ for (const envVar of requiredEnvVars) {
 console.log('[INFO] Starting Discord Leveling Bot...');
 console.log('[INFO] Environment validation passed');
 
-// Initialize database connection
+// Enhanced database connection with better error handling and reconnection
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Enhanced connection pool settings for Railway
+    max: 20,                    // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000,   // Close idle clients after 30 seconds
+    connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
+    maxUses: 7500,              // Close (and replace) a connection after it has been used 7500 times
+    allowExitOnIdle: false,     // Don't exit when no connections
+    keepAlive: true,            // Enable TCP keep-alive
+    keepAliveInitialDelayMillis: 10000, // Initial delay before starting keep-alive probes
 });
 
-// ADDED: XP Boost Manager
+// Enhanced error handling for database connections
+db.on('error', (err, client) => {
+    console.error('[DATABASE] Unexpected error on idle client:', err.message);
+    // Don't exit the process, just log the error
+});
+
+db.on('connect', (client) => {
+    console.log('[DATABASE] New client connected');
+});
+
+db.on('acquire', (client) => {
+    console.log('[DATABASE] Client acquired from pool');
+});
+
+db.on('remove', (client) => {
+    console.log('[DATABASE] Client removed from pool');
+});
+
+// XP Boost Manager
 let xpBoostManager;
 
-// Test database connection and create tables
-async function initializeDatabase() {
-    try {
-        await db.query('SELECT NOW()');
-        console.log('[INFO] Database connection established');
-
-        // Create tables if they don't exist
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS user_levels (
-                user_id VARCHAR(20) NOT NULL,
-                guild_id VARCHAR(20) NOT NULL,
-                total_xp INTEGER DEFAULT 0,
-                level INTEGER DEFAULT 0,
-                messages INTEGER DEFAULT 0,
-                reactions INTEGER DEFAULT 0,
-                voice_time INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, guild_id)
-            )
-        `);
-
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS guild_settings (
-                guild_id VARCHAR(20) PRIMARY KEY,
-                levelup_channel VARCHAR(20),
-                excluded_role VARCHAR(20),
-                xp_multiplier DECIMAL(3,1) DEFAULT 1.0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        console.log('[INFO] Database tables initialized');
-    } catch (error) {
-        console.error('[ERROR] Database initialization failed:', error);
-        process.exit(1);
+// Enhanced helper function with connection recovery
+async function executeQuery(query, params = []) {
+    let retries = 3;
+    
+    while (retries > 0) {
+        try {
+            const result = await db.query(query, params);
+            return result;
+        } catch (error) {
+            retries--;
+            console.error(`[DATABASE] Query failed (${retries} retries left):`, error.message);
+            
+            if (retries === 0) {
+                throw error;
+            }
+            
+            // Short delay before retry
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
     }
 }
 
-// ADDED: Initialize XP Boost System
+// Enhanced database initialization with retry logic
+async function initializeDatabase() {
+    let retries = 5;
+    
+    while (retries > 0) {
+        try {
+            console.log(`[DATABASE] Attempting connection (${6 - retries}/5)...`);
+            
+            // Test connection with timeout
+            const testClient = await db.connect();
+            const result = await testClient.query('SELECT NOW()');
+            testClient.release();
+            
+            console.log('[INFO] Database connection established successfully');
+            console.log(`[DATABASE] Current time: ${result.rows[0].now}`);
+
+            // Create tables if they don't exist
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS user_levels (
+                    user_id VARCHAR(20) NOT NULL,
+                    guild_id VARCHAR(20) NOT NULL,
+                    total_xp INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 0,
+                    messages INTEGER DEFAULT 0,
+                    reactions INTEGER DEFAULT 0,
+                    voice_time INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, guild_id)
+                )
+            `);
+
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS guild_settings (
+                    guild_id VARCHAR(20) PRIMARY KEY,
+                    levelup_channel VARCHAR(20),
+                    levelup_enabled BOOLEAN DEFAULT true,
+                    xp_log_channel VARCHAR(20),
+                    xp_log_enabled BOOLEAN DEFAULT false,
+                    excluded_role VARCHAR(20),
+                    xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Create XP boosts table
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS xp_boosts (
+                    id SERIAL PRIMARY KEY,
+                    guild_id VARCHAR(20) NOT NULL,
+                    role_id VARCHAR(20) NOT NULL,
+                    boost_multiplier DECIMAL(4,2) NOT NULL DEFAULT 1.0,
+                    boost_name VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(guild_id, role_id)
+                )
+            `);
+
+            // Create indexes for better performance
+            await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_guild ON user_levels(guild_id)');
+            await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_xp ON user_levels(guild_id, total_xp DESC)');
+            await db.query('CREATE INDEX IF NOT EXISTS idx_xp_boosts_guild_role ON xp_boosts(guild_id, role_id)');
+
+            console.log('[INFO] Database tables and indexes initialized');
+            return; // Success, exit retry loop
+            
+        } catch (error) {
+            retries--;
+            console.error(`[ERROR] Database connection attempt failed (${retries} retries left):`, error.message);
+            
+            if (retries === 0) {
+                console.error('[FATAL] Could not establish database connection after 5 attempts');
+                process.exit(1);
+            }
+            
+            // Wait before retry (exponential backoff)
+            const delay = (6 - retries) * 2000; // 2s, 4s, 6s, 8s, 10s
+            console.log(`[DATABASE] Retrying in ${delay/1000} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
+// Initialize XP Boost System
 async function initializeXPBoostSystem() {
     try {
         xpBoostManager = new XPBoostManager(db);
-        global.xpBoostManager = xpBoostManager; // Make available globally
+        global.xpBoostManager = xpBoostManager;
         console.log('[INFO] XP Boost system initialized successfully');
     } catch (error) {
         console.error('[ERROR] Failed to initialize XP Boost system:', error);
@@ -120,7 +213,7 @@ for (const file of commandFiles) {
     }
 }
 
-// Helper function to get guild settings
+// Enhanced guild settings function with better error handling
 async function getGuildSettings(guildId) {
     // Check cache first
     if (global.guildSettings.has(guildId)) {
@@ -128,8 +221,8 @@ async function getGuildSettings(guildId) {
     }
 
     try {
-        // Get from database
-        const result = await db.query(
+        // Get from database with retry logic
+        const result = await executeQuery(
             'SELECT * FROM guild_settings WHERE guild_id = $1',
             [guildId]
         );
@@ -138,6 +231,9 @@ async function getGuildSettings(guildId) {
         if (result.rows.length > 0) {
             settings = {
                 levelupChannel: result.rows[0].levelup_channel,
+                levelupEnabled: result.rows[0].levelup_enabled,
+                xpLogChannel: result.rows[0].xp_log_channel,
+                xpLogEnabled: result.rows[0].xp_log_enabled,
                 excludedRole: result.rows[0].excluded_role,
                 xpMultiplier: parseFloat(result.rows[0].xp_multiplier) || 1.0
             };
@@ -145,12 +241,15 @@ async function getGuildSettings(guildId) {
             // Create default settings
             settings = {
                 levelupChannel: null,
+                levelupEnabled: true,
+                xpLogChannel: null,
+                xpLogEnabled: false,
                 excludedRole: null,
                 xpMultiplier: 1.0
             };
             
             // Insert default settings into database
-            await db.query(
+            await executeQuery(
                 'INSERT INTO guild_settings (guild_id, xp_multiplier) VALUES ($1, $2) ON CONFLICT (guild_id) DO NOTHING',
                 [guildId, 1.0]
             );
@@ -163,13 +262,16 @@ async function getGuildSettings(guildId) {
         console.error('[ERROR] Error getting guild settings:', error);
         return {
             levelupChannel: null,
+            levelupEnabled: true,
+            xpLogChannel: null,
+            xpLogEnabled: false,
             excludedRole: null,
             xpMultiplier: 1.0
         };
     }
 }
 
-// ADDED: Auto-assign Level 0 role to new members
+// Auto-assign Level 0 role to new members
 client.on('guildMemberAdd', async member => {
     try {
         // Skip bots
@@ -192,7 +294,7 @@ client.on('guildMemberAdd', async member => {
             return;
         }
         
-        // Check if member already has the role (shouldn't happen for new members)
+        // Check if member already has the role
         if (member.roles.cache.has(level0RoleId)) {
             console.log(`[NEW MEMBER] ${member.user.username} already has Level 0 role`);
             return;
@@ -202,10 +304,10 @@ client.on('guildMemberAdd', async member => {
         await member.roles.add(level0Role);
         console.log(`[NEW MEMBER] ✅ Added Level 0 role "${level0Role.name}" to ${member.user.username}`);
         
-        // Initialize user in database with 0 XP and Level 0
+        // Initialize user in database with enhanced error handling
         if (global.xpTracker && global.xpTracker.db) {
             try {
-                await global.xpTracker.db.query(`
+                await executeQuery(`
                     INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
                     VALUES ($1, $2, 0, 0, 0, 0, 0)
                     ON CONFLICT (user_id, guild_id) DO NOTHING
@@ -213,7 +315,7 @@ client.on('guildMemberAdd', async member => {
                 
                 console.log(`[NEW MEMBER] ✅ Initialized database entry for ${member.user.username}`);
             } catch (dbError) {
-                console.error(`[NEW MEMBER] Database error for ${member.user.username}:`, dbError);
+                console.error(`[NEW MEMBER] Database error for ${member.user.username}:`, dbError.message);
             }
         }
         
@@ -241,14 +343,14 @@ client.on('guildMemberAdd', async member => {
         }
         
     } catch (error) {
-        console.error(`[NEW MEMBER] Error processing new member ${member.user.username}:`, error);
+        console.error(`[NEW MEMBER] Error processing new member ${member.user.username}:`, error.message);
     }
 });
 
-// ADDED: Function to assign missing Level 0 roles to existing members
+// Enhanced Level 0 audit with better error handling and batching
 async function assignMissingLevel0Roles() {
     try {
-        console.log('[LEVEL 0 AUDIT] Checking for members without Level 0 role...');
+        console.log('[LEVEL 0 AUDIT] Starting enhanced audit with connection recovery...');
         
         const level0RoleId = process.env.LEVEL_0_ROLE || '1382198693545115658';
         if (!level0RoleId || level0RoleId === 'role_id_0') {
@@ -268,80 +370,82 @@ async function assignMissingLevel0Roles() {
                     continue;
                 }
                 
-                // Get all members (this might take a while for large servers)
+                // Get all members
                 await guild.members.fetch();
+                console.log(`[LEVEL 0 AUDIT] Processing ${guild.memberCount} members in ${guild.name}...`);
                 
-                console.log(`[LEVEL 0 AUDIT] Checking ${guild.memberCount} members in ${guild.name}...`);
+                // Process members in batches to avoid overwhelming the database
+                const members = Array.from(guild.members.cache.values());
+                const batchSize = 10;
                 
-                for (const [memberId, member] of guild.members.cache) {
-                    totalProcessed++;
+                for (let i = 0; i < members.length; i += batchSize) {
+                    const batch = members.slice(i, i + batchSize);
                     
-                    // Skip bots
-                    if (member.user.bot) continue;
-                    
-                    // Skip if already has Level 0 role
-                    if (member.roles.cache.has(level0RoleId)) continue;
-                    
-                    // Skip if has any higher level roles (Level 5+)
-                    const hasHigherRole = [
-                        process.env.LEVEL_5_ROLE,
-                        process.env.LEVEL_10_ROLE,
-                        process.env.LEVEL_15_ROLE,
-                        process.env.LEVEL_20_ROLE,
-                        process.env.LEVEL_25_ROLE,
-                        process.env.LEVEL_30_ROLE,
-                        process.env.LEVEL_35_ROLE,
-                        process.env.LEVEL_40_ROLE,
-                        process.env.LEVEL_45_ROLE,
-                        process.env.LEVEL_50_ROLE
-                    ].some(roleId => roleId && member.roles.cache.has(roleId));
-                    
-                    if (hasHigherRole) {
-                        console.log(`[LEVEL 0 AUDIT] ${member.user.username} has higher level role, skipping Level 0`);
-                        continue;
-                    }
-                    
-                    // Check their level in database
-                    if (global.xpTracker && global.xpTracker.db) {
+                    for (const member of batch) {
+                        totalProcessed++;
+                        
+                        // Skip bots
+                        if (member.user.bot) continue;
+                        
+                        // Skip if already has Level 0 role
+                        if (member.roles.cache.has(level0RoleId)) continue;
+                        
+                        // Skip if has any higher level roles
+                        const hasHigherRole = [
+                            process.env.LEVEL_5_ROLE,
+                            process.env.LEVEL_10_ROLE,
+                            process.env.LEVEL_15_ROLE,
+                            process.env.LEVEL_20_ROLE,
+                            process.env.LEVEL_25_ROLE,
+                            process.env.LEVEL_30_ROLE,
+                            process.env.LEVEL_35_ROLE,
+                            process.env.LEVEL_40_ROLE,
+                            process.env.LEVEL_45_ROLE,
+                            process.env.LEVEL_50_ROLE
+                        ].some(roleId => roleId && member.roles.cache.has(roleId));
+                        
+                        if (hasHigherRole) continue;
+                        
+                        // Check database level with enhanced error handling
                         try {
-                            const userStats = await global.xpTracker.db.query(
+                            const userStats = await executeQuery(
                                 'SELECT level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                                 [member.user.id, guild.id]
                             );
                             
-                            // If they're Level 1+ in database, don't give Level 0 role
                             if (userStats.rows.length > 0 && userStats.rows[0].level > 0) {
-                                console.log(`[LEVEL 0 AUDIT] ${member.user.username} is Level ${userStats.rows[0].level} in database, skipping Level 0 role`);
                                 continue;
                             }
                         } catch (dbError) {
-                            console.error(`[LEVEL 0 AUDIT] Database check error for ${member.user.username}:`, dbError);
+                            console.error(`[LEVEL 0 AUDIT] Database check error for ${member.user.username}:`, dbError.message);
+                            continue;
+                        }
+                        
+                        // Assign Level 0 role with retry logic
+                        try {
+                            await member.roles.add(level0Role);
+                            totalAssigned++;
+                            console.log(`[LEVEL 0 AUDIT] ✅ Added Level 0 role to ${member.user.username}`);
+                        } catch (roleError) {
+                            console.error(`[LEVEL 0 AUDIT] Failed to add Level 0 role to ${member.user.username}:`, roleError.message);
                         }
                     }
                     
-                    // Assign Level 0 role
-                    try {
-                        await member.roles.add(level0Role);
-                        totalAssigned++;
-                        console.log(`[LEVEL 0 AUDIT] ✅ Added Level 0 role to ${member.user.username}`);
-                        
-                        // Small delay to avoid rate limits
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        
-                    } catch (roleError) {
-                        console.error(`[LEVEL 0 AUDIT] Failed to add Level 0 role to ${member.user.username}:`, roleError);
+                    // Delay between batches to avoid rate limits and reduce database load
+                    if (i + batchSize < members.length) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
                     }
                 }
                 
             } catch (guildError) {
-                console.error(`[LEVEL 0 AUDIT] Error processing guild ${guild.name}:`, guildError);
+                console.error(`[LEVEL 0 AUDIT] Error processing guild ${guild.name}:`, guildError.message);
             }
         }
         
-        console.log(`[LEVEL 0 AUDIT] ✅ Audit complete: Processed ${totalProcessed} members, assigned ${totalAssigned} Level 0 roles`);
+        console.log(`[LEVEL 0 AUDIT] ✅ Enhanced audit complete: Processed ${totalProcessed} members, assigned ${totalAssigned} Level 0 roles`);
         
     } catch (error) {
-        console.error('[LEVEL 0 AUDIT] Audit failed:', error);
+        console.error('[LEVEL 0 AUDIT] Enhanced audit failed:', error.message);
     }
 }
 
@@ -353,7 +457,7 @@ client.once('ready', async () => {
         // Initialize database first
         await initializeDatabase();
         
-        // ADDED: Initialize XP Boost system
+        // Initialize XP Boost system
         await initializeXPBoostSystem();
         
         // Register slash commands
@@ -371,7 +475,7 @@ client.once('ready', async () => {
         setInterval(() => {
             if (client.isReady()) {
                 xpTracker.processVoiceXP().catch(error => {
-                    console.error('[ERROR] Error in voice XP processing:', error);
+                    console.error('[ERROR] Error in voice XP processing:', error.message);
                 });
             }
         }, 60000);
@@ -380,7 +484,7 @@ client.once('ready', async () => {
         setInterval(() => {
             if (client.isReady()) {
                 xpTracker.cleanupDailyVoiceXP().catch(error => {
-                    console.error('[ERROR] Error in daily cleanup:', error);
+                    console.error('[ERROR] Error in daily cleanup:', error.message);
                 });
             }
         }, 24 * 60 * 60 * 1000);
@@ -388,7 +492,7 @@ client.once('ready', async () => {
         // Run initial cleanup
         await xpTracker.cleanupDailyVoiceXP();
         
-        // ADDED: Check for existing members without Level 0 role (run once on startup)
+        // Check for existing members without Level 0 role (run once on startup)
         setTimeout(async () => {
             await assignMissingLevel0Roles();
         }, 10000); // Wait 10 seconds after bot startup
@@ -400,7 +504,7 @@ client.once('ready', async () => {
         console.log(`[INFO] Level 0 role: ${process.env.LEVEL_0_ROLE || '1382198693545115658'}`);
         
     } catch (error) {
-        console.error('[ERROR] Error during bot initialization:', error);
+        console.error('[ERROR] Error during bot initialization:', error.message);
     }
 });
 
@@ -412,7 +516,7 @@ client.on('interactionCreate', async interaction => {
             try {
                 await leaderboardCommand.handleButtonInteraction(interaction, xpTracker);
             } catch (error) {
-                console.error('[ERROR] Button interaction error:', error);
+                console.error('[ERROR] Button interaction error:', error.message);
             }
         }
         return;
@@ -442,7 +546,7 @@ client.on('interactionCreate', async interaction => {
                 await adminCommand.handleNuclearButtons(interaction, db);
             }
         } catch (error) {
-            console.error('[ERROR] Admin button error:', error);
+            console.error('[ERROR] Admin button error:', error.message);
             
             const errorMessage = {
                 content: '```diff\n- MARINE INTELLIGENCE SYSTEM ERROR\n- Button interaction failed. Please try again.```',
@@ -473,7 +577,7 @@ client.on('interactionCreate', async interaction => {
     try {
         await command.execute(interaction);
     } catch (error) {
-        console.error(`[ERROR] Error executing command ${interaction.commandName}:`, error);
+        console.error(`[ERROR] Error executing command ${interaction.commandName}:`, error.message);
         
         const errorMessage = {
             content: 'There was an error while executing this command!',
@@ -488,13 +592,13 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// FIXED: Message handler with proper XP boost integration
+// Message handler with proper XP boost integration
 client.on('messageCreate', async message => {
     // Ignore bots and system messages
     if (message.author.bot || !message.guild) return;
     
     try {
-        // Check cooldown (simple implementation)
+        // Check cooldown
         const cooldownKey = `${message.author.id}_${message.guild.id}_message`;
         const now = Date.now();
         
@@ -516,18 +620,18 @@ client.on('messageCreate', async message => {
             return; // Skip XP for excluded role (Pirate King)
         }
         
-        // FIXED: Pass the XP boost manager to awardXP
+        // Award XP with boost integration
         await xpTracker.awardXP(message.author.id, message.guild.id, null, 'message', message.author);
         
         // Set cooldown
         xpTracker.cooldowns.set(cooldownKey, now);
         
     } catch (error) {
-        console.error('[ERROR] Error processing message XP:', error);
+        console.error('[ERROR] Error processing message XP:', error.message);
     }
 });
 
-// FIXED: Reaction handler with proper XP boost integration
+// Reaction handler with proper XP boost integration
 client.on('messageReactionAdd', async (reaction, user) => {
     // Ignore bots
     if (user.bot || !reaction.message.guild) return;
@@ -555,38 +659,45 @@ client.on('messageReactionAdd', async (reaction, user) => {
             return; // Skip XP for excluded role (Pirate King)
         }
         
-        // FIXED: Pass the XP boost manager to awardXP
+        // Award XP with boost integration
         await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
         
         // Set cooldown
         xpTracker.cooldowns.set(cooldownKey, now);
         
     } catch (error) {
-        console.error('[ERROR] Error processing reaction XP:', error);
+        console.error('[ERROR] Error processing reaction XP:', error.message);
     }
 });
 
-// FIXED: Voice state update handler - simplified call
+// Voice state update handler
 client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
         await xpTracker.handleVoiceStateUpdate(oldState, newState);
     } catch (error) {
-        console.error('[ERROR] Error processing voice state update:', error);
+        console.error('[ERROR] Error processing voice state update:', error.message);
     }
 });
 
-// Error handlers
+// Enhanced error handlers
 client.on('error', error => {
-    console.error('[ERROR] Discord client error:', error);
+    console.error('[ERROR] Discord client error:', error.message);
 });
 
 process.on('unhandledRejection', error => {
-    console.error('[ERROR] Unhandled promise rejection:', error);
+    console.error('[ERROR] Unhandled promise rejection:', error.message);
+    // Don't exit the process for database connection errors
 });
 
 process.on('uncaughtException', error => {
-    console.error('[ERROR] Uncaught Exception:', error);
-    // Don't exit the process, just log the error
+    console.error('[ERROR] Uncaught Exception:', error.message);
+    // Don't exit the process for database connection errors, just log
+    if (error.message.includes('Connection terminated unexpectedly')) {
+        console.log('[INFO] Database connection will be automatically restored');
+        return;
+    }
+    // For other critical errors, still exit
+    process.exit(1);
 });
 
 // Graceful shutdown
@@ -609,7 +720,7 @@ process.on('SIGINT', async () => {
         console.log('[INFO] Shutdown complete');
         process.exit(0);
     } catch (error) {
-        console.error('[ERROR] Error during shutdown:', error);
+        console.error('[ERROR] Error during shutdown:', error.message);
         process.exit(1);
     }
 });
@@ -633,13 +744,13 @@ process.on('SIGTERM', async () => {
         console.log('[INFO] Shutdown complete');
         process.exit(0);
     } catch (error) {
-        console.error('[ERROR] Error during shutdown:', error);
+        console.error('[ERROR] Error during shutdown:', error.message);
         process.exit(1);
     }
 });
 
-// UPDATED: Export database and XP boost manager for use in commands
-module.exports = { db, xpBoostManager };
+// Export database and XP boost manager for use in commands
+module.exports = { db, xpBoostManager, executeQuery };
 
 // Login to Discord
 client.login(process.env.DISCORD_TOKEN);
