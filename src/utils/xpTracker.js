@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete fixed file with XP boost integration and proper voice handling
+// src/utils/xpTracker.js - Complete fixed file with XP boost integration and proper voice handling + USER PING TOGGLE
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -588,6 +588,7 @@ class XPTracker {
         }
     }
 
+    // FIXED: Added user ping toggle with environment variable
     async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward = null) {
         try {
             console.log(`[LEVEL UP] Sending notification for ${user.username}: ${oldLevel} → ${newLevel}`);
@@ -684,14 +685,24 @@ class XPTracker {
                 embed.setImage(`attachment://wanted_${user.id}.png`);
             }
 
-            // Send the notification
-            const messageOptions = { embeds: [embed] };
+            // Check if user pinging is enabled (NEW FEATURE)
+            const pingUser = process.env.LEVELUP_PING_USER !== 'false'; // Default to true
+            
+            // FIXED: Send the notification with optional user ping
+            const messageOptions = { 
+                embeds: [embed] 
+            };
+            
+            if (pingUser) {
+                messageOptions.content = `<@${userId}>`; // Ping the user if enabled
+            }
+            
             if (attachment) {
                 messageOptions.files = [attachment];
             }
             
             const message = await channel.send(messageOptions);
-            console.log(`[LEVEL UP] Notification sent successfully for ${user.username} in #${channel.name}`);
+            console.log(`[LEVEL UP] Notification sent successfully for ${user.username} in #${channel.name}${pingUser ? ' with user ping' : ' without ping'}`);
 
             return message;
 
