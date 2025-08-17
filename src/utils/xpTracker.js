@@ -1,9 +1,588 @@
-reactions: 0,
+// src/utils/xpTracker.js - Complete fixed file with early level penalty system
+
+const { EmbedBuilder } = require('discord.js');
+
+class XPTracker {
+    constructor(client, database) {
+        this.client = client;
+        this.db = database;
+        this.voiceSessions = new Map();
+        this.cooldowns = new Map();
+        this.dailyVoiceXP = new Map();
+        
+        this.loadGuildSettingsFromDatabase();
+        this.initializeExistingVoiceSessions();
+    }
+
+    async loadGuildSettingsFromDatabase() {
+        try {
+            console.log('[SETTINGS] Loading guild settings from database...');
+            
+            if (!global.guildSettings) {
+                global.guildSettings = new Map();
+            }
+
+            const tableInfo = await this.db.query(`
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_name = 'guild_settings'
+                ORDER BY ordinal_position
+            `);
+
+            console.log('[SETTINGS] Current guild_settings table columns:', tableInfo.rows.map(r => r.column_name).join(', '));
+
+            const existingColumns = tableInfo.rows.map(r => r.column_name);
+            
+            if (!existingColumns.includes('levelup_enabled')) {
+                console.log('[SETTINGS] Adding levelup_enabled column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS levelup_enabled BOOLEAN DEFAULT true');
+            }
+            
+            if (!existingColumns.includes('xp_log_enabled')) {
+                console.log('[SETTINGS] Adding xp_log_enabled column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_log_enabled BOOLEAN DEFAULT false');
+            }
+            
+            if (!existingColumns.includes('xp_multiplier')) {
+                console.log('[SETTINGS] Adding xp_multiplier column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_multiplier DECIMAL(3,2) DEFAULT 1.0');
+            }
+
+            if (!existingColumns.includes('levelup_channel')) {
+                console.log('[SETTINGS] Adding levelup_channel column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS levelup_channel VARCHAR(20)');
+            }
+
+            if (!existingColumns.includes('xp_log_channel')) {
+                console.log('[SETTINGS] Adding xp_log_channel column...');
+                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_log_channel VARCHAR(20)');
+            }
+
+            const result = await this.db.query(`
+                SELECT guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier
+                FROM guild_settings
+            `);
+
+            console.log(`[SETTINGS] Found ${result.rows.length} guild configurations in database`);
+
+            let loadedCount = 0;
+            for (const row of result.rows) {
+                const guildSettings = {
+                    levelupChannel: row.levelup_channel,
+                    levelupEnabled: row.levelup_enabled,
+                    xpLogChannel: row.xp_log_channel,
+                    xpLogEnabled: row.xp_log_enabled,
+                    xpMultiplier: parseFloat(row.xp_multiplier)
+                };
+
+                global.guildSettings.set(row.guild_id, guildSettings);
+                loadedCount++;
+            }
+
+            console.log(`[SETTINGS] Successfully loaded ${loadedCount} guild configurations from database`);
+
+        } catch (error) {
+            console.error('[SETTINGS] Error loading guild settings from database:', error);
+            
+            if (!global.guildSettings) {
+                global.guildSettings = new Map();
+            }
+        }
+    }
+
+    async initializeExistingVoiceSessions() {
+        try {
+            console.log('[VOICE XP] Scanning for existing voice channel members...');
+            
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            let totalFound = 0;
+            
+            for (const [guildId, guild] of this.client.guilds.cache) {
+                try {
+                    const voiceChannels = guild.channels.cache.filter(channel => 
+                        channel.type === 2 && 
+                        channel.members && 
+                        channel.members.size > 0
+                    );
+                    
+                    for (const [channelId, channel] of voiceChannels) {
+                        for (const [memberId, member] of channel.members) {
+                            if (!member.user.bot) {
+                                this.voiceSessions.set(memberId, {
+                                    guildId: guildId,
+                                    channelId: channelId,
+                                    joinTime: Date.now(),
+                                    lastXPTime: Date.now(),
+                                    isMuted: member.voice.mute || member.voice.selfMute,
+                                    isDeafened: member.voice.deaf || member.voice.selfDeaf
+                                });
+                                totalFound++;
+                                console.log(`[VOICE XP] Added existing member: ${member.user.username} in ${channel.name}`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[VOICE XP] Error scanning guild ${guild.name}:`, error);
+                }
+            }
+            
+            console.log(`[VOICE XP] Initialized ${totalFound} existing voice sessions`);
+            
+        } catch (error) {
+            console.error('[VOICE XP] Error initializing existing voice sessions:', error);
+        }
+    }
+
+    async handleVoiceStateUpdate(oldState, newState) {
+        const userId = newState.id || oldState.id;
+        const guildId = newState.guild?.id || oldState.guild?.id;
+        
+        if (!guildId) return;
+
+        const guild = this.client.guilds.cache.get(guildId);
+        if (!guild) return;
+
+        const member = guild.members.cache.get(userId);
+        if (!member || member.user.bot) return;
+
+        if (!oldState.channelId && newState.channelId) {
+            console.log(`[VOICE] ${member.user.username} joined ${newState.channel.name}`);
+            this.voiceSessions.set(userId, {
+                guildId,
+                channelId: newState.channelId,
+                joinTime: Date.now(),
+                lastXPTime: Date.now(),
+                isMuted: newState.mute || newState.selfMute,
+                isDeafened: newState.deaf || newState.selfDeaf
+            });
+        }
+        else if (oldState.channelId && !newState.channelId) {
+            console.log(`[VOICE] ${member.user.username} left voice channel`);
+            this.voiceSessions.delete(userId);
+        }
+        else if (oldState.channelId !== newState.channelId) {
+            console.log(`[VOICE] ${member.user.username} moved to ${newState.channel.name}`);
+            if (this.voiceSessions.has(userId)) {
+                const session = this.voiceSessions.get(userId);
+                session.channelId = newState.channelId;
+                session.joinTime = Date.now();
+                session.isMuted = newState.mute || newState.selfMute;
+                session.isDeafened = newState.deaf || newState.selfDeaf;
+            }
+        }
+        else if (oldState.channelId && newState.channelId) {
+            const oldMuted = oldState.mute || oldState.selfMute;
+            const newMuted = newState.mute || newState.selfMute;
+            const oldDeafened = oldState.deaf || oldState.selfDeaf;
+            const newDeafened = newState.deaf || newState.selfDeaf;
+            
+            if (oldMuted !== newMuted || oldDeafened !== newDeafened) {
+                console.log(`[VOICE] ${member.user.username} mute/deafen state changed`);
+                if (this.voiceSessions.has(userId)) {
+                    const session = this.voiceSessions.get(userId);
+                    session.isMuted = newMuted;
+                    session.isDeafened = newDeafened;
+                }
+            }
+        }
+    }
+
+    async processVoiceXP() {
+        const now = Date.now();
+        const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
+        const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
+        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 6000;
+        const antiAFK = process.env.VOICE_ANTI_AFK === 'true';
+
+        const voiceActivities = [];
+
+        for (const [userId, session] of this.voiceSessions.entries()) {
+            try {
+                if (now - session.lastXPTime < voiceXPCooldown) continue;
+
+                const guild = this.client.guilds.cache.get(session.guildId);
+                if (!guild) continue;
+
+                const channel = guild.channels.cache.get(session.channelId);
+                if (!channel) {
+                    this.voiceSessions.delete(userId);
+                    continue;
+                }
+
+                const memberCount = channel.members.filter(m => !m.user.bot).size;
+                if (memberCount < minMembers) continue;
+
+                const user = await this.client.users.fetch(userId).catch(() => null);
+                if (!user) continue;
+
+                const member = await guild.members.fetch(userId).catch(() => null);
+                if (!member) continue;
+
+                const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
+                if (guildSettings.excludedRole && member.roles.cache.has(guildSettings.excludedRole)) {
+                    continue;
+                }
+
+                const today = new Date().toDateString();
+                const dailyKey = `${userId}_${today}`;
+                const dailyXP = this.dailyVoiceXP.get(dailyKey) || 0;
+                
+                if (dailyXP >= dailyCap) continue;
+
+                const voiceXPMin = parseInt(process.env.VOICE_XP_MIN) || 45;
+                const voiceXPMax = parseInt(process.env.VOICE_XP_MAX) || 55;
+                const baseXP = Math.floor(Math.random() * (voiceXPMax - voiceXPMin + 1)) + voiceXPMin;
+
+                let finalXP = baseXP;
+
+                let muteMultiplier = 1.0;
+                if (antiAFK && (session.isMuted || session.isDeafened)) {
+                    muteMultiplier = 0.25;
+                    console.log(`[VOICE XP] ${user.username} is muted/deafened, applying 25% XP penalty`);
+                }
+                finalXP = Math.round(baseXP * muteMultiplier);
+                
+                if (global.xpBoostManager && member) {
+                    try {
+                        const boostResult = await global.xpBoostManager.calculateUserBoost(session.guildId, member);
+                        if (boostResult.multiplier > 1.0) {
+                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
+                            console.log(`[XP BOOST] ${user.username} voice: ${baseXP} base → ${finalXP} muted → ${boostedXP} boosted`);
+                            finalXP = boostedXP;
+                        }
+                    } catch (error) {
+                        console.error('[XP BOOST ERROR] Failed to calculate user boost for voice:', error);
+                    }
+                }
+                
+                const globalMultiplier = guildSettings.xpMultiplier || 1.0;
+                if (globalMultiplier !== 1.0) {
+                    const afterGlobal = Math.round(finalXP * globalMultiplier);
+                    console.log(`[XP CALC] ${user.username} voice: ${finalXP} boosted → ${afterGlobal} final`);
+                    finalXP = afterGlobal;
+                }
+
+                const newDailyXP = dailyXP + finalXP;
+                let actualXPGain = finalXP;
+                
+                if (newDailyXP > dailyCap) {
+                    actualXPGain = Math.max(0, dailyCap - dailyXP);
+                    console.log(`[VOICE XP] Daily cap hit: ${finalXP} → ${actualXPGain}`);
+                }
+                
+                if (actualXPGain <= 0) continue;
+
+                this.dailyVoiceXP.set(dailyKey, dailyXP + actualXPGain);
+
+                await this.awardXP(userId, session.guildId, actualXPGain, 'voice_silent', user, true);
+                
+                const updatedStats = await this.getUserStats(userId, session.guildId);
+                
+                voiceActivities.push({
+                    user,
+                    guildId: session.guildId,
+                    channelName: channel.name,
+                    sessionDuration: Math.floor((now - session.joinTime) / 60000),
+                    memberCount,
+                    xpGain: actualXPGain,
+                    dailyCapped: (dailyXP + actualXPGain) >= dailyCap,
+                    totalXP: updatedStats?.total_xp || 0,
+                    currentLevel: updatedStats?.level || 0,
+                    wasMuted: session.isMuted || session.isDeafened,
+                    muteMultiplier: muteMultiplier
+                });
+                
+                session.lastXPTime = now;
+
+            } catch (error) {
+                console.error(`Error processing voice XP for user ${userId}:`, error);
+            }
+        }
+
+        if (voiceActivities.length > 0) {
+            await this.sendVoiceXPSummary(voiceActivities);
+        }
+    }
+
+    async sendVoiceXPSummary(activities) {
+        try {
+            if (activities.length === 0) return;
+
+            const firstActivity = activities[0];
+            const guildSettings = global.guildSettings?.get(firstActivity.guildId);
+            
+            const logEnabled = guildSettings?.xpLogEnabled === true;
+            if (!logEnabled) return;
+
+            let logChannelId = guildSettings?.xpLogChannel;
+            
+            if (!logChannelId) {
+                const guild = this.client.guilds.cache.get(firstActivity.guildId);
+                if (guild) {
+                    const defaultLogChannel = guild.channels.cache.find(ch => 
+                        ch.name.toLowerCase().includes('leveling-event-log') && ch.isTextBased()
+                    );
+                    
+                    if (defaultLogChannel) {
+                        logChannelId = defaultLogChannel.id;
+                        console.log(`[VOICE XP SUMMARY] Using default log channel: ${defaultLogChannel.name}`);
+                    }
+                }
+            }
+            
+            if (!logChannelId) return;
+
+            const logVoice = process.env.XP_LOG_VOICE !== 'false';
+            if (!logVoice) return;
+
+            const channel = await this.client.channels.fetch(logChannelId).catch(() => null);
+            if (!channel || !channel.isTextBased()) return;
+
+            const channelGroups = new Map();
+            activities.forEach(activity => {
+                if (!channelGroups.has(activity.channelName)) {
+                    channelGroups.set(activity.channelName, []);
+                }
+                channelGroups.get(activity.channelName).push(activity);
+            });
+
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTimestamp()
+                .setAuthor({ 
+                    name: '🚨 MARINE INTELLIGENCE BUREAU',
+                    iconURL: null
+                })
+                .setTitle('VOICE ACTIVITY SUMMARY')
+                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
+
+            let description = '```diff\n';
+            let totalXPAwarded = 0;
+
+            for (const [channelName, channelActivities] of channelGroups) {
+                description += `\n🎙️ CHANNEL: ${channelName}\n`;
+                description += `- MEMBERS: ${channelActivities[0].memberCount}\n`;
+                
+                channelActivities.forEach(activity => {
+                    const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
+                    const muteText = activity.wasMuted ? ` (MUTED ${Math.round(activity.muteMultiplier * 100)}%)` : '';
+                    description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}${muteText}\n`;
+                    totalXPAwarded += activity.xpGain;
+                });
+            }
+
+            description += `\n📊 TOTAL XP AWARDED: +${totalXPAwarded}\n`;
+            description += '```';
+
+            embed.setDescription(description);
+
+            await channel.send({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('[VOICE XP SUMMARY] Failed to send summary:', error);
+        }
+    }
+
+    async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
+        try {
+            const guild = this.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
+            let finalXP = xpAmount;
+            
+            if (xpAmount === null) {
+                finalXP = this.getRandomXP(source);
+                console.log(`[XP CALC] Generated base XP for ${source}: ${finalXP}`);
+            }
+            
+            if (!skipMultiplier) {
+                if (global.xpBoostManager && member) {
+                    try {
+                        const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
+                        if (boostResult.multiplier > 1.0) {
+                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
+                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} base → ${boostedXP} boosted`);
+                            finalXP = boostedXP;
+                        }
+                    } catch (error) {
+                        console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
+                    }
+                }
+                
+                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
+                const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+                
+                if (multiplier !== 1.0) {
+                    const rawFinalXP = finalXP * multiplier;
+                    const afterGlobal = Math.round(rawFinalXP);
+                    console.log(`[XP CALC] ${user.username} ${source}: ${finalXP} boosted → ${afterGlobal} final`);
+                    finalXP = afterGlobal;
+                }
+            }
+            
+            const actualXP = (xpAmount > 0 && finalXP === 0) ? 1 : finalXP;
+
+            console.log(`[XP AWARD] Final XP to award: ${actualXP} (source: ${source}, skipMultiplier: ${skipMultiplier})`);
+
+            const beforeResult = await this.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [userId, guildId]
+            );
+
+            const oldLevel = beforeResult.rows.length > 0 ? beforeResult.rows[0].level : 0;
+            const oldTotalXP = beforeResult.rows.length > 0 ? beforeResult.rows[0].total_xp : 0;
+
+            await this.db.query(`
+                INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time, level)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET
+                    total_xp = user_levels.total_xp + $3,
+                    messages = user_levels.messages + $4,
+                    reactions = user_levels.reactions + $5,
+                    voice_time = user_levels.voice_time + $6,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [
+                userId, guildId, actualXP,
+                source === 'message' ? 1 : 0,
+                source === 'reaction' ? 1 : 0,
+                (source === 'voice' || source === 'voice_silent') ? 1 : 0,
+                oldLevel
+            ]);
+
+            const afterResult = await this.db.query(
+                'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [userId, guildId]
+            );
+
+            const newTotalXP = afterResult.rows[0].total_xp;
+            const newLevel = this.calculateLevel(newTotalXP);
+
+            await this.db.query(
+                'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
+                [newLevel, userId, guildId]
+            );
+
+            if (source !== 'admin' && source !== 'voice' && source !== 'voice_silent') {
+                await this.logXPActivity(source, user, guildId, actualXP, {
+                    totalXP: newTotalXP,
+                    currentLevel: newLevel
+                });
+            }
+
+            console.log(`[XP] ${user.username}: ${oldTotalXP} + ${actualXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
+
+            if (newLevel > oldLevel) {
+                console.log(`[LEVEL UP] ${user.username} gained ${newLevel - oldLevel} levels: ${oldLevel} → ${newLevel}!`);
+                
+                for (let level = oldLevel + 1; level <= newLevel; level++) {
+                    const levelXP = this.getXPForLevel(level);
+                    const levelUpSource = source === 'voice_silent' ? 'voice' : source;
+                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, levelUpSource);
+                    
+                    if (level < newLevel) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('Error awarding XP:', error);
+        }
+    }
+
+    async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, xpSource = 'unknown') {
+        try {
+            console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
+
+            const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
+
+            await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward);
+
+            await this.logXPActivity('levelup', user, guildId, 0, {
+                oldLevel,
+                newLevel,
+                totalXP: newTotalXP,
+                roleReward,
+                xpSource: xpSource.toUpperCase()
+            });
+
+            console.log(`[LEVEL UP] Completed level up processing for ${user.username}`);
+
+        } catch (error) {
+            console.error('Error handling level up:', error);
+        }
+    }
+
+    async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward = null) {
+        try {
+            console.log(`[LEVEL UP] Sending notification for ${user.username}: ${oldLevel} → ${newLevel}`);
+
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) {
+                console.log('[LEVEL UP] Guild not found');
+                return;
+            }
+
+            const guildSettings = global.guildSettings?.get(guildId);
+            
+            const levelupEnabled = guildSettings?.levelupEnabled !== false;
+            if (!levelupEnabled) {
+                console.log('[LEVEL UP] Level up announcements disabled for this guild');
+                return;
+            }
+
+            let channelId = guildSettings?.levelupChannel;
+            
+            if (!channelId) {
+                channelId = process.env.LEVELUP_CHANNEL;
+            }
+
+            if (!channelId || channelId === 'your_levelup_channel_id') {
+                const defaultChannel = guild.channels.cache.find(ch => 
+                    ch.name.toLowerCase().includes('bounty-notices') && ch.isTextBased()
+                );
+                
+                if (defaultChannel) {
+                    channelId = defaultChannel.id;
+                    console.log(`[LEVEL UP] Using default bounty channel: ${defaultChannel.name}`);
+                } else {
+                    const fallbackChannels = ['general', 'chat', 'levelup', 'announcements'];
+                    for (const name of fallbackChannels) {
+                        const foundChannel = guild.channels.cache.find(ch => 
+                            ch.name.toLowerCase().includes(name) && ch.isTextBased()
+                        );
+                        if (foundChannel) {
+                            channelId = foundChannel.id;
+                            console.log(`[LEVEL UP] Using fallback channel: ${foundChannel.name}`);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!channelId) {
+                console.log('[LEVEL UP] No suitable channel found for announcements');
+                return;
+            }
+
+            const channel = guild.channels.cache.get(channelId);
+            if (!channel || !channel.isTextBased()) {
+                console.log(`[LEVEL UP] Channel ${channelId} not found or not text-based`);
+                return;
+            }
+
+            const wantedPosterData = {
+                userId: user.id,
+                level: newLevel,
+                total_xp: newTotalXP,
+                messages: 0,
+                reactions: 0,
                 voice_time: 0,
                 member: await guild.members.fetch(user.id).catch(() => null)
             };
 
-            // Create Canvas wanted poster
             let canvas = null;
             let attachment = null;
             
@@ -13,27 +592,22 @@ reactions: 0,
                 attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${user.id}.png` });
             } catch (canvasError) {
                 console.error('[LEVEL UP] Error creating wanted poster:', canvasError);
-                // Continue without the poster
             }
 
-            // Create Marine notification with red text
             const embed = this.createMarineLevelUpEmbed(user, oldLevel, newLevel, oldTotalXP, newTotalXP, roleReward);
             
-            // Add the wanted poster image if successfully created
             if (attachment) {
                 embed.setImage(`attachment://wanted_${user.id}.png`);
             }
 
-            // Check if user pinging is enabled (NEW FEATURE)
-            const pingUser = process.env.LEVELUP_PING_USER !== 'false'; // Default to true
+            const pingUser = process.env.LEVELUP_PING_USER !== 'false';
             
-            // FIXED: Send the notification with optional user ping
             const messageOptions = { 
                 embeds: [embed] 
             };
             
             if (pingUser) {
-                messageOptions.content = `<@${userId}>`; // Ping the user if enabled
+                messageOptions.content = `<@${userId}>`;
             }
             
             if (attachment) {
@@ -56,9 +630,7 @@ reactions: 0,
             
             const oldBounty = getBountyForLevel(oldLevel);
             const newBounty = getBountyForLevel(newLevel);
-            const bountyIncrease = newBounty - oldBounty;
 
-            // Get threat level message
             function getThreatLevelName(level) {
                 if (level >= 55) return "LEGENDARY THREAT";
                 if (level >= 50) return "EMPEROR CLASS";
@@ -92,7 +664,6 @@ reactions: 0,
                     }
                 );
 
-            // Add role reward if any
             if (roleReward) {
                 embed.addFields({
                     name: '👑 New Authority Granted',
@@ -110,7 +681,6 @@ reactions: 0,
         } catch (error) {
             console.error('Error creating Marine level up embed:', error);
             
-            // Fallback embed if bounty system fails
             return new EmbedBuilder()
                 .setColor('#DC143C')
                 .setTitle('🚨 LEVEL UP! 🚨')
@@ -128,7 +698,6 @@ reactions: 0,
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return null;
 
-            // Check for level-specific roles using environment variables
             const levelRoles = [
                 { level: 5, roleId: process.env.LEVEL_5_ROLE },
                 { level: 10, roleId: process.env.LEVEL_10_ROLE },
@@ -151,7 +720,7 @@ reactions: 0,
                         await member.roles.add(role);
                         roleReward = role.name;
                         console.log(`[LEVEL UP] Added level ${reqLevel} role (${role.name}) to ${member.user.username}`);
-                        break; // Only award the highest role achieved
+                        break;
                     }
                 }
             }
@@ -164,21 +733,16 @@ reactions: 0,
         }
     }
 
-    // XP Logging function for admin purposes
     async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
         try {
-            // Get guild settings from database/memory
             const guildSettings = global.guildSettings?.get(guildId);
             
-            // Check if XP logging is enabled for this guild
             const logEnabled = guildSettings?.xpLogEnabled === true;
             if (!logEnabled) return;
 
-            // Get log channel from guild settings or find default
             let logChannelId = guildSettings?.xpLogChannel;
             
             if (!logChannelId) {
-                // Try to find the default leveling event log channel
                 const guild = this.client.guilds.cache.get(guildId);
                 if (guild) {
                     const defaultLogChannel = guild.channels.cache.find(ch => 
@@ -194,7 +758,6 @@ reactions: 0,
             
             if (!logChannelId) return;
 
-            // Check specific logging settings (fallback to environment variables)
             const logSettings = {
                 message: process.env.XP_LOG_MESSAGES !== 'false',
                 reaction: process.env.XP_LOG_REACTIONS !== 'false',
@@ -210,23 +773,19 @@ reactions: 0,
             
             if (!channel || !channel.isTextBased()) return;
 
-            // Helper function to properly handle level 0
             const formatLevel = (level) => {
                 return level !== undefined && level !== null ? level.toString() : '0';
             };
 
-            // Helper function to format XP totals
             const formatXP = (xp) => {
                 return xp !== undefined && xp !== null ? xp.toLocaleString() : '0';
             };
 
-            // Create logging embed
             const embed = new EmbedBuilder()
                 .setColor(0xFF0000)
                 .setTimestamp()
                 .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
 
-            // Configure embed based on type
             switch (type) {
                 case 'message':
                     embed
@@ -288,7 +847,6 @@ reactions: 0,
                 LIMIT $2 OFFSET $3
             `, [guildId, limit, offset]);
 
-            // Get total count for pagination
             const countResult = await this.db.query(
                 'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
                 [guildId]
@@ -360,15 +918,13 @@ reactions: 0,
         }
     }
 
-    // UPDATED: XP calculation method with early level penalty
     getXPForLevel(level) {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
         const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
         
-        // NEW: Early level penalty system
-        const earlyLevelPenalty = parseFloat(process.env.EARLY_LEVEL_PENALTY) || 1.0; // Default no penalty
-        const earlyLevelThreshold = parseInt(process.env.EARLY_LEVEL_THRESHOLD) || 0; // Default no threshold
+        const earlyLevelPenalty = parseFloat(process.env.EARLY_LEVEL_PENALTY) || 1.0;
+        const earlyLevelThreshold = parseInt(process.env.EARLY_LEVEL_THRESHOLD) || 0;
         
         let xpRequired;
         
@@ -382,10 +938,7 @@ reactions: 0,
             xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
         }
         
-        // Apply early level penalty if enabled
         if (level <= earlyLevelThreshold && earlyLevelPenalty > 1.0) {
-            // Gradually decrease penalty as level increases
-            // Level 1 gets full penalty, level at threshold gets minimal penalty
             const penaltyStrength = 1 + ((earlyLevelPenalty - 1) * (earlyLevelThreshold - level + 1) / earlyLevelThreshold);
             const originalXP = xpRequired;
             xpRequired = Math.floor(xpRequired * penaltyStrength);
@@ -396,7 +949,6 @@ reactions: 0,
         return xpRequired;
     }
 
-    // Fixed XP generation using environment variables
     getRandomXP(type) {
         let min, max;
         
@@ -421,14 +973,12 @@ reactions: 0,
         return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
-    // UPDATED: Level calculation with early penalty support
     calculateLevel(totalXP) {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
         const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
         const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
         
-        // NEW: Early level penalty system
         const earlyLevelPenalty = parseFloat(process.env.EARLY_LEVEL_PENALTY) || 1.0;
         const earlyLevelThreshold = parseInt(process.env.EARLY_LEVEL_THRESHOLD) || 0;
 
@@ -445,7 +995,6 @@ reactions: 0,
                 requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
             }
             
-            // Apply early level penalty if enabled
             if (level <= earlyLevelThreshold && earlyLevelPenalty > 1.0) {
                 const penaltyStrength = 1 + ((earlyLevelPenalty - 1) * (earlyLevelThreshold - level + 1) / earlyLevelThreshold);
                 requiredXP = Math.floor(requiredXP * penaltyStrength);
@@ -482,13 +1031,11 @@ reactions: 0,
     }
 
     async cleanup() {
-        // Cleanup method for graceful shutdown
         this.voiceSessions.clear();
         this.cooldowns.clear();
         this.dailyVoiceXP.clear();
     }
 
-    // Manual method to reinitialize voice sessions
     async reinitializeVoiceSessions() {
         try {
             console.log('[VOICE XP] Manually reinitializing voice sessions...');
@@ -543,7 +1090,6 @@ reactions: 0,
         }
     }
 
-    // Canvas wanted poster creation
     async createWantedPoster(userData, guild) {
         const { createCanvas, loadImage } = require('canvas');
         const path = require('path');
@@ -552,7 +1098,6 @@ reactions: 0,
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
 
-        // Load and draw scroll texture background
         try {
             const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
             ctx.drawImage(scrollTexture, 0, 0, width, height);
@@ -563,7 +1108,6 @@ reactions: 0,
             ctx.fillRect(0, 0, width, height);
         }
         
-        // All borders black
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 8;
         ctx.strokeRect(0, 0, width, height);
@@ -576,7 +1120,6 @@ reactions: 0,
         ctx.lineWidth = 3;
         ctx.strokeRect(18, 18, width - 36, height - 36);
 
-        // WANTED title
         ctx.fillStyle = '#111';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -585,7 +1128,6 @@ reactions: 0,
         const wantedX = (50/100) * width;
         ctx.fillText('WANTED', wantedX, wantedY);
 
-        // Image Box
         const photoSize = (95/100) * 400;
         const photoX = ((50/100) * width) - (photoSize/2);
         const photoY = height * (1 - 65/100) - (photoSize/2);
@@ -620,7 +1162,6 @@ reactions: 0,
             }
         }
 
-        // "DEAD OR ALIVE"
         ctx.fillStyle = '#111';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -629,7 +1170,6 @@ reactions: 0,
         const deadOrAliveX = (50/100) * width;
         ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-        // Name
         ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
         let displayName = 'UNKNOWN PIRATE';
         if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
@@ -645,7 +1185,6 @@ reactions: 0,
         const nameX = (50/100) * width;
         ctx.fillText(displayName, nameX, nameY);
 
-        // Bounty with berry symbol
         const berryBountyGap = 5;
         
         const { getBountyForLevel } = require('./bountySystem');
@@ -690,7 +1229,6 @@ reactions: 0,
         ctx.fillStyle = '#111';
         ctx.fillText(bountyStr, bountyX, bountyY);
 
-        // One Piece logo
         try {
             const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
             const onePieceLogo = await loadImage(onePieceLogoPath);
@@ -707,7 +1245,6 @@ reactions: 0,
             console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
         }
 
-        // "MARINE"
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
         ctx.font = '24px TimesNewNormal, Times, serif';
@@ -722,664 +1259,4 @@ reactions: 0,
     }
 }
 
-module.exports = XPTracker;// src/utils/xpTracker.js - Complete fixed file with XP boost integration and proper voice handling + USER PING TOGGLE + EARLY LEVEL PENALTY
-
-const { EmbedBuilder } = require('discord.js');
-
-class XPTracker {
-    constructor(client, database) {
-        this.client = client;
-        this.db = database;
-        this.voiceSessions = new Map();
-        this.cooldowns = new Map();
-        this.dailyVoiceXP = new Map();
-        
-        // Initialize guild settings from database
-        this.loadGuildSettingsFromDatabase();
-        
-        // Initialize voice sessions for users already in voice channels
-        this.initializeExistingVoiceSessions();
-    }
-
-    // Load all guild settings from database on startup
-    async loadGuildSettingsFromDatabase() {
-        try {
-            console.log('[SETTINGS] Loading guild settings from database...');
-            
-            // Initialize global guild settings map if it doesn't exist
-            if (!global.guildSettings) {
-                global.guildSettings = new Map();
-            }
-
-            // First, check what columns exist in the guild_settings table
-            const tableInfo = await this.db.query(`
-                SELECT column_name, data_type 
-                FROM information_schema.columns 
-                WHERE table_name = 'guild_settings'
-                ORDER BY ordinal_position
-            `);
-
-            console.log('[SETTINGS] Current guild_settings table columns:', tableInfo.rows.map(r => r.column_name).join(', '));
-
-            // Add missing columns if needed
-            const existingColumns = tableInfo.rows.map(r => r.column_name);
-            
-            if (!existingColumns.includes('levelup_enabled')) {
-                console.log('[SETTINGS] Adding levelup_enabled column...');
-                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS levelup_enabled BOOLEAN DEFAULT true');
-            }
-            
-            if (!existingColumns.includes('xp_log_enabled')) {
-                console.log('[SETTINGS] Adding xp_log_enabled column...');
-                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_log_enabled BOOLEAN DEFAULT false');
-            }
-            
-            if (!existingColumns.includes('xp_multiplier')) {
-                console.log('[SETTINGS] Adding xp_multiplier column...');
-                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_multiplier DECIMAL(3,2) DEFAULT 1.0');
-            }
-
-            if (!existingColumns.includes('levelup_channel')) {
-                console.log('[SETTINGS] Adding levelup_channel column...');
-                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS levelup_channel VARCHAR(20)');
-            }
-
-            if (!existingColumns.includes('xp_log_channel')) {
-                console.log('[SETTINGS] Adding xp_log_channel column...');
-                await this.db.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS xp_log_channel VARCHAR(20)');
-            }
-
-            // Load all guild settings from database
-            const result = await this.db.query(`
-                SELECT guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier
-                FROM guild_settings
-            `);
-
-            console.log(`[SETTINGS] Found ${result.rows.length} guild configurations in database`);
-
-            let loadedCount = 0;
-            for (const row of result.rows) {
-                const guildSettings = {
-                    levelupChannel: row.levelup_channel,
-                    levelupEnabled: row.levelup_enabled,
-                    xpLogChannel: row.xp_log_channel,
-                    xpLogEnabled: row.xp_log_enabled,
-                    xpMultiplier: parseFloat(row.xp_multiplier)
-                };
-
-                global.guildSettings.set(row.guild_id, guildSettings);
-                loadedCount++;
-
-                console.log(`[SETTINGS] Guild ${row.guild_id}:`);
-                console.log(`  - XP Multiplier: ${row.xp_multiplier}x`);
-                console.log(`  - Level Up: ${row.levelup_enabled ? 'enabled' : 'disabled'}`);
-                console.log(`  - Level Up Channel: ${row.levelup_channel || 'not set'}`);
-                console.log(`  - XP Log: ${row.xp_log_enabled ? 'enabled' : 'disabled'}`);
-                console.log(`  - XP Log Channel: ${row.xp_log_channel || 'not set'}`);
-            }
-
-            console.log(`[SETTINGS] Successfully loaded ${loadedCount} guild configurations from database`);
-
-        } catch (error) {
-            console.error('[SETTINGS] Error loading guild settings from database:', error);
-            
-            // Initialize empty map if loading fails
-            if (!global.guildSettings) {
-                global.guildSettings = new Map();
-            }
-        }
-    }
-
-    // Initialize voice sessions for users already in voice channels when bot starts
-    async initializeExistingVoiceSessions() {
-        try {
-            console.log('[VOICE XP] Scanning for existing voice channel members...');
-            
-            // Wait a moment for the client to be fully ready
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            let totalFound = 0;
-            
-            // Scan all guilds the bot is in
-            for (const [guildId, guild] of this.client.guilds.cache) {
-                try {
-                    // Check all voice channels in this guild
-                    const voiceChannels = guild.channels.cache.filter(channel => 
-                        channel.type === 2 && // Voice channel type
-                        channel.members && 
-                        channel.members.size > 0
-                    );
-                    
-                    for (const [channelId, channel] of voiceChannels) {
-                        // Add each non-bot member to voice sessions
-                        for (const [memberId, member] of channel.members) {
-                            if (!member.user.bot) {
-                                this.voiceSessions.set(memberId, {
-                                    guildId: guildId,
-                                    channelId: channelId,
-                                    joinTime: Date.now(), // Use current time as join time
-                                    lastXPTime: Date.now(),
-                                    // ADDED: Track voice state for mute/deafen detection
-                                    isMuted: member.voice.mute || member.voice.selfMute,
-                                    isDeafened: member.voice.deaf || member.voice.selfDeaf
-                                });
-                                totalFound++;
-                                console.log(`[VOICE XP] Added existing member: ${member.user.username} in ${channel.name} (muted: ${member.voice.mute || member.voice.selfMute})`);
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error(`[VOICE XP] Error scanning guild ${guild.name}:`, error);
-                }
-            }
-            
-            console.log(`[VOICE XP] Initialized ${totalFound} existing voice sessions`);
-            
-        } catch (error) {
-            console.error('[VOICE XP] Error initializing existing voice sessions:', error);
-        }
-    }
-
-    // FIXED: Voice state update handler with mute/deafen tracking
-    async handleVoiceStateUpdate(oldState, newState) {
-        const userId = newState.id || oldState.id;
-        const guildId = newState.guild?.id || oldState.guild?.id;
-        
-        if (!guildId) return;
-
-        const guild = this.client.guilds.cache.get(guildId);
-        if (!guild) return;
-
-        const member = guild.members.cache.get(userId);
-        if (!member || member.user.bot) return;
-
-        // User joined voice channel
-        if (!oldState.channelId && newState.channelId) {
-            console.log(`[VOICE] ${member.user.username} joined ${newState.channel.name}`);
-            this.voiceSessions.set(userId, {
-                guildId,
-                channelId: newState.channelId,
-                joinTime: Date.now(),
-                lastXPTime: Date.now(),
-                isMuted: newState.mute || newState.selfMute,
-                isDeafened: newState.deaf || newState.selfDeaf
-            });
-        }
-        // User left voice channel
-        else if (oldState.channelId && !newState.channelId) {
-            console.log(`[VOICE] ${member.user.username} left voice channel`);
-            this.voiceSessions.delete(userId);
-        }
-        // User changed channels
-        else if (oldState.channelId !== newState.channelId) {
-            console.log(`[VOICE] ${member.user.username} moved to ${newState.channel.name}`);
-            if (this.voiceSessions.has(userId)) {
-                const session = this.voiceSessions.get(userId);
-                session.channelId = newState.channelId;
-                session.joinTime = Date.now();
-                session.isMuted = newState.mute || newState.selfMute;
-                session.isDeafened = newState.deaf || newState.selfDeaf;
-            }
-        }
-        // ADDED: Mute/deafen state changed
-        else if (oldState.channelId && newState.channelId) {
-            const oldMuted = oldState.mute || oldState.selfMute;
-            const newMuted = newState.mute || newState.selfMute;
-            const oldDeafened = oldState.deaf || oldState.selfDeaf;
-            const newDeafened = newState.deaf || newState.selfDeaf;
-            
-            if (oldMuted !== newMuted || oldDeafened !== newDeafened) {
-                console.log(`[VOICE] ${member.user.username} mute/deafen state changed: muted ${oldMuted}→${newMuted}, deafened ${oldDeafened}→${newDeafened}`);
-                if (this.voiceSessions.has(userId)) {
-                    const session = this.voiceSessions.get(userId);
-                    session.isMuted = newMuted;
-                    session.isDeafened = newDeafened;
-                }
-            }
-        }
-    }
-
-    // FIXED: Voice XP processing with proper mute handling and XP boost integration
-    async processVoiceXP() {
-        const now = Date.now();
-        const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
-        const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
-        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 6000;
-        const antiAFK = process.env.VOICE_ANTI_AFK === 'true';
-
-        // Collect all voice XP activities for batch logging
-        const voiceActivities = [];
-
-        for (const [userId, session] of this.voiceSessions.entries()) {
-            try {
-                // Check if enough time has passed
-                if (now - session.lastXPTime < voiceXPCooldown) continue;
-
-                // Get voice channel
-                const guild = this.client.guilds.cache.get(session.guildId);
-                if (!guild) continue;
-
-                const channel = guild.channels.cache.get(session.channelId);
-                if (!channel) {
-                    this.voiceSessions.delete(userId);
-                    continue;
-                }
-
-                // Check minimum members requirement
-                const memberCount = channel.members.filter(m => !m.user.bot).size;
-                if (memberCount < minMembers) continue;
-
-                // Get user and member
-                const user = await this.client.users.fetch(userId).catch(() => null);
-                if (!user) continue;
-
-                const member = await guild.members.fetch(userId).catch(() => null);
-                if (!member) continue;
-
-                // Check if user has excluded role
-                const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
-                if (guildSettings.excludedRole && member.roles.cache.has(guildSettings.excludedRole)) {
-                    continue; // Skip XP for excluded role (Pirate King)
-                }
-
-                // Check daily voice XP cap
-                const today = new Date().toDateString();
-                const dailyKey = `${userId}_${today}`;
-                const dailyXP = this.dailyVoiceXP.get(dailyKey) || 0;
-                
-                if (dailyXP >= dailyCap) continue;
-
-                // FIXED: Calculate BASE XP first
-                const voiceXPMin = parseInt(process.env.VOICE_XP_MIN) || 45;
-                const voiceXPMax = parseInt(process.env.VOICE_XP_MAX) || 55;
-                const baseXP = Math.floor(Math.random() * (voiceXPMax - voiceXPMin + 1)) + voiceXPMin;
-
-                let finalXP = baseXP;
-
-                // ADDED: Apply mute penalty (25% XP if muted/deafened)
-                let muteMultiplier = 1.0;
-                if (antiAFK && (session.isMuted || session.isDeafened)) {
-                    muteMultiplier = 0.25; // 25% XP when muted/deafened
-                    console.log(`[VOICE XP] ${user.username} is muted/deafened, applying 25% XP penalty`);
-                }
-                finalXP = Math.round(baseXP * muteMultiplier);
-                
-                // Apply role-based XP boost
-                if (global.xpBoostManager && member) {
-                    try {
-                        const boostResult = await global.xpBoostManager.calculateUserBoost(session.guildId, member);
-                        if (boostResult.multiplier > 1.0) {
-                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
-                            console.log(`[XP BOOST] ${user.username} voice: ${baseXP} base → ${finalXP} muted → ${boostedXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
-                            finalXP = boostedXP;
-                        }
-                    } catch (error) {
-                        console.error('[XP BOOST ERROR] Failed to calculate user boost for voice:', error);
-                    }
-                }
-                
-                // Apply global multiplier AFTER boost
-                const globalMultiplier = guildSettings.xpMultiplier || 1.0;
-                if (globalMultiplier !== 1.0) {
-                    const afterGlobal = Math.round(finalXP * globalMultiplier);
-                    console.log(`[XP CALC] ${user.username} voice: ${finalXP} boosted → ${afterGlobal} final (${globalMultiplier}x global)`);
-                    finalXP = afterGlobal;
-                }
-
-                // Check daily cap AFTER all multipliers are applied
-                const newDailyXP = dailyXP + finalXP;
-                let actualXPGain = finalXP;
-                
-                // Cap the XP gain if it would exceed daily limit
-                if (newDailyXP > dailyCap) {
-                    actualXPGain = Math.max(0, dailyCap - dailyXP);
-                    console.log(`[VOICE XP] Daily cap hit: ${finalXP} → ${actualXPGain} (daily: ${dailyXP}/${dailyCap})`);
-                }
-                
-                if (actualXPGain <= 0) continue;
-
-                // Update daily tracking with actual XP gained
-                this.dailyVoiceXP.set(dailyKey, dailyXP + actualXPGain);
-
-                // Award XP with FINAL calculated amount (skip multiplier in awardXP)
-                await this.awardXP(userId, session.guildId, actualXPGain, 'voice_silent', user, true);
-                
-                // Get updated user stats AFTER XP is awarded
-                const updatedStats = await this.getUserStats(userId, session.guildId);
-                
-                // Add to voice activities collection for batch logging
-                voiceActivities.push({
-                    user,
-                    guildId: session.guildId,
-                    channelName: channel.name,
-                    sessionDuration: Math.floor((now - session.joinTime) / 60000),
-                    memberCount,
-                    xpGain: actualXPGain,
-                    dailyCapped: (dailyXP + actualXPGain) >= dailyCap,
-                    totalXP: updatedStats?.total_xp || 0,
-                    currentLevel: updatedStats?.level || 0,
-                    wasMuted: session.isMuted || session.isDeafened,
-                    muteMultiplier: muteMultiplier
-                });
-                
-                session.lastXPTime = now;
-
-            } catch (error) {
-                console.error(`Error processing voice XP for user ${userId}:`, error);
-            }
-        }
-
-        // Send batch voice XP summary if there are activities
-        if (voiceActivities.length > 0) {
-            await this.sendVoiceXPSummary(voiceActivities);
-        }
-    }
-
-    // Send voice XP summary for all users at once
-    async sendVoiceXPSummary(activities) {
-        try {
-            if (activities.length === 0) return;
-
-            // Get guild settings from the first activity
-            const firstActivity = activities[0];
-            const guildSettings = global.guildSettings?.get(firstActivity.guildId);
-            
-            // Check if XP logging is enabled for this guild
-            const logEnabled = guildSettings?.xpLogEnabled === true;
-            if (!logEnabled) return;
-
-            // Get log channel from guild settings or find default
-            let logChannelId = guildSettings?.xpLogChannel;
-            
-            if (!logChannelId) {
-                // Try to find the default leveling event log channel
-                const guild = this.client.guilds.cache.get(firstActivity.guildId);
-                if (guild) {
-                    const defaultLogChannel = guild.channels.cache.find(ch => 
-                        ch.name.toLowerCase().includes('leveling-event-log') && ch.isTextBased()
-                    );
-                    
-                    if (defaultLogChannel) {
-                        logChannelId = defaultLogChannel.id;
-                        console.log(`[VOICE XP SUMMARY] Using default log channel: ${defaultLogChannel.name}`);
-                    }
-                }
-            }
-            
-            if (!logChannelId) return;
-
-            // Check if voice logging is enabled
-            const logVoice = process.env.XP_LOG_VOICE !== 'false';
-            if (!logVoice) return;
-
-            const channel = await this.client.channels.fetch(logChannelId).catch(() => null);
-            if (!channel || !channel.isTextBased()) return;
-
-            // Group activities by voice channel
-            const channelGroups = new Map();
-            activities.forEach(activity => {
-                if (!channelGroups.has(activity.channelName)) {
-                    channelGroups.set(activity.channelName, []);
-                }
-                channelGroups.get(activity.channelName).push(activity);
-            });
-
-            // Create summary embed
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTimestamp()
-                .setAuthor({ 
-                    name: '🚨 MARINE INTELLIGENCE BUREAU',
-                    iconURL: null
-                })
-                .setTitle('VOICE ACTIVITY SUMMARY')
-                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
-
-            let description = '```diff\n';
-            let totalXPAwarded = 0;
-
-            // Add each voice channel group
-            for (const [channelName, channelActivities] of channelGroups) {
-                description += `\n🎙️ CHANNEL: ${channelName}\n`;
-                description += `- MEMBERS: ${channelActivities[0].memberCount}\n`;
-                
-                channelActivities.forEach(activity => {
-                    const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
-                    const muteText = activity.wasMuted ? ` (MUTED ${Math.round(activity.muteMultiplier * 100)}%)` : '';
-                    description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}${muteText}\n`;
-                    totalXPAwarded += activity.xpGain;
-                });
-            }
-
-            description += `\n📊 TOTAL XP AWARDED: +${totalXPAwarded}\n`;
-            description += '```';
-
-            embed.setDescription(description);
-
-            await channel.send({ embeds: [embed] });
-
-        } catch (error) {
-            console.error('[VOICE XP SUMMARY] Failed to send summary:', error);
-        }
-    }
-
-    // FIXED: Award XP with XP boost integration and proper multiplier handling
-    async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
-        try {
-            // Get member for XP boost calculation
-            const guild = this.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            let finalXP = xpAmount;
-            
-            // If xpAmount is null, calculate base XP based on source
-            if (xpAmount === null) {
-                finalXP = this.getRandomXP(source);
-                console.log(`[XP CALC] Generated base XP for ${source}: ${finalXP}`);
-            }
-            
-            // FIXED: Only apply multipliers if not already applied (skipMultiplier = false)
-            if (!skipMultiplier) {
-                // Apply XP boost FIRST if available
-                if (global.xpBoostManager && member) {
-                    try {
-                        const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
-                        if (boostResult.multiplier > 1.0) {
-                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
-                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} base → ${boostedXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
-                            finalXP = boostedXP;
-                        }
-                    } catch (error) {
-                        console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
-                    }
-                }
-                
-                // Apply guild XP multiplier AFTER boost
-                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
-                const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
-                
-                if (multiplier !== 1.0) {
-                    const rawFinalXP = finalXP * multiplier;
-                    const afterGlobal = Math.round(rawFinalXP);
-                    console.log(`[XP CALC] ${user.username} ${source}: ${finalXP} boosted → ${afterGlobal} final (${multiplier}x global)`);
-                    finalXP = afterGlobal;
-                }
-            }
-            
-            // Ensure minimum 1 XP if original amount was > 0 and final is 0
-            const actualXP = (xpAmount > 0 && finalXP === 0) ? 1 : finalXP;
-
-            console.log(`[XP AWARD] Final XP to award: ${actualXP} (source: ${source}, skipMultiplier: ${skipMultiplier})`);
-
-            // Get current user stats BEFORE update
-            const beforeResult = await this.db.query(
-                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                [userId, guildId]
-            );
-
-            const oldLevel = beforeResult.rows.length > 0 ? beforeResult.rows[0].level : 0;
-            const oldTotalXP = beforeResult.rows.length > 0 ? beforeResult.rows[0].total_xp : 0;
-
-            // Update user stats using database structure
-            await this.db.query(`
-                INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time, level)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (user_id, guild_id)
-                DO UPDATE SET
-                    total_xp = user_levels.total_xp + $3,
-                    messages = user_levels.messages + $4,
-                    reactions = user_levels.reactions + $5,
-                    voice_time = user_levels.voice_time + $6,
-                    updated_at = CURRENT_TIMESTAMP
-            `, [
-                userId, guildId, actualXP,
-                source === 'message' ? 1 : 0,
-                source === 'reaction' ? 1 : 0,
-                (source === 'voice' || source === 'voice_silent') ? 1 : 0,
-                oldLevel
-            ]);
-
-            // Get the NEW total XP after update
-            const afterResult = await this.db.query(
-                'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                [userId, guildId]
-            );
-
-            const newTotalXP = afterResult.rows[0].total_xp;
-            const newLevel = this.calculateLevel(newTotalXP);
-
-            // Update the level in database
-            await this.db.query(
-                'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
-                [newLevel, userId, guildId]
-            );
-
-            // Log XP activity (only for non-admin and non-voice_silent sources)
-            if (source !== 'admin' && source !== 'voice' && source !== 'voice_silent') {
-                await this.logXPActivity(source, user, guildId, actualXP, {
-                    totalXP: newTotalXP,
-                    currentLevel: newLevel
-                });
-            }
-
-            console.log(`[XP] ${user.username}: ${oldTotalXP} + ${actualXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
-
-            // Handle multiple level gains - announce EVERY level with XP source
-            if (newLevel > oldLevel) {
-                console.log(`[LEVEL UP] ${user.username} gained ${newLevel - oldLevel} levels: ${oldLevel} → ${newLevel}!`);
-                
-                // Announce each level individually
-                for (let level = oldLevel + 1; level <= newLevel; level++) {
-                    const levelXP = this.getXPForLevel(level);
-                    const levelUpSource = source === 'voice_silent' ? 'voice' : source;
-                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, levelUpSource);
-                    
-                    // Small delay between announcements to prevent spam
-                    if (level < newLevel) {
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    }
-                }
-            }
-
-        } catch (error) {
-            console.error('Error awarding XP:', error);
-        }
-    }
-
-    async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, xpSource = 'unknown') {
-        try {
-            console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
-
-            // Award level roles using level role system
-            const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
-
-            // Send Marine-themed level up notification
-            await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward);
-
-            // Log the level up event with XP source
-            await this.logXPActivity('levelup', user, guildId, 0, {
-                oldLevel,
-                newLevel,
-                totalXP: newTotalXP,
-                roleReward,
-                xpSource: xpSource.toUpperCase()
-            });
-
-            console.log(`[LEVEL UP] Completed level up processing for ${user.username}`);
-
-        } catch (error) {
-            console.error('Error handling level up:', error);
-        }
-    }
-
-    // FIXED: Added user ping toggle with environment variable
-    async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward = null) {
-        try {
-            console.log(`[LEVEL UP] Sending notification for ${user.username}: ${oldLevel} → ${newLevel}`);
-
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) {
-                console.log('[LEVEL UP] Guild not found');
-                return;
-            }
-
-            // Get guild settings from database/memory
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            // Check if levelup is enabled
-            const levelupEnabled = guildSettings?.levelupEnabled !== false; // Default to true
-            if (!levelupEnabled) {
-                console.log('[LEVEL UP] Level up announcements disabled for this guild');
-                return;
-            }
-
-            // Get notification channel from guild settings
-            let channelId = guildSettings?.levelupChannel;
-            
-            // Fallback to environment variable if not set in database
-            if (!channelId) {
-                channelId = process.env.LEVELUP_CHANNEL;
-            }
-
-            if (!channelId || channelId === 'your_levelup_channel_id') {
-                // Try to find the default bounty notices channel first
-                const defaultChannel = guild.channels.cache.find(ch => 
-                    ch.name.toLowerCase().includes('bounty-notices') && ch.isTextBased()
-                );
-                
-                if (defaultChannel) {
-                    channelId = defaultChannel.id;
-                    console.log(`[LEVEL UP] Using default bounty channel: ${defaultChannel.name}`);
-                } else {
-                    // Fallback to other common channel names
-                    const fallbackChannels = ['general', 'chat', 'levelup', 'announcements'];
-                    for (const name of fallbackChannels) {
-                        const foundChannel = guild.channels.cache.find(ch => 
-                            ch.name.toLowerCase().includes(name) && ch.isTextBased()
-                        );
-                        if (foundChannel) {
-                            channelId = foundChannel.id;
-                            console.log(`[LEVEL UP] Using fallback channel: ${foundChannel.name}`);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!channelId) {
-                console.log('[LEVEL UP] No suitable channel found for announcements');
-                return;
-            }
-
-            const channel = guild.channels.cache.get(channelId);
-            if (!channel || !channel.isTextBased()) {
-                console.log(`[LEVEL UP] Channel ${channelId} not found or not text-based`);
-                return;
-            }
-
-            // Create the userData object for the wanted poster
-            const wantedPosterData = {
-                userId: user.id,
-                level: newLevel,
-                total_xp: newTotalXP,
-                messages: 0,
+module.exports = XPTracker;
