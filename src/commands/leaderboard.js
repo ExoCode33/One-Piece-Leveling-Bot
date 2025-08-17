@@ -1,9 +1,11 @@
+// src/commands/leaderboard.js - Complete file with fixed message deletion logic
+
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
-const { getBountyForLevel } = require('../utils/bountySystem'); // ADDED: Import bounty system
+const { getBountyForLevel } = require('../utils/bountySystem');
 const path = require('path');
 
-// Register custom fonts - Keep your original font loading
+// Register custom fonts
 try {
     registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
     registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
@@ -46,100 +48,94 @@ module.exports = {
             return;
         }
 
-        // If this is a button interaction, delete previous messages in background (don't await)
+        // UPDATED: More conservative message cleanup - only for button interactions and with stricter filtering
         if (isButton) {
-            // Store the current interaction timestamp to avoid deleting new messages
             const interactionTime = interaction.createdTimestamp;
             
-            // Run cleanup asynchronously without blocking - but wait longer for "full" type
-            const cleanupDelay = type === 'full' ? 5000 : 1000; // 5 seconds for "All The Bounties", 1 second for others
-            
+            // Only run cleanup for button interactions, and wait longer
             setTimeout(async () => {
                 try {
-                    const messages = await interaction.channel.messages.fetch({ limit: 100 });
+                    console.log('[LEADERBOARD] Starting conservative message cleanup...');
+                    
+                    const messages = await interaction.channel.messages.fetch({ limit: 50 }); // Reduced from 100 to 50
                     const toDelete = messages.filter(msg => {
-                        // Check if message is from our bot
+                        // Only delete messages from our bot
                         if (msg.author.id !== interaction.client.user.id) return false;
                         
-                        // Don't delete messages created after this button interaction started
+                        // Don't delete messages created after this button interaction
                         if (msg.createdTimestamp >= interactionTime) return false;
                         
-                        // Don't delete the current type - if switching to "full", don't delete "full" messages
-                        if (type === 'full' && msg.embeds.length > 0) {
-                            const embed = msg.embeds[0];
-                            // Don't delete "All The Bounties" messages when switching to "All The Bounties"
-                            if (embed.fields?.some(field => 
-                                field.name?.includes('DATABASE STATUS') ||
-                                field.name?.includes('ACTIVE THREATS') ||
-                                field.name?.includes('CONTINUED')
-                            )) {
-                                return false; // Don't delete "full" type messages
-                            }
-                        }
+                        // UPDATED: Only delete messages older than 30 seconds to avoid deleting current leaderboards
+                        if (msg.createdTimestamp > (interactionTime - 30000)) return false;
                         
-                        // Check if it's a leaderboard-related message
+                        // UPDATED: More specific criteria - only delete if it's clearly an old leaderboard
                         if (msg.embeds.length > 0) {
                             const embed = msg.embeds[0];
                             
-                            // Check for leaderboard embeds
-                            if (embed.author?.name?.includes('WORLD GOVERNMENT INTELLIGENCE BUREAU')) return true;
-                            if (embed.footer?.text?.includes('Marine Intelligence')) return true;
-                            if (embed.title?.includes('Bounties') || embed.title?.includes('BOUNTY')) return true;
-                            if (embed.description?.includes('TOP') && embed.description?.includes('WANTED')) return true;
-                            if (embed.description?.includes('COMPLETE BOUNTY DATABASE')) return true;
-                            if (embed.fields?.some(field => 
-                                field.name?.includes('INTELLIGENCE SUMMARY') ||
-                                field.name?.includes('OPERATION BRIEFING') ||
-                                field.name?.includes('EXTENDED OPERATION BRIEFING') ||
-                                field.name?.includes('SPECIAL CLASSIFICATION')
-                            )) return true;
+                            // Only delete if it's clearly a leaderboard embed AND it's old
+                            const isLeaderboardEmbed = (
+                                embed.author?.name?.includes('WORLD GOVERNMENT INTELLIGENCE BUREAU') ||
+                                embed.title?.includes('BOUNTY UPDATE') ||
+                                embed.description?.includes('TOP') && embed.description?.includes('WANTED')
+                            );
                             
-                            // Check for image attachments in embeds (wanted posters)
-                            if (embed.image?.url?.includes('wanted_') || embed.image?.url?.includes('bounty_')) return true;
+                            // UPDATED: Don't delete level-up messages or individual bounty updates
+                            const isLevelUpMessage = (
+                                embed.title?.includes('WORLD GOVERNMENT BOUNTY UPDATE') ||
+                                embed.description?.includes('has reached a new level of infamy')
+                            );
+                            
+                            // Only delete leaderboard embeds, not level-up messages
+                            return isLeaderboardEmbed && !isLevelUpMessage;
                         }
                         
-                        // Check for wanted poster attachments
+                        // Check for wanted poster attachments from old leaderboards
                         if (msg.attachments.size > 0) {
                             const hasWantedPoster = msg.attachments.some(attachment => 
                                 attachment.name?.includes('wanted_') || 
                                 attachment.name?.includes('bounty_')
                             );
-                            if (hasWantedPoster) return true;
-                        }
-                        
-                        // Check if message has navigation buttons (leaderboard buttons) but keep current type
-                        if (msg.components && msg.components.length > 0) {
-                            const hasLeaderboardButtons = msg.components.some(row => 
-                                row.components?.some(button => 
-                                    button.customId?.includes('leaderboard_') ||
-                                    button.label?.includes('Bounties')
-                                )
-                            );
-                            // Only delete button messages if they're not the current type we're showing
-                            if (hasLeaderboardButtons && msg.createdTimestamp < interactionTime - 2000) {
-                                return true;
+                            
+                            // UPDATED: Only delete if it's clearly from a leaderboard (has leaderboard buttons)
+                            if (hasWantedPoster && msg.components && msg.components.length > 0) {
+                                const hasLeaderboardButtons = msg.components.some(row => 
+                                    row.components?.some(button => 
+                                        button.customId?.includes('leaderboard_') ||
+                                        button.label?.includes('Bounties')
+                                    )
+                                );
+                                return hasLeaderboardButtons;
                             }
                         }
                         
                         return false;
                     });
                     
-                    console.log(`[LEADERBOARD] Deleting ${toDelete.size} previous leaderboard messages (before ${new Date(interactionTime).toLocaleTimeString()})`);
+                    console.log(`[LEADERBOARD] Found ${toDelete.size} old leaderboard messages to delete (older than 30s)`);
                     
-                    // Delete messages one by one with small delay to avoid rate limits
+                    // Delete messages with longer delays to avoid rate limits
+                    let deleteCount = 0;
                     for (const msg of toDelete.values()) {
                         try {
+                            // Only delete up to 5 old messages to be conservative
+                            if (deleteCount >= 5) break;
+                            
                             await msg.delete();
-                            await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
+                            deleteCount++;
+                            console.log(`[LEADERBOARD] Deleted old message ${msg.id}`);
+                            
+                            // Longer delay between deletions
+                            await new Promise(resolve => setTimeout(resolve, 500));
                         } catch (error) {
-                            // Silently ignore deletion errors (message might already be deleted)
                             console.log(`[LEADERBOARD] Could not delete message ${msg.id}:`, error.message);
                         }
                     }
+                    
+                    console.log(`[LEADERBOARD] Cleanup complete: deleted ${deleteCount} old messages`);
                 } catch (error) {
                     console.log('[LEADERBOARD] Could not clean up previous messages:', error.message);
                 }
-            }, cleanupDelay);
+            }, 2000); // Wait 2 seconds before cleanup
         }
 
         try {
@@ -164,7 +160,7 @@ module.exports = {
             console.log('[DEBUG] Getting leaderboard from XP tracker...');
             const leaderboardData = await xpTracker.getLeaderboard(interaction.guild.id);
             
-            // FIXED: Extract the users array from the leaderboard data
+            // Extract the users array from the leaderboard data
             const allUsers = leaderboardData?.users || [];
             console.log('[DEBUG] Raw users from database:', allUsers.length);
 
@@ -181,7 +177,7 @@ module.exports = {
                             pirateKing = {
                                 userId: pirateKingMember.user.id,
                                 level: 55,
-                                total_xp: 999999999, // High XP for display
+                                total_xp: 999999999,
                                 messages: 0,
                                 reactions: 0,
                                 voice_time: 0,
@@ -283,14 +279,13 @@ module.exports = {
             }
 
             if (type === 'posters') {
-                // TOP 3 BOUNTIES - Show Pirate King + Top 3 Level 1+ with canvas and red intelligence embeds
+                // TOP 3 BOUNTIES
                 const headerEmbed = new EmbedBuilder()
                     .setAuthor({ 
                         name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                     })
                     .setColor(0xFF0000);
 
-                // SIMPLIFIED header - no detailed Pirate King info
                 let headerValue = `🚨 **TOP 3 MOST WANTED PIRATES** 🚨\n\n`;
                 headerValue += `\`\`\`diff\n- MARINE INTELLIGENCE DIRECTIVE:\n- The following individuals represent the highest threat\n- levels currently under surveillance. Immediate\n- response protocols are authorized for any sightings.\n\`\`\``;
 
@@ -307,7 +302,7 @@ module.exports = {
                     await interaction.editReply({ embeds: [headerEmbed] });
                 }
 
-                // FIXED: Only get Level 1+ users for canvas generation
+                // Only get Level 1+ users for canvas generation
                 const level1PlusUsers = filteredUsers.filter(user => user.level >= 1);
                 console.log('[DEBUG] Level 1+ users for canvas:', level1PlusUsers.length);
 
@@ -331,14 +326,13 @@ module.exports = {
                         // Get bounty amount for embed
                         const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
                         
-                        // Create intelligence embed for each poster - GOLD for Pirate King, RED for others
+                        // Create intelligence embed for each poster
                         const embed = new EmbedBuilder()
                             .setAuthor({ 
                                 name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                             })
-                            .setColor(isPirateKingData ? 0xFFD700 : 0xFF0000); // Gold for Pirate King, Red for others
+                            .setColor(isPirateKingData ? 0xFFD700 : 0xFF0000);
 
-                        // Intelligence summary for this pirate - ALL RED TEXT
                         let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
                         embed.addFields({
@@ -369,6 +363,12 @@ module.exports = {
                         }
                         
                         await interaction.followUp(messageOptions);
+                        
+                        // Small delay between posters
+                        if (i < postersToShow.length - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                        
                     } catch (error) {
                         console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
@@ -376,14 +376,13 @@ module.exports = {
                 }
 
             } else if (type === 'long') {
-                // TOP 10 BOUNTIES - Same as Top 3 but for 10 Level 1+ users
+                // TOP 10 BOUNTIES
                 const headerEmbed = new EmbedBuilder()
                     .setAuthor({ 
                         name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                     })
                     .setColor(0xFF0000);
 
-                // SIMPLIFIED header for top 10
                 let headerValue = `🚨 **TOP 10 MOST WANTED PIRATES** 🚨\n\n`;
                 headerValue += `\`\`\`diff\n- EXTENDED SURVEILLANCE REPORT:\n- This comprehensive assessment covers the ten most\n- dangerous pirates currently under Marine observation.\n- All personnel are advised to review threat profiles\n- and maintain heightened alert status.\n\`\`\``;
 
@@ -400,7 +399,7 @@ module.exports = {
                     await interaction.editReply({ embeds: [headerEmbed] });
                 }
 
-                // FIXED: Only get Level 1+ users for canvas generation
+                // Only get Level 1+ users for canvas generation
                 const level1PlusUsers = filteredUsers.filter(user => user.level >= 1);
                 console.log('[DEBUG] Level 1+ users for canvas:', level1PlusUsers.length);
 
@@ -424,14 +423,13 @@ module.exports = {
                         // Get bounty amount for embed
                         const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
                         
-                        // Create intelligence embed for each poster - GOLD for Pirate King, RED for others
+                        // Create intelligence embed for each poster
                         const embed = new EmbedBuilder()
                             .setAuthor({ 
                                 name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
                             })
-                            .setColor(isPirateKingData ? 0xFFD700 : 0xFF0000); // Gold for Pirate King, Red for others
+                            .setColor(isPirateKingData ? 0xFFD700 : 0xFF0000);
 
-                        // Intelligence summary for this pirate - ALL RED TEXT
                         let intelligenceValue = `\`\`\`diff\n- Alias: ${userData.member.displayName}\n- Bounty: ฿${bountyAmount.toLocaleString()}\n- Level: ${userData.level} | Rank: ${rank}\n- Threat: ${isPirateKingData ? 'PIRATE KING' : getThreatLevelName(userData.level)}\n- Activity: ${userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 1000 ? 'HIGH' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 500 ? 'MODERATE' : userData.messages + userData.reactions + Math.floor(userData.voice_time / 60) > 100 ? 'LOW' : 'MINIMAL'}\n\`\`\``;
 
                         embed.addFields({
@@ -462,6 +460,12 @@ module.exports = {
                         }
                         
                         await interaction.followUp(messageOptions);
+                        
+                        // Small delay between posters
+                        if (i < postersToShow.length - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                        
                     } catch (error) {
                         console.error('[ERROR] Error creating poster for user', userData.userId, ':', error);
                         continue;
@@ -469,7 +473,7 @@ module.exports = {
                 }
 
             } else if (type === 'full') {
-                // ALL THE BOUNTIES - Red intelligence report style, text only, no canvas, level 1+
+                // ALL THE BOUNTIES - Text only
                 const level1Plus = filteredUsers.filter(user => user.level >= 1);
                 
                 const embed = new EmbedBuilder()
@@ -485,14 +489,14 @@ module.exports = {
                     intelligenceValue += `\`\`\`diff\n- EMPEROR: ${pirateKing.member.displayName}\n- Bounty: ฿${pirateKingBounty.toLocaleString()}\n- Level: ${pirateKing.level} | PIRATE KING\n\`\`\`\n\n`;
                 }
 
-                // Split users into chunks to avoid Discord's 1024 character limit
-                const chunkSize = 8; // Reduced chunk size
+                // Split users into chunks to avoid Discord's character limit
+                const chunkSize = 8;
                 const chunks = [];
                 for (let i = 0; i < level1Plus.length; i += chunkSize) {
                     chunks.push(level1Plus.slice(i, i + chunkSize));
                 }
 
-                // First field with header info - ALL IN RED
+                // First field with header info
                 let headerInfo = `\`\`\`diff\n- COMPLETE SURVEILLANCE DATABASE\n- Active Threats: ${level1Plus.length + (pirateKing ? 1 : 0)}\n- Last Updated: ${new Date().toLocaleString()}\n- Civilian Count: ${filteredUsers.filter(user => user.level === 0).length}\n\`\`\``;
                 
                 embed.addFields({
@@ -552,7 +556,7 @@ module.exports = {
     }
 };
 
-// FIXED: Canvas function with proper Pirate King bounty support
+// Canvas function for wanted posters
 async function createWantedPoster(userData, guild) {
     const width = 600, height = 900;
     const canvas = createCanvas(width, height);
@@ -561,59 +565,51 @@ async function createWantedPoster(userData, guild) {
     // Load and draw scroll texture background
     try {
         const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
-        
-        // Draw the texture to fill the entire canvas
         ctx.drawImage(scrollTexture, 0, 0, width, height);
-        
         console.log('[DEBUG] Successfully loaded scroll texture background');
     } catch (error) {
         console.log('[DEBUG] Scroll texture not found, using fallback parchment color');
-        // Fallback to original parchment background if texture fails to load
         ctx.fillStyle = '#f5e6c5';
         ctx.fillRect(0, 0, width, height);
     }
     
-    // All borders and elements go on top of the texture
-    // All borders now black for consistency
-    ctx.strokeStyle = '#000000'; // Outer border - black
+    // Borders
+    ctx.strokeStyle = '#000000';
     ctx.lineWidth = 8;
     ctx.strokeRect(0, 0, width, height);
     
-    ctx.strokeStyle = '#000000'; // Middle border - black
+    ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
     ctx.strokeRect(10, 10, width - 20, height - 20);
     
-    ctx.strokeStyle = '#000000'; // Inner border - black
+    ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
-    // WANTED title - Size 27, Horiz 50, Vert 92
+    // WANTED title
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '81px CaptainKiddNF, Arial, sans-serif'; // Size 27/100 * 300 = 81px
-    const wantedY = height * (1 - 92/100); // Vert 92: 92% from bottom = 8% from top
-    const wantedX = (50/100) * width; // Horiz 50: centered
+    ctx.font = '81px CaptainKiddNF, Arial, sans-serif';
+    const wantedY = height * (1 - 92/100);
+    const wantedX = (50/100) * width;
     ctx.fillText('WANTED', wantedX, wantedY);
 
-    // Image Box - Size 95, Horiz 50, Vert 65 with slightly wider border
-    const photoSize = (95/100) * 400; // Size 95/100 * reasonable max = 380px
-    const photoX = ((50/100) * width) - (photoSize/2); // Horiz 50: centered
-    const photoY = height * (1 - 65/100) - (photoSize/2); // Vert 65: 65% from bottom
+    // Image Box
+    const photoSize = (95/100) * 400;
+    const photoX = ((50/100) * width) - (photoSize/2);
+    const photoY = height * (1 - 65/100) - (photoSize/2);
     
-    // Slightly wider black border
-    ctx.strokeStyle = '#000000'; // Black border
-    ctx.lineWidth = 3; // Increased from 1 to 3 for wider border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
     ctx.strokeRect(photoX, photoY, photoSize, photoSize);
-    
-    // No white background - image goes directly on texture
 
     let member = null;
     try {
         if (guild && userData.userId) member = await guild.members.fetch(userData.userId);
     } catch {}
     
-    const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 }; // Adjusted for wider border
+    const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
     if (member) {
         try {
             const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -624,29 +620,27 @@ async function createWantedPoster(userData, guild) {
             ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             ctx.clip();
             
-            // Subtle weathering effect
             ctx.filter = 'contrast(0.95) sepia(0.05)';
             ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
             ctx.filter = 'none';
             
             ctx.restore();
         } catch {
-            // If no avatar, just leave the texture showing through with border
             console.log('[DEBUG] No avatar found, texture will show through');
         }
     }
 
-    // "DEAD OR ALIVE" - Size 19, Horiz 50, Vert 39
+    // "DEAD OR ALIVE"
     ctx.fillStyle = '#111';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '57px CaptainKiddNF, Arial, sans-serif'; // Size 19/100 * 300 = 57px
-    const deadOrAliveY = height * (1 - 39/100); // Vert 39: 39% from bottom
-    const deadOrAliveX = (50/100) * width; // Horiz 50: centered
+    ctx.font = '57px CaptainKiddNF, Arial, sans-serif';
+    const deadOrAliveY = height * (1 - 39/100);
+    const deadOrAliveX = (50/100) * width;
     ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-    // Name ("SHANKS") - Size 23, Horiz 50, Vert 30
-    ctx.font = '69px CaptainKiddNF, Arial, sans-serif'; // Size 23/100 * 300 = 69px
+    // Name
+    ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
     let displayName = 'UNKNOWN PIRATE';
     if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
     else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
@@ -658,36 +652,36 @@ async function createWantedPoster(userData, guild) {
         ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
     }
     
-    const nameY = height * (1 - 30/100); // Vert 30: 30% from bottom
-    const nameX = (50/100) * width; // Horiz 50: centered
+    const nameY = height * (1 - 30/100);
+    const nameX = (50/100) * width;
     ctx.fillText(displayName, nameX, nameY);
 
-    // Berry Symbol and Bounty Numbers - FIXED TO USE BOUNTY AMOUNTS WITH PIRATE KING SUPPORT
-    const berryBountyGap = 5; // Fixed gap in our 1-100 scale
+    // Berry Symbol and Bounty Numbers
+    const berryBountyGap = 5;
     
-    // FIXED: Get BOUNTY amount for user's level and check if Pirate King
+    // Get BOUNTY amount for user's level and check if Pirate King
     const isPirateKingData = userData.isPirateKing || false;
     const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
     const bountyStr = bountyAmount.toLocaleString();
     
     console.log(`[LEADERBOARD] Level ${userData.level} ${isPirateKingData ? '(PIRATE KING)' : ''} = Bounty ฿${bountyStr}`);
     
-    ctx.font = '54px Cinzel, Georgia, serif'; // Set font to measure text
+    ctx.font = '54px Cinzel, Georgia, serif';
     const bountyTextWidth = ctx.measureText(bountyStr).width;
     
     // Berry symbol size
-    const berrySize = (32/100) * 150; // Size 32/100 * reasonable max = 48px
+    const berrySize = (32/100) * 150;
     
     // Calculate total width of the bounty unit (berry + gap + text)
-    const gapPixels = (berryBountyGap/100) * width; // Convert gap to pixels
+    const gapPixels = (berryBountyGap/100) * width;
     const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
     
     // Center the entire bounty unit horizontally
     const bountyUnitStartX = (width - totalBountyWidth) / 2;
     
     // Position berry symbol at the start of the centered unit
-    const berryX = bountyUnitStartX + (berrySize/2); // Center of berry symbol
-    const berryY = height * (1 - 22/100) - (berrySize/2); // Vert 22: 22% from bottom
+    const berryX = bountyUnitStartX + (berrySize/2);
+    const berryY = height * (1 - 22/100) - (berrySize/2);
     
     let berryImg;
     try {
@@ -708,21 +702,21 @@ async function createWantedPoster(userData, guild) {
     ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
 
     // Position bounty numbers with fixed gap from berry
-    const bountyX = bountyUnitStartX + berrySize + gapPixels; // Start after berry + gap
-    const bountyY = height * (1 - 22/100); // Vert 22: 22% from bottom (same as berry)
+    const bountyX = bountyUnitStartX + berrySize + gapPixels;
+    const bountyY = height * (1 - 22/100);
     
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#111';
     ctx.fillText(bountyStr, bountyX, bountyY);
 
-    // One Piece logo - Size 26, Horiz 50, Vert 4.5
+    // One Piece logo
     try {
         const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
         const onePieceLogo = await loadImage(onePieceLogoPath);
-        const logoSize = (26/100) * 200; // Size 26/100 * reasonable max = 52px
-        const logoX = ((50/100) * width) - (logoSize/2); // Horiz 50: centered
-        const logoY = height * (1 - 4.5/100) - (logoSize/2); // Vert 4.5: 4.5% from bottom
+        const logoSize = (26/100) * 200;
+        const logoX = ((50/100) * width) - (logoSize/2);
+        const logoY = height * (1 - 4.5/100) - (logoSize/2);
         
         ctx.globalAlpha = 0.6;
         ctx.filter = 'sepia(0.2) brightness(0.9)';
@@ -733,15 +727,15 @@ async function createWantedPoster(userData, guild) {
         console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
     }
 
-    // "MARINE" - Size 8, Horiz 96, Vert 2
+    // "MARINE" text
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.font = '24px TimesNewNormal, Times, serif'; // Size 8/100 * 300 = 24px
+    ctx.font = '24px TimesNewNormal, Times, serif';
     ctx.fillStyle = '#111';
     
     const marineText = 'M A R I N E';
-    const marineX = (96/100) * width; // Horiz 96: very far right
-    const marineY = height * (1 - 2/100); // Vert 2: 2% from bottom
+    const marineX = (96/100) * width;
+    const marineY = height * (1 - 2/100);
     ctx.fillText(marineText, marineX, marineY);
 
     return canvas;
