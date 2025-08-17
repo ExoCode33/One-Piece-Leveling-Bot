@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete fixed file with XP boost integration and proper voice handling + USER PING TOGGLE
+// src/utils/xpTracker.js - Complete fixed file with XP boost integration and proper voice handling + USER PING TOGGLE + EARLY LEVEL PENALTY
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -389,265 +389,6 @@ class XPTracker {
             if (!logVoice) return;
 
             const channel = await this.client.channels.fetch(logChannelId).catch(() => null);
-            if (!channel || !channel.isTextBased()) return;
-
-            // Group activities by voice channel
-            const channelGroups = new Map();
-            activities.forEach(activity => {
-                if (!channelGroups.has(activity.channelName)) {
-                    channelGroups.set(activity.channelName, []);
-                }
-                channelGroups.get(activity.channelName).push(activity);
-            });
-
-            // Create summary embed
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTimestamp()
-                .setAuthor({ 
-                    name: '🚨 MARINE INTELLIGENCE BUREAU',
-                    iconURL: null
-                })
-                .setTitle('VOICE ACTIVITY SUMMARY')
-                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
-
-            let description = '```diff\n';
-            let totalXPAwarded = 0;
-
-            // Add each voice channel group
-            for (const [channelName, channelActivities] of channelGroups) {
-                description += `\n🎙️ CHANNEL: ${channelName}\n`;
-                description += `- MEMBERS: ${channelActivities[0].memberCount}\n`;
-                
-                channelActivities.forEach(activity => {
-                    const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
-                    const muteText = activity.wasMuted ? ` (MUTED ${Math.round(activity.muteMultiplier * 100)}%)` : '';
-                    description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}${muteText}\n`;
-                    totalXPAwarded += activity.xpGain;
-                });
-            }
-
-            description += `\n📊 TOTAL XP AWARDED: +${totalXPAwarded}\n`;
-            description += '```';
-
-            embed.setDescription(description);
-
-            await channel.send({ embeds: [embed] });
-
-        } catch (error) {
-            console.error('[VOICE XP SUMMARY] Failed to send summary:', error);
-        }
-    }
-
-    // FIXED: Award XP with XP boost integration and proper multiplier handling
-    async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
-        try {
-            // Get member for XP boost calculation
-            const guild = this.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            let finalXP = xpAmount;
-            
-            // If xpAmount is null, calculate base XP based on source
-            if (xpAmount === null) {
-                finalXP = this.getRandomXP(source);
-                console.log(`[XP CALC] Generated base XP for ${source}: ${finalXP}`);
-            }
-            
-            // FIXED: Only apply multipliers if not already applied (skipMultiplier = false)
-            if (!skipMultiplier) {
-                // Apply XP boost FIRST if available
-                if (global.xpBoostManager && member) {
-                    try {
-                        const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
-                        if (boostResult.multiplier > 1.0) {
-                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
-                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} base → ${boostedXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
-                            finalXP = boostedXP;
-                        }
-                    } catch (error) {
-                        console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
-                    }
-                }
-                
-                // Apply guild XP multiplier AFTER boost
-                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
-                const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
-                
-                if (multiplier !== 1.0) {
-                    const rawFinalXP = finalXP * multiplier;
-                    const afterGlobal = Math.round(rawFinalXP);
-                    console.log(`[XP CALC] ${user.username} ${source}: ${finalXP} boosted → ${afterGlobal} final (${multiplier}x global)`);
-                    finalXP = afterGlobal;
-                }
-            }
-            
-            // Ensure minimum 1 XP if original amount was > 0 and final is 0
-            const actualXP = (xpAmount > 0 && finalXP === 0) ? 1 : finalXP;
-
-            console.log(`[XP AWARD] Final XP to award: ${actualXP} (source: ${source}, skipMultiplier: ${skipMultiplier})`);
-
-            // Get current user stats BEFORE update
-            const beforeResult = await this.db.query(
-                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                [userId, guildId]
-            );
-
-            const oldLevel = beforeResult.rows.length > 0 ? beforeResult.rows[0].level : 0;
-            const oldTotalXP = beforeResult.rows.length > 0 ? beforeResult.rows[0].total_xp : 0;
-
-            // Update user stats using database structure
-            await this.db.query(`
-                INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time, level)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (user_id, guild_id)
-                DO UPDATE SET
-                    total_xp = user_levels.total_xp + $3,
-                    messages = user_levels.messages + $4,
-                    reactions = user_levels.reactions + $5,
-                    voice_time = user_levels.voice_time + $6,
-                    updated_at = CURRENT_TIMESTAMP
-            `, [
-                userId, guildId, actualXP,
-                source === 'message' ? 1 : 0,
-                source === 'reaction' ? 1 : 0,
-                (source === 'voice' || source === 'voice_silent') ? 1 : 0,
-                oldLevel
-            ]);
-
-            // Get the NEW total XP after update
-            const afterResult = await this.db.query(
-                'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                [userId, guildId]
-            );
-
-            const newTotalXP = afterResult.rows[0].total_xp;
-            const newLevel = this.calculateLevel(newTotalXP);
-
-            // Update the level in database
-            await this.db.query(
-                'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
-                [newLevel, userId, guildId]
-            );
-
-            // Log XP activity (only for non-admin and non-voice_silent sources)
-            if (source !== 'admin' && source !== 'voice' && source !== 'voice_silent') {
-                await this.logXPActivity(source, user, guildId, actualXP, {
-                    totalXP: newTotalXP,
-                    currentLevel: newLevel
-                });
-            }
-
-            console.log(`[XP] ${user.username}: ${oldTotalXP} + ${actualXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
-
-            // Handle multiple level gains - announce EVERY level with XP source
-            if (newLevel > oldLevel) {
-                console.log(`[LEVEL UP] ${user.username} gained ${newLevel - oldLevel} levels: ${oldLevel} → ${newLevel}!`);
-                
-                // Announce each level individually
-                for (let level = oldLevel + 1; level <= newLevel; level++) {
-                    const levelXP = this.getXPForLevel(level);
-                    const levelUpSource = source === 'voice_silent' ? 'voice' : source;
-                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, levelUpSource);
-                    
-                    // Small delay between announcements to prevent spam
-                    if (level < newLevel) {
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    }
-                }
-            }
-
-        } catch (error) {
-            console.error('Error awarding XP:', error);
-        }
-    }
-
-    async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, xpSource = 'unknown') {
-        try {
-            console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
-
-            // Award level roles using level role system
-            const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
-
-            // Send Marine-themed level up notification
-            await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward);
-
-            // Log the level up event with XP source
-            await this.logXPActivity('levelup', user, guildId, 0, {
-                oldLevel,
-                newLevel,
-                totalXP: newTotalXP,
-                roleReward,
-                xpSource: xpSource.toUpperCase()
-            });
-
-            console.log(`[LEVEL UP] Completed level up processing for ${user.username}`);
-
-        } catch (error) {
-            console.error('Error handling level up:', error);
-        }
-    }
-
-    // FIXED: Added user ping toggle with environment variable
-    async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward = null) {
-        try {
-            console.log(`[LEVEL UP] Sending notification for ${user.username}: ${oldLevel} → ${newLevel}`);
-
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) {
-                console.log('[LEVEL UP] Guild not found');
-                return;
-            }
-
-            // Get guild settings from database/memory
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            // Check if levelup is enabled
-            const levelupEnabled = guildSettings?.levelupEnabled !== false; // Default to true
-            if (!levelupEnabled) {
-                console.log('[LEVEL UP] Level up announcements disabled for this guild');
-                return;
-            }
-
-            // Get notification channel from guild settings
-            let channelId = guildSettings?.levelupChannel;
-            
-            // Fallback to environment variable if not set in database
-            if (!channelId) {
-                channelId = process.env.LEVELUP_CHANNEL;
-            }
-
-            if (!channelId || channelId === 'your_levelup_channel_id') {
-                // Try to find the default bounty notices channel first
-                const defaultChannel = guild.channels.cache.find(ch => 
-                    ch.name.toLowerCase().includes('bounty-notices') && ch.isTextBased()
-                );
-                
-                if (defaultChannel) {
-                    channelId = defaultChannel.id;
-                    console.log(`[LEVEL UP] Using default bounty channel: ${defaultChannel.name}`);
-                } else {
-                    // Fallback to other common channel names
-                    const fallbackChannels = ['general', 'chat', 'levelup', 'announcements'];
-                    for (const name of fallbackChannels) {
-                        const foundChannel = guild.channels.cache.find(ch => 
-                            ch.name.toLowerCase().includes(name) && ch.isTextBased()
-                        );
-                        if (foundChannel) {
-                            channelId = foundChannel.id;
-                            console.log(`[LEVEL UP] Using fallback channel: ${foundChannel.name}`);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!channelId) {
-                console.log('[LEVEL UP] No suitable channel found for announcements');
-                return;
-            }
-
-            const channel = guild.channels.cache.get(channelId);
             if (!channel || !channel.isTextBased()) {
                 console.log(`[LEVEL UP] Channel ${channelId} not found or not text-based`);
                 return;
@@ -1021,23 +762,40 @@ class XPTracker {
         }
     }
 
-    // Fixed XP calculation method using environment variables with slower early game
+    // UPDATED: XP calculation method with early level penalty
     getXPForLevel(level) {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
-        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500; // NEW: Base XP amount (default 500)
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+        
+        // NEW: Early level penalty system
+        const earlyLevelPenalty = parseFloat(process.env.EARLY_LEVEL_PENALTY) || 1.0; // Default no penalty
+        const earlyLevelThreshold = parseInt(process.env.EARLY_LEVEL_THRESHOLD) || 0; // Default no threshold
+        
+        let xpRequired;
         
         if (curve === 'exponential') {
-            // Modified formula: baseXP * (level^multiplier) instead of 100 * (level^multiplier)
-            // This makes early levels require more XP while maintaining the same curve shape
-            return Math.floor(baseXP * Math.pow(level, multiplier));
+            xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
         } else if (curve === 'linear') {
-            return baseXP * level * multiplier;
+            xpRequired = baseXP * level * multiplier;
         } else if (curve === 'logarithmic') {
-            return Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+            xpRequired = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+        } else {
+            xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
         }
         
-        return Math.floor(baseXP * Math.pow(level, multiplier));
+        // Apply early level penalty if enabled
+        if (level <= earlyLevelThreshold && earlyLevelPenalty > 1.0) {
+            // Gradually decrease penalty as level increases
+            // Level 1 gets full penalty, level at threshold gets minimal penalty
+            const penaltyStrength = 1 + ((earlyLevelPenalty - 1) * (earlyLevelThreshold - level + 1) / earlyLevelThreshold);
+            const originalXP = xpRequired;
+            xpRequired = Math.floor(xpRequired * penaltyStrength);
+            
+            console.log(`[XP CALC] Level ${level} early penalty: ${penaltyStrength.toFixed(2)}x (${originalXP.toLocaleString()} → ${xpRequired.toLocaleString()} XP)`);
+        }
+        
+        return xpRequired;
     }
 
     // Fixed XP generation using environment variables
@@ -1065,22 +823,34 @@ class XPTracker {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
+    // UPDATED: Level calculation with early penalty support
     calculateLevel(totalXP) {
         const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
         const curve = process.env.FORMULA_CURVE || 'exponential';
         const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
-        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500; // NEW: Base XP amount
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+        
+        // NEW: Early level penalty system
+        const earlyLevelPenalty = parseFloat(process.env.EARLY_LEVEL_PENALTY) || 1.0;
+        const earlyLevelThreshold = parseInt(process.env.EARLY_LEVEL_THRESHOLD) || 0;
 
         for (let level = 1; level <= maxLevel; level++) {
             let requiredXP;
             
             if (curve === 'exponential') {
-                // Modified formula: baseXP * (level^multiplier) instead of 100 * (level^multiplier)
                 requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
             } else if (curve === 'linear') {
                 requiredXP = baseXP * level * multiplier;
             } else if (curve === 'logarithmic') {
                 requiredXP = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+            } else {
+                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
+            }
+            
+            // Apply early level penalty if enabled
+            if (level <= earlyLevelThreshold && earlyLevelPenalty > 1.0) {
+                const penaltyStrength = 1 + ((earlyLevelPenalty - 1) * (earlyLevelThreshold - level + 1) / earlyLevelThreshold);
+                requiredXP = Math.floor(requiredXP * penaltyStrength);
             }
 
             if (totalXP < requiredXP) {
@@ -1354,4 +1124,263 @@ class XPTracker {
     }
 }
 
-module.exports = XPTracker;
+module.exports = XPTracker;Based()) return;
+
+            // Group activities by voice channel
+            const channelGroups = new Map();
+            activities.forEach(activity => {
+                if (!channelGroups.has(activity.channelName)) {
+                    channelGroups.set(activity.channelName, []);
+                }
+                channelGroups.get(activity.channelName).push(activity);
+            });
+
+            // Create summary embed
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTimestamp()
+                .setAuthor({ 
+                    name: '🚨 MARINE INTELLIGENCE BUREAU',
+                    iconURL: null
+                })
+                .setTitle('VOICE ACTIVITY SUMMARY')
+                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
+
+            let description = '```diff\n';
+            let totalXPAwarded = 0;
+
+            // Add each voice channel group
+            for (const [channelName, channelActivities] of channelGroups) {
+                description += `\n🎙️ CHANNEL: ${channelName}\n`;
+                description += `- MEMBERS: ${channelActivities[0].memberCount}\n`;
+                
+                channelActivities.forEach(activity => {
+                    const dailyCapText = activity.dailyCapped ? ' (CAP)' : '';
+                    const muteText = activity.wasMuted ? ` (MUTED ${Math.round(activity.muteMultiplier * 100)}%)` : '';
+                    description += `- ${activity.user.username}: +${activity.xpGain} XP → ${activity.totalXP.toLocaleString()} (Lv.${activity.currentLevel})${dailyCapText}${muteText}\n`;
+                    totalXPAwarded += activity.xpGain;
+                });
+            }
+
+            description += `\n📊 TOTAL XP AWARDED: +${totalXPAwarded}\n`;
+            description += '```';
+
+            embed.setDescription(description);
+
+            await channel.send({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('[VOICE XP SUMMARY] Failed to send summary:', error);
+        }
+    }
+
+    // FIXED: Award XP with XP boost integration and proper multiplier handling
+    async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
+        try {
+            // Get member for XP boost calculation
+            const guild = this.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
+            let finalXP = xpAmount;
+            
+            // If xpAmount is null, calculate base XP based on source
+            if (xpAmount === null) {
+                finalXP = this.getRandomXP(source);
+                console.log(`[XP CALC] Generated base XP for ${source}: ${finalXP}`);
+            }
+            
+            // FIXED: Only apply multipliers if not already applied (skipMultiplier = false)
+            if (!skipMultiplier) {
+                // Apply XP boost FIRST if available
+                if (global.xpBoostManager && member) {
+                    try {
+                        const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
+                        if (boostResult.multiplier > 1.0) {
+                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
+                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} base → ${boostedXP} boosted (${boostResult.multiplier}x from ${boostResult.appliedBoosts.length} roles)`);
+                            finalXP = boostedXP;
+                        }
+                    } catch (error) {
+                        console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
+                    }
+                }
+                
+                // Apply guild XP multiplier AFTER boost
+                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
+                const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
+                
+                if (multiplier !== 1.0) {
+                    const rawFinalXP = finalXP * multiplier;
+                    const afterGlobal = Math.round(rawFinalXP);
+                    console.log(`[XP CALC] ${user.username} ${source}: ${finalXP} boosted → ${afterGlobal} final (${multiplier}x global)`);
+                    finalXP = afterGlobal;
+                }
+            }
+            
+            // Ensure minimum 1 XP if original amount was > 0 and final is 0
+            const actualXP = (xpAmount > 0 && finalXP === 0) ? 1 : finalXP;
+
+            console.log(`[XP AWARD] Final XP to award: ${actualXP} (source: ${source}, skipMultiplier: ${skipMultiplier})`);
+
+            // Get current user stats BEFORE update
+            const beforeResult = await this.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [userId, guildId]
+            );
+
+            const oldLevel = beforeResult.rows.length > 0 ? beforeResult.rows[0].level : 0;
+            const oldTotalXP = beforeResult.rows.length > 0 ? beforeResult.rows[0].total_xp : 0;
+
+            // Update user stats using database structure
+            await this.db.query(`
+                INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time, level)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET
+                    total_xp = user_levels.total_xp + $3,
+                    messages = user_levels.messages + $4,
+                    reactions = user_levels.reactions + $5,
+                    voice_time = user_levels.voice_time + $6,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [
+                userId, guildId, actualXP,
+                source === 'message' ? 1 : 0,
+                source === 'reaction' ? 1 : 0,
+                (source === 'voice' || source === 'voice_silent') ? 1 : 0,
+                oldLevel
+            ]);
+
+            // Get the NEW total XP after update
+            const afterResult = await this.db.query(
+                'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [userId, guildId]
+            );
+
+            const newTotalXP = afterResult.rows[0].total_xp;
+            const newLevel = this.calculateLevel(newTotalXP);
+
+            // Update the level in database
+            await this.db.query(
+                'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
+                [newLevel, userId, guildId]
+            );
+
+            // Log XP activity (only for non-admin and non-voice_silent sources)
+            if (source !== 'admin' && source !== 'voice' && source !== 'voice_silent') {
+                await this.logXPActivity(source, user, guildId, actualXP, {
+                    totalXP: newTotalXP,
+                    currentLevel: newLevel
+                });
+            }
+
+            console.log(`[XP] ${user.username}: ${oldTotalXP} + ${actualXP} = ${newTotalXP} XP (Level ${oldLevel} → ${newLevel})`);
+
+            // Handle multiple level gains - announce EVERY level with XP source
+            if (newLevel > oldLevel) {
+                console.log(`[LEVEL UP] ${user.username} gained ${newLevel - oldLevel} levels: ${oldLevel} → ${newLevel}!`);
+                
+                // Announce each level individually
+                for (let level = oldLevel + 1; level <= newLevel; level++) {
+                    const levelXP = this.getXPForLevel(level);
+                    const levelUpSource = source === 'voice_silent' ? 'voice' : source;
+                    await this.handleLevelUp(userId, guildId, level - 1, level, levelXP - 100, levelXP, user, levelUpSource);
+                    
+                    // Small delay between announcements to prevent spam
+                    if (level < newLevel) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('Error awarding XP:', error);
+        }
+    }
+
+    async handleLevelUp(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, xpSource = 'unknown') {
+        try {
+            console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
+
+            // Award level roles using level role system
+            const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
+
+            // Send Marine-themed level up notification
+            await this.sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward);
+
+            // Log the level up event with XP source
+            await this.logXPActivity('levelup', user, guildId, 0, {
+                oldLevel,
+                newLevel,
+                totalXP: newTotalXP,
+                roleReward,
+                xpSource: xpSource.toUpperCase()
+            });
+
+            console.log(`[LEVEL UP] Completed level up processing for ${user.username}`);
+
+        } catch (error) {
+            console.error('Error handling level up:', error);
+        }
+    }
+
+    // FIXED: Added user ping toggle with environment variable
+    async sendMarineLevelUpNotification(userId, guildId, oldLevel, newLevel, oldTotalXP, newTotalXP, user, roleReward = null) {
+        try {
+            console.log(`[LEVEL UP] Sending notification for ${user.username}: ${oldLevel} → ${newLevel}`);
+
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) {
+                console.log('[LEVEL UP] Guild not found');
+                return;
+            }
+
+            // Get guild settings from database/memory
+            const guildSettings = global.guildSettings?.get(guildId);
+            
+            // Check if levelup is enabled
+            const levelupEnabled = guildSettings?.levelupEnabled !== false; // Default to true
+            if (!levelupEnabled) {
+                console.log('[LEVEL UP] Level up announcements disabled for this guild');
+                return;
+            }
+
+            // Get notification channel from guild settings
+            let channelId = guildSettings?.levelupChannel;
+            
+            // Fallback to environment variable if not set in database
+            if (!channelId) {
+                channelId = process.env.LEVELUP_CHANNEL;
+            }
+
+            if (!channelId || channelId === 'your_levelup_channel_id') {
+                // Try to find the default bounty notices channel first
+                const defaultChannel = guild.channels.cache.find(ch => 
+                    ch.name.toLowerCase().includes('bounty-notices') && ch.isTextBased()
+                );
+                
+                if (defaultChannel) {
+                    channelId = defaultChannel.id;
+                    console.log(`[LEVEL UP] Using default bounty channel: ${defaultChannel.name}`);
+                } else {
+                    // Fallback to other common channel names
+                    const fallbackChannels = ['general', 'chat', 'levelup', 'announcements'];
+                    for (const name of fallbackChannels) {
+                        const foundChannel = guild.channels.cache.find(ch => 
+                            ch.name.toLowerCase().includes(name) && ch.isTextBased()
+                        );
+                        if (foundChannel) {
+                            channelId = foundChannel.id;
+                            console.log(`[LEVEL UP] Using fallback channel: ${foundChannel.name}`);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!channelId) {
+                console.log('[LEVEL UP] No suitable channel found for announcements');
+                return;
+            }
+
+            const channel = guild.channels.cache.get(channelId);
+            if (!channel || !channel.isText
