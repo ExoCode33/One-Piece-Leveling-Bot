@@ -684,6 +684,7 @@ module.exports = {
     }
 };
 
+// All async functions moved inside module.exports to fix syntax error
 async function handleStats(interaction, db) {
     // Get comprehensive statistics
     const [userStats, guildStats, xpStats, levelStats] = await Promise.all([
@@ -809,6 +810,9 @@ async function handleNuclear(interaction, db) {
 }
 
 // Export button handlers for use in index.js
+module.exports.handleStats = handleStats;
+module.exports.handleMaintenance = handleMaintenance;
+module.exports.handleNuclear = handleNuclear;
 module.exports.handleMaintenanceButtons = async (interaction, db) => {
     if (interaction.customId === 'cleanup_inactive') {
         await interaction.deferUpdate();
