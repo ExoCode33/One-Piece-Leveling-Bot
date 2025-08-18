@@ -4,14 +4,14 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation Configuration
 const ANIMATION_CONFIG = {
-    RAINBOW_DELAY: 250,
+    RAINBOW_DELAY: 350,  // Slower for API lag
     WAVE_FRAMES: 12,
-    REVEAL_FRAMES: 8,
-    FINAL_PAUSE: 1000
+    REVEAL_FRAMES: 10,   // More frames for 20 width
+    FINAL_PAUSE: 800
 };
 
 class BuffAnimator {
-    static createGrid(width = 15, height = 5, fillColor = '⬜') {
+    static createGrid(width = 20, height = 5, fillColor = '⬜') {
         const grid = [];
         for (let row = 0; row < height; row++) {
             const rowArray = [];
@@ -34,17 +34,17 @@ class BuffAnimator {
 
     static getTierColor(tier) {
         const tierColors = {
-            1: '🟢', // Common - Green
-            2: '🔵', // Rare - Blue  
-            3: '🟣', // Epic - Purple
-            4: '🟡', // Legendary - Gold
-            5: '🟠', // Mythical - Orange
-            6: '🔴'  // Divine - Red
+            1: '🟩', // Common - Green SQUARE
+            2: '🟦', // Rare - Blue SQUARE
+            3: '🟪', // Epic - Purple SQUARE
+            4: '🟨', // Legendary - Yellow SQUARE
+            5: '🟧', // Mythical - Orange SQUARE
+            6: '🟥'  // Divine - Red SQUARE
         };
-        return tierColors[tier] || '🟢';
+        return tierColors[tier] || '🟩';
     }
 
-    static createFluidWaveFrame(frame, tier, width = 15, height = 5) {
+    static createFluidWaveFrame(frame, tier, width = 20, height = 5) {
         const grid = this.createGrid(width, height, '⬜');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
@@ -80,7 +80,7 @@ class BuffAnimator {
         return grid;
     }
 
-    static createSquareRevealFrame(frame, tier, width = 15, height = 5) {
+    static createSquareRevealFrame(frame, tier, width = 20, height = 5) {
         const grid = this.createGrid(width, height, '⬜');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
@@ -109,7 +109,7 @@ class BuffAnimator {
         return grid;
     }
 
-    static createFinalStableGrid(tier, width = 15, height = 5) {
+    static createFinalStableGrid(tier, width = 20, height = 5) {
         const grid = this.createGrid(width, height, '⬜');
         const tierColor = this.getTierColor(tier);
         
@@ -170,27 +170,12 @@ class BuffAnimator {
                 `**Square formation expanding...**\n\n${this.gridToString(grid)}\n\n**Enhancement pattern locked in...**`
             )
             .setColor(color)
-            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 8) * 100))}%` })
+            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 10) * 100))}%` })
             .setTimestamp();
         
         return embed;
     }
-
-    static createFinalAnimationFrame(tier) {
-        const grid = this.createFinalStableGrid(tier);
-        const color = this.getTierColorHex(tier);
-        
-        const embed = new EmbedBuilder()
-            .setTitle('ENHANCEMENT MATRIX COMPLETE')
-            .setDescription(
-                `**Enhancement fully materialized...**\n\n${this.gridToString(grid)}\n\n**Matrix stabilized and locked...**`
-            )
-            .setColor(color)
-            .setFooter({ text: 'Enhancement matrix permanently stabilized' })
-            .setTimestamp();
-        
-        return embed;
-    }
+}
 }
 
 module.exports = {
@@ -264,7 +249,7 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
         
-        // Phase 2: Square Reveal Animation (8 frames) - explodes outward in square pattern
+        // Phase 2: Square Reveal Animation (10 frames) - explodes outward in square pattern
         for (let frame = 0; frame <= ANIMATION_CONFIG.REVEAL_FRAMES; frame++) {
             const revealEmbed = BuffAnimator.createRevealAnimationFrame(frame, finalResult);
             
@@ -272,14 +257,8 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
 
-        // Phase 3: Final Stable Grid (tier color fills everything permanently)
-        const finalStableEmbed = BuffAnimator.createFinalAnimationFrame(finalResult);
-        await interaction.editReply({ embeds: [finalStableEmbed] });
-        
-        // Pause to show the complete filled grid
-        await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FINAL_PAUSE));
-
-        // Phase 4: Final Result with Details
+        // NO WHITE FLICKER - directly go to final result
+        // Phase 3: Final Result with Details (grid stays tier colored)
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
