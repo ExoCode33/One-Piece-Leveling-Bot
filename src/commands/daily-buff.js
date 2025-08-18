@@ -17,7 +17,7 @@ module.exports = {
             if (!global.xpTracker || !global.xpTracker.db) {
                 return await interaction.reply({
                     content: '❌ **Daily Buff System Unavailable**\n\nXP tracking system not initialized.',
-                    ephemeral: true
+                    flags: 64 // MessageFlags.Ephemeral
                 });
             }
 
@@ -34,7 +34,7 @@ module.exports = {
                     .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
                     .setTimestamp();
 
-                return await interaction.reply({ embeds: [embed], ephemeral: true });
+                return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
             // Start the enhanced spinning animation
@@ -51,7 +51,7 @@ module.exports = {
             } else {
                 await interaction.reply({
                     content: '❌ **Error**\n\nSomething went wrong with the daily buff system. Please try again.',
-                    ephemeral: true
+                    flags: 64 // MessageFlags.Ephemeral
                 });
             }
         }
