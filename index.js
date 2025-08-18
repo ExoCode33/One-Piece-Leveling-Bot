@@ -590,3 +590,639 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 }, 1000);
             }
         }
+
+        // Auto-delete empty dynamic channels
+        if (oldState.channelId) {
+            const oldChannel = oldState.channel;
+            const savedCategory = await getCategoryForGuild(guildId);
+            const categoryName = savedCategory ? savedCategory.categoryName : DEFAULT_CATEGORY_NAME;
+            
+            if (oldChannel && 
+                oldChannel.name !== CREATE_CHANNEL_NAME && 
+                oldChannel.parent?.name === categoryName &&
+                oldChannel.members.size === 0) {
+                
+                debugLog(`🕐 Scheduling deletion of empty crew: ${oldChannel.name} in ${DELETE_DELAY}ms`);
+                
+                // Clean up any voice connections for this channel
+                if (activeConnections.has(oldChannel.id)) {
+                    const connection = activeConnections.get(oldChannel.id);
+                    connection.destroy();
+                    activeConnections.delete(oldChannel.id);
+                    debugLog(`🔌 Cleaned up voice connection for ${oldChannel.name}`);
+                }
+                
+                setTimeout(async () => {
+                    try {
+                        const channelToDelete = oldChannel.guild.channels.cache.get(oldChannel.id);
+                        if (channelToDelete && channelToDelete.members.size === 0) {
+                            await channelToDelete.delete();
+                            log(`🗑️ Deleted empty crew: ${oldChannel.name}`);
+                        } else {
+                            debugLog(`👥 Crew ${oldChannel.name} no longer empty, keeping it`);
+                        }
+                    } catch (error) {
+                        console.error(`❌ Error deleting channel ${oldChannel.name}:`, error);
+                    }
+                }, DELETE_DELAY);
+            }
+        }
+
+    } catch (error) {
+        console.error('❌ Error in voiceStateUpdate:', error);
+    }
+});
+
+// Handle category moves - sync to database when category is moved/renamed
+client.on('channelUpdate', async (oldChannel, newChannel) => {
+    try {
+        // Check if this is a category update
+        if (newChannel.type === ChannelType.GuildCategory) {
+            const guildId = newChannel.guild.id;
+            const savedCategory = await getCategoryForGuild(guildId);
+            
+            // If this is our saved category and it was moved/renamed
+            if (savedCategory && savedCategory.categoryId === newChannel.id) {
+                if (savedCategory.categoryName !== newChannel.name) {
+                    await updateCategoryForGuild(guildId, newChannel.id, newChannel.name);
+                    log(`📁 Category renamed and synced: ${savedCategory.categoryName} → ${newChannel.name}`);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error handling category update:', error);
+    }
+});
+
+// Enhanced Slash command handler with XP system
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const { commandName } = interaction;
+
+    try {
+        if (commandName === 'check-voice-time') {
+            const targetUser = interaction.options.getUser('user') || interaction.user;
+            const voiceData = await voiceTimeTracker.getUserVoiceTime(targetUser.id, interaction.guild.id);
+            
+            if (!voiceData || voiceData.total_seconds === 0) {
+                await interaction.reply({
+                    content: `📊 ${targetUser.displayName} has no recorded voice time in this server.`,
+                    ephemeral: true
+                });
+                return;
+            }
+
+            const formattedTime = voiceTimeTracker.formatTime(voiceData.total_seconds);
+            const lastActive = new Date(voiceData.last_updated).toLocaleDateString();
+
+            const embed = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('🎤 Voice Time & XP Statistics')
+                .setThumbnail(targetUser.displayAvatarURL())
+                .addFields(
+                    { name: '👤 User', value: targetUser.displayName, inline: true },
+                    { name: '⏱️ Total Voice Time', value: formattedTime, inline: true },
+                    { name: '⚡ Total XP', value: `${voiceData.total_xp.toLocaleString()} XP`, inline: true },
+                    { name: '🎯 Level', value: `${voiceData.level_calculated}`, inline: true },
+                    { name: '📅 Daily XP', value: `${voiceData.daily_xp}/${process.env.DAILY_XP_CAP || 500}`, inline: true },
+                    { name: '📆 Weekly XP', value: `${voiceData.weekly_xp}/${process.env.WEEKLY_XP_CAP || 2500}`, inline: true },
+                    { name: '🗓️ Monthly XP', value: `${voiceData.monthly_xp}/${process.env.MONTHLY_XP_CAP || 10000}`, inline: true },
+                    { name: '📅 Last Active', value: lastActive, inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'One Piece Voice Bot - XP System' });
+
+            await interaction.reply({ embeds: [embed] });
+        }
+
+        else if (commandName === 'voice-leaderboard') {
+            const limit = interaction.options.getInteger('limit') || 10;
+            const topUsers = await voiceTimeTracker.getTopVoiceUsers(interaction.guild.id, limit);
+
+            if (topUsers.length === 0) {
+                await interaction.reply({
+                    content: '📊 No voice time data found for this server.',
+                    ephemeral: true
+                });
+                return;
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🏆 Voice XP Leaderboard')
+                .setDescription(`Top ${topUsers.length} voice users in ${interaction.guild.name}`)
+                .setTimestamp()
+                .setFooter({ text: 'One Piece Voice Bot - XP Leaderboard' });
+
+            let description = '';
+            topUsers.forEach((user, index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+                const formattedTime = voiceTimeTracker.formatTime(user.total_seconds);
+                description += `${medal} **${user.username}** - Lvl ${user.level_calculated} (${user.total_xp.toLocaleString()} XP) - ${formattedTime}\n`;
+            });
+
+            embed.addFields({ name: '🎤 Rankings', value: description });
+
+            await interaction.reply({ embeds: [embed] });
+        }
+
+        else if (commandName === 'xp-caps') {
+            const targetUser = interaction.options.getUser('user') || interaction.user;
+            const capsStatus = await voiceTimeTracker.getXPCapsStatus(targetUser.id, interaction.guild.id);
+            
+            if (!capsStatus) {
+                await interaction.reply({
+                    content: `📊 ${targetUser.displayName} has no XP data in this server.`,
+                    ephemeral: true
+                });
+                return;
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor('#FF6B6B')
+                .setTitle('📊 XP Caps & Progress')
+                .setThumbnail(targetUser.displayAvatarURL())
+                .addFields(
+                    { 
+                        name: '📅 Daily Progress', 
+                        value: `${capsStatus.daily.current}/${capsStatus.daily.cap} XP (${capsStatus.daily.percentage}%)\n🔋 ${'█'.repeat(Math.floor(capsStatus.daily.percentage/10))}${'░'.repeat(10-Math.floor(capsStatus.daily.percentage/10))} ${capsStatus.daily.remaining} XP remaining`, 
+                        inline: false 
+                    },
+                    { 
+                        name: '📆 Weekly Progress', 
+                        value: `${capsStatus.weekly.current}/${capsStatus.weekly.cap} XP (${capsStatus.weekly.percentage}%)\n🔋 ${'█'.repeat(Math.floor(capsStatus.weekly.percentage/10))}${'░'.repeat(10-Math.floor(capsStatus.weekly.percentage/10))} ${capsStatus.weekly.remaining} XP remaining`, 
+                        inline: false 
+                    },
+                    { 
+                        name: '🗓️ Monthly Progress', 
+                        value: `${capsStatus.monthly.current}/${capsStatus.monthly.cap} XP (${capsStatus.monthly.percentage}%)\n🔋 ${'█'.repeat(Math.floor(capsStatus.monthly.percentage/10))}${'░'.repeat(10-Math.floor(capsStatus.monthly.percentage/10))} ${capsStatus.monthly.remaining} XP remaining`, 
+                        inline: false 
+                    }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'One Piece Voice Bot - XP Caps' });
+
+            await interaction.reply({ embeds: [embed] });
+        }
+
+        else if (commandName === 'xp-activity') {
+            const targetUser = interaction.options.getUser('user') || interaction.user;
+            const limit = interaction.options.getInteger('limit') || 5;
+            
+            try {
+                const result = await pool.query(`
+                    SELECT channel_name, session_duration_seconds, xp_earned, xp_cap_hit, cap_type, timestamp
+                    FROM xp_activity_log
+                    WHERE user_id = $1 AND guild_id = $2
+                    ORDER BY timestamp DESC
+                    LIMIT $3
+                `, [targetUser.id, interaction.guild.id, limit]);
+
+                if (result.rows.length === 0) {
+                    await interaction.reply({
+                        content: `📊 ${targetUser.displayName} has no recent XP activity in this server.`,
+                        ephemeral: true
+                    });
+                    return;
+                }
+
+                const embed = new EmbedBuilder()
+                    .setColor('#00FF00')
+                    .setTitle('📈 Recent XP Activity')
+                    .setThumbnail(targetUser.displayAvatarURL())
+                    .setTimestamp()
+                    .setFooter({ text: 'One Piece Voice Bot - XP Activity' });
+
+                let description = '';
+                result.rows.forEach((activity, index) => {
+                    const duration = voiceTimeTracker.formatTime(activity.session_duration_seconds);
+                    const timestamp = new Date(activity.timestamp).toLocaleDateString();
+                    let xpText = `+${activity.xp_earned} XP`;
+                    
+                    if (activity.xp_cap_hit) {
+                        const capEmoji = activity.cap_type === 'daily' ? '📅' : 
+                                       activity.cap_type === 'weekly' ? '📆' : 
+                                       activity.cap_type === 'monthly' ? '🗓️' : '🚫';
+                        xpText += ` ${capEmoji} (${activity.cap_type} cap)`;
+                    }
+                    
+                    description += `**${activity.channel_name}** (${duration})\n${xpText} - ${timestamp}\n\n`;
+                });
+
+                embed.setDescription(description);
+                await interaction.reply({ embeds: [embed] });
+                
+            } catch (error) {
+                console.error('❌ Error getting XP activity:', error);
+                await interaction.reply({
+                    content: '❌ Error retrieving XP activity. Please try again later.',
+                    ephemeral: true
+                });
+            }
+        }
+
+        else if (commandName === 'level-info') {
+            const targetUser = interaction.options.getUser('user') || interaction.user;
+            const voiceData = await voiceTimeTracker.getUserVoiceTime(targetUser.id, interaction.guild.id);
+            
+            if (!voiceData || voiceData.total_xp === 0) {
+                await interaction.reply({
+                    content: `📊 ${targetUser.displayName} has no XP data in this server.`,
+                    ephemeral: true
+                });
+                return;
+            }
+
+            const currentLevel = voiceData.level_calculated;
+            const currentXP = voiceData.total_xp;
+            const xpForCurrentLevel = Math.pow((currentLevel - 1) * 10, 2);
+            const xpForNextLevel = Math.pow(currentLevel * 10, 2);
+            const xpProgress = currentXP - xpForCurrentLevel;
+            const xpNeeded = xpForNextLevel - currentXP;
+            const progressPercentage = Math.round((xpProgress / (xpForNextLevel - xpForCurrentLevel)) * 100);
+
+            const embed = new EmbedBuilder()
+                .setColor('#9B59B6')
+                .setTitle('🎯 Level Information')
+                .setThumbnail(targetUser.displayAvatarURL())
+                .addFields(
+                    { name: '🎯 Current Level', value: `${currentLevel}`, inline: true },
+                    { name: '⚡ Total XP', value: `${currentXP.toLocaleString()}`, inline: true },
+                    { name: '📈 Progress to Next Level', value: `${progressPercentage}%`, inline: true },
+                    { 
+                        name: '🔋 XP Progress', 
+                        value: `${'█'.repeat(Math.floor(progressPercentage/10))}${'░'.repeat(10-Math.floor(progressPercentage/10))}\n${xpProgress.toLocaleString()}/${(xpForNextLevel - xpForCurrentLevel).toLocaleString()} XP`, 
+                        inline: false 
+                    },
+                    { name: '🎯 XP Needed for Next Level', value: `${xpNeeded.toLocaleString()} XP`, inline: true },
+                    { name: '⚡ XP Rate', value: `${process.env.XP_PER_MINUTE || 5} XP/minute`, inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'One Piece Voice Bot - Level System' });
+
+            await interaction.reply({ embeds: [embed] });
+        }
+
+        else if (commandName === 'bot-info') {
+            const uptime = process.uptime();
+            const hours = Math.floor(uptime / 3600);
+            const minutes = Math.floor((uptime % 3600) / 60);
+
+            const embed = new EmbedBuilder()
+                .setColor('#FF6B6B')
+                .setTitle('🏴‍☠️ One Piece Voice Bot Info')
+                .addFields(
+                    { name: '⚓ Servers', value: `${client.guilds.cache.size}`, inline: true },
+                    { name: '👤 Active Voice Sessions', value: `${voiceTimeTracker.getActiveSessionsCount()}`, inline: true },
+                    { name: '🎵 Audio Connections', value: `${activeConnections.size}`, inline: true },
+                    { name: '⏰ Uptime', value: `${hours}h ${minutes}m`, inline: true },
+                    { name: '🗄️ Database', value: 'Connected', inline: true },
+                    { name: '⚡ XP Rate', value: `${process.env.XP_PER_MINUTE || 5} XP/min`, inline: true },
+                    { name: '📅 Daily XP Cap', value: `${process.env.DAILY_XP_CAP || 500}`, inline: true },
+                    { name: '📆 Weekly XP Cap', value: `${process.env.WEEKLY_XP_CAP || 2500}`, inline: true },
+                    { name: '🗓️ Monthly XP Cap', value: `${process.env.MONTHLY_XP_CAP || 10000}`, inline: true },
+                    { name: '🎤 Features', value: 'Dynamic Channels, XP Tracking, Voice Logging, Welcome Sounds', inline: false }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'One Piece Voice Bot - XP System Active' });
+
+            await interaction.reply({ embeds: [embed] });
+        }
+
+    } catch (error) {
+        console.error('❌ Error handling slash command:', error);
+        if (!interaction.replied) {
+            await interaction.reply({
+                content: '❌ An error occurred while processing this command.',
+                ephemeral: true
+            });
+        }
+    }
+});
+
+// Legacy message commands and testing commands
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+    
+    // Voice stats command (legacy) - now with XP info
+    if (message.content === '!voicestats' || message.content === '!stats') {
+        try {
+            const voiceData = await voiceTimeTracker.getUserVoiceTime(message.author.id, message.guild.id);
+            if (voiceData && voiceData.total_seconds > 0) {
+                const formattedTime = voiceTimeTracker.formatTime(voiceData.total_seconds);
+                message.reply(`📊 **${message.author.displayName}'s Voice Stats**
+⏱️ **Total Time:** ${formattedTime}
+⚡ **Total XP:** ${voiceData.total_xp.toLocaleString()} XP
+🎯 **Level:** ${voiceData.level_calculated}
+📅 **Daily XP:** ${voiceData.daily_xp}/${process.env.DAILY_XP_CAP || 500}
+📆 **Weekly XP:** ${voiceData.weekly_xp}/${process.env.WEEKLY_XP_CAP || 2500}
+🗓️ **Monthly XP:** ${voiceData.monthly_xp}/${process.env.MONTHLY_XP_CAP || 10000}
+💡 Use \`/check-voice-time\` for better formatting!`);
+            } else {
+                message.reply('📊 No voice time recorded! Join some voice channels to start tracking! 🎤');
+            }
+        } catch (error) {
+            console.error('❌ Error getting voice stats:', error);
+            message.reply('❌ Error retrieving voice stats. Please try again later.');
+        }
+    }
+
+    // Test voice logging command
+    if (message.content === '!testlog') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+            return message.reply('❌ You need Manage Channels permission to test logging!');
+        }
+
+        try {
+            // Test if the channel exists
+            const channelId = process.env.VOICE_LOG_CHANNEL_ID;
+            if (!channelId) {
+                return message.reply('❌ VOICE_LOG_CHANNEL_ID not set in environment variables!');
+            }
+
+            const testChannel = message.guild.channels.cache.get(channelId);
+            if (!testChannel) {
+                return message.reply(`❌ Channel with ID ${channelId} not found in this server!`);
+            }
+
+            // Test sending a message
+            await testChannel.send('🧪 **Test Message** - Voice logging should work if you can see this!');
+            
+            // Test sending an embed (like the voice logs)
+            const testEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('🧪 Test Voice Log with XP')
+                .setDescription(`<@${message.author.id}> joined <#${message.channel.id}>`)
+                .addFields(
+                    { name: '👤 User', value: message.author.displayName, inline: true },
+                    { name: '🏠 Channel', value: 'Test Channel', inline: true },
+                    { name: '⚡ XP Earned', value: '+25 XP (test)', inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'Voice Activity Logger with XP - TEST' });
+
+            await testChannel.send({ embeds: [testEmbed] });
+            
+            message.reply(`✅ Test successful! Check ${testChannel} for test messages with XP display.`);
+        } catch (error) {
+            message.reply(`❌ Error testing channel: ${error.message}`);
+            console.error('Test log error:', error);
+        }
+    }
+
+    // Debug voice logging status
+    if (message.content === '!debuglog') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+            return message.reply('❌ You need Manage Channels permission!');
+        }
+
+        const status = `🔍 **Voice Logging & XP Debug Info:**
+**Enabled:** ${process.env.ENABLE_VOICE_LOGGING}
+**Channel ID:** ${process.env.VOICE_LOG_CHANNEL_ID || 'Not set'}
+**Channel Name Fallback:** ${process.env.VOICE_LOG_CHANNEL || 'voice-activity-log'}
+**Voice Tracker Active:** ${voiceTimeTracker ? 'Yes' : 'No'}
+**Active Sessions:** ${voiceTimeTracker ? voiceTimeTracker.getActiveSessionsCount() : 0}
+**XP Per Minute:** ${process.env.XP_PER_MINUTE || 5}
+**Daily XP Cap:** ${process.env.DAILY_XP_CAP || 500}
+**Weekly XP Cap:** ${process.env.WEEKLY_XP_CAP || 2500}
+**Monthly XP Cap:** ${process.env.MONTHLY_XP_CAP || 10000}`;
+
+        message.reply(status);
+    }
+
+    // Force test voice event with XP
+    if (message.content === '!forcelog') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+            return message.reply('❌ You need Manage Channels permission!');
+        }
+
+        try {
+            // Manually trigger a voice log event with XP info
+            await voiceTimeTracker.channelLogger.logVoiceEvent(
+                message.guild.id,
+                message.author.id,
+                message.author.displayName,
+                message.channel.id,
+                message.channel.name,
+                'LEAVE',
+                {
+                    sessionDuration: 300, // 5 minutes
+                    xpEarned: 25, // 5 minutes * 5 XP/min
+                    xpCapHit: false,
+                    capType: null
+                }
+            );
+            message.reply('🧪 Forced voice log event with XP info sent!');
+        } catch (error) {
+            message.reply(`❌ Error: ${error.message}`);
+            console.error('Force log error:', error);
+        }
+    }
+
+    // Command to create voice log channel
+    if (message.content === '!createvoicelog') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+            return message.reply('❌ You need Manage Channels permission to create the voice log channel!');
+        }
+
+        try {
+            const newChannel = await voiceTimeTracker.createLogChannel(message.guild);
+            if (newChannel) {
+                message.reply(`✅ Created voice log channel: ${newChannel}\n🔍 Voice activity with XP tracking will now be logged here!`);
+            } else {
+                message.reply('❌ Error creating voice log channel. Please check bot permissions.');
+            }
+        } catch (error) {
+            console.error('❌ Error creating voice log channel:', error);
+            message.reply('❌ Error creating voice log channel. Please check bot permissions.');
+        }
+    }
+    
+    // Ping command
+    if (message.content === '!ping') {
+        const ping = Date.now() - message.createdTimestamp;
+        message.reply(`🏴‍☠️ **Pong!** 
+📡 Bot Latency: \`${ping}ms\`
+💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
+⚓ Ready to set sail with XP tracking!`);
+    }
+    
+    // Test sound command
+    if (message.content === '!testsound') {
+        if (!message.member.voice.channel) {
+            return message.reply('❌ You need to be in a voice channel to test the sound!');
+        }
+        
+        message.reply('🎵 Testing welcome sound...');
+        playWelcomeSound(message.member.voice.channel);
+    }
+    
+    // Check sound file command
+    if (message.content === '!checksound') {
+        if (fs.existsSync(WELCOME_SOUND)) {
+            const stats = fs.statSync(WELCOME_SOUND);
+            message.reply(`✅ **Sound file found!**
+📁 **Path:** \`${WELCOME_SOUND}\`
+📏 **Size:** ${(stats.size / 1024 / 1024).toFixed(2)} MB
+🔊 **Volume:** ${Math.round(AUDIO_VOLUME * 100)}%`);
+        } else {
+            message.reply(`❌ **Sound file NOT found!**
+📁 **Expected path:** \`${WELCOME_SOUND}\`
+💡 **Solution:** Create a 'sounds' folder and add 'The Going Merry One Piece.ogg'`);
+        }
+    }
+    
+    // Enhanced help command with XP system
+    if (message.content === '!help') {
+        message.reply(`🏴‍☠️ **One Piece Voice Bot Commands - XP System Edition**
+
+**📊 Voice & XP Tracking:**
+\`/check-voice-time [@user]\` - Check voice time, XP, and level info (NEW!)
+\`/voice-leaderboard [limit]\` - Show top voice users by XP (NEW!)
+\`/xp-caps [@user]\` - View XP cap progress with visual bars (NEW!)
+\`/xp-activity [@user] [limit]\` - View recent XP earning history (NEW!)
+\`/level-info [@user]\` - Detailed level and XP progress (NEW!)
+\`/bot-info\` - Show bot and XP system information (NEW!)
+\`!voicestats\` - Legacy voice stats command (now with XP)
+\`!ping\` - Check bot latency
+
+**🎵 Audio Testing:**
+\`!testsound\` - Test welcome sound in your current voice channel
+\`!checksound\` - Check if sound file exists and show details
+
+**🔧 Debug Commands:**
+\`!testlog\` - Test voice logging channel with XP display (Manage Channels required)
+\`!debuglog\` - Show voice logging and XP debug info (Manage Channels required)
+\`!forcelog\` - Force send a test voice event with XP (Manage Channels required)
+\`!createvoicelog\` - Create voice log channel (Manage Channels required)
+
+**🚢 How to Use:**
+1. Join "${CREATE_CHANNEL_NAME}" voice channel
+2. Bot will create a new crew with a One Piece themed name
+3. You become the captain with full channel permissions
+4. Bot plays welcome sound (if file exists)
+5. **Earn XP automatically while in voice channels!**
+6. Empty crews are automatically deleted after ${DELETE_DELAY/1000} seconds
+
+**⚡ XP System:**
+• **${process.env.XP_PER_MINUTE || 5} XP per minute** in voice channels
+• **Daily Cap**: ${process.env.DAILY_XP_CAP || 500} XP (≈ ${Math.round((process.env.DAILY_XP_CAP || 500) / (process.env.XP_PER_MINUTE || 5))} minutes)
+• **Weekly Cap**: ${process.env.WEEKLY_XP_CAP || 2500} XP (≈ ${Math.round((process.env.WEEKLY_XP_CAP || 2500) / (process.env.XP_PER_MINUTE || 5) / 60)} hours)
+• **Monthly Cap**: ${process.env.MONTHLY_XP_CAP || 10000} XP (≈ ${Math.round((process.env.MONTHLY_XP_CAP || 10000) / (process.env.XP_PER_MINUTE || 5) / 60)} hours)
+• **Level System**: Automatic progression based on total XP
+• **Cap Notifications**: Visual indicators when limits are reached
+
+**🎯 Features:**
+• Dynamic voice channel creation with One Piece themed names
+• **Advanced XP tracking with multiple cap periods**
+• **Real-time Discord channel logging with XP information**
+• Captain permissions for channel creators
+• Automatic cleanup of empty channels
+• Welcome sounds with The Going Merry theme
+• **Comprehensive slash commands for XP management**
+
+**💡 Use slash commands (/) for the best experience!**
+**⚡ XP caps are clearly displayed in both database and event logs!**`);
+    }
+});
+
+// Error handling
+client.on('error', error => {
+    console.error('❌ Discord client error:', error);
+});
+
+client.on('warn', warning => {
+    console.warn('⚠️ Discord client warning:', warning);
+});
+
+process.on('unhandledRejection', error => {
+    console.error('❌ Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', error => {
+    console.error('❌ Uncaught exception:', error);
+    process.exit(1);
+});
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+async function gracefulShutdown() {
+    log('🛑 Shutting down bot gracefully...');
+    
+    try {
+        // End all active voice sessions
+        if (voiceTimeTracker) {
+            await voiceTimeTracker.endAllSessions();
+        }
+        
+        // Clean up voice connections
+        log(`🔌 Cleaning up ${activeConnections.size} voice connections...`);
+        activeConnections.forEach((connection, key) => {
+            try {
+                connection.destroy();
+                debugLog(`🔌 Destroyed connection for ${key}`);
+            } catch (error) {
+                // Ignore errors during shutdown
+            }
+        });
+        activeConnections.clear();
+        
+        // Close database connection
+        log('🗄️ Closing database connection...');
+        if (pool) {
+            await pool.end();
+        }
+        
+        // Destroy Discord client
+        client.destroy();
+        
+        log('👋 Bot shutdown complete!');
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
+    }
+    
+    process.exit(0);
+}
+
+// Keep the process alive and log status
+setInterval(() => {
+    if (DEBUG) {
+        const activeSessions = voiceTimeTracker ? voiceTimeTracker.getActiveSessionsCount() : 0;
+        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, Audio Connections: ${activeConnections.size}, Uptime: ${Math.floor(process.uptime()/60)}m`);
+    }
+}, 300000); // Log every 5 minutes in debug mode
+
+// Start the bot
+async function startBot() {
+    log('🚀 Starting One Piece Dynamic Voice Bot with XP System...');
+    log(`🔑 Discord Token: ${DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
+    log(`🆔 Client ID: ${CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
+    log(`🗄️ Database URL: ${process.env.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
+
+    if (!DISCORD_TOKEN) {
+        console.error('❌ DISCORD_TOKEN is required! Please check your .env file.');
+        process.exit(1);
+    }
+
+    if (!CLIENT_ID) {
+        console.error('❌ CLIENT_ID is required for slash commands! Please check your .env file.');
+        process.exit(1);
+    }
+
+    if (!process.env.DATABASE_URL) {
+        console.error('❌ DATABASE_URL is required! Please check your .env file.');
+        process.exit(1);
+    }
+
+    try {
+        await client.login(DISCORD_TOKEN);
+    } catch (error) {
+        console.error('❌ Failed to login to Discord:', error);
+        process.exit(1);
+    }
+}
+
+// Start the bot
+startBot();
