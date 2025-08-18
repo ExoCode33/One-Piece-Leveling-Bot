@@ -1,11 +1,11 @@
-// src/commands/daily-buff.js - Daily Role Spin Wheel (Role Only)
+// src/commands/daily-buff.js - Daily Spin Wheel (Separate Buff and Cap Roles)
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎰 Spin the Marine Intelligence Luck Wheel for daily roles!'),
+        .setDescription('🎰 Spin the Marine Intelligence Luck Wheel for daily XP buffs and caps!'),
 
     async execute(interaction) {
         try {
@@ -34,7 +34,7 @@ module.exports = {
                 const embed = new EmbedBuilder()
                     .setColor(0xFF6B6B)
                     .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-                    .setDescription(`\`\`\`diff\n- DAILY ROLE ALREADY CLAIMED\n- Current Tier: ${buff.tier}\n- Role: ${tierInfo.name}\n- Next Reset: ${resetTime}\n\`\`\``)
+                    .setDescription(`\`\`\`diff\n- DAILY ROLES ALREADY CLAIMED\n- Current Tier: ${buff.tier}\n- XP Buff Role: ${tierInfo.buffRoleName}\n- XP Cap Role: ${tierInfo.capRoleName}\n- Next Reset: ${resetTime}\n\`\`\``)
                     .setFooter({ text: '⚓ Marine Intelligence • Daily Reset: 3 AM EST' })
                     .setTimestamp();
 
@@ -45,7 +45,7 @@ module.exports = {
             const spinEmbed = new EmbedBuilder()
                 .setColor(0x4A90E2)
                 .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-                .setDescription(`\`\`\`yaml\nPrepare for Fortune Assessment!\n\nTier 1 (60%): Daily Luck Tier 1 Role\nTier 2 (30%): Daily Luck Tier 2 Role\nTier 3 (10%): Daily Luck Tier 3 Role\n\nConfigure XP boosts for these roles in /settings!\nClick SPIN to test your luck!\n\`\`\``)
+                .setDescription(`\`\`\`yaml\nPrepare for Fortune Assessment!\n\nTier 1 (60%): Tier-1 XP Buff + Tier-1 XP Cap (${process.env.DAILY_VOICE_XP_CAP_TIER_1})\nTier 2 (30%): Tier-2 XP Buff + Tier-2 XP Cap (${process.env.DAILY_VOICE_XP_CAP_TIER_2})\nTier 3 (10%): Tier-3 XP Buff + Tier-3 XP Cap (${process.env.DAILY_VOICE_XP_CAP_TIER_3})\n\nEach tier gives you BOTH roles!\nConfigure XP multipliers for buff roles in /settings!\n\nClick SPIN to test your luck!\n\`\`\``)
                 .setFooter({ text: '⚓ Marine Intelligence • Daily Role Assignment' })
                 .setTimestamp();
 
@@ -99,8 +99,8 @@ module.exports = {
                 DO NOTHING
             `, [userId, guildId, today, tier]);
 
-            // Award the role
-            await awardDailyBuffRole(interaction, tier, tierInfo);
+            // Award BOTH the buff and cap roles
+            await awardDailyRoles(interaction, tier, tierInfo);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in spin interaction:', error);
@@ -124,24 +124,36 @@ function calculateTier() {
 function getTierInfo(tier) {
     const tiers = {
         1: {
-            name: 'Daily Luck Tier 1',
+            name: 'Standard Operations',
+            buffRoleName: 'Tier-1 XP Buff',
+            capRoleName: 'Tier-1 XP Cap',
             color: 0x28A745,
-            description: 'Standard daily luck role - configure XP boost in settings',
-            roleEnv: 'DAILY_BUFF_TIER_1_ROLE',
+            description: 'Tier 1 XP buff role + Tier 1 XP cap role',
+            buffRoleEnv: 'DAILY_XP_BUFF_TIER_1_ROLE',
+            capRoleEnv: 'DAILY_XP_CAP_TIER_1_ROLE',
+            cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_1) || 2000,
             emoji: '⚡'
         },
         2: {
-            name: 'Daily Luck Tier 2', 
+            name: 'Enhanced Operations', 
+            buffRoleName: 'Tier-2 XP Buff',
+            capRoleName: 'Tier-2 XP Cap',
             color: 0x007BFF,
-            description: 'Enhanced daily luck role - configure XP boost in settings',
-            roleEnv: 'DAILY_BUFF_TIER_2_ROLE',
+            description: 'Tier 2 XP buff role + Tier 2 XP cap role',
+            buffRoleEnv: 'DAILY_XP_BUFF_TIER_2_ROLE',
+            capRoleEnv: 'DAILY_XP_CAP_TIER_2_ROLE',
+            cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000,
             emoji: '💎'
         },
         3: {
-            name: 'Daily Luck Tier 3',
+            name: 'Elite Operations',
+            buffRoleName: 'Tier-3 XP Buff',
+            capRoleName: 'Tier-3 XP Cap',
             color: 0xFFD700,
-            description: 'Elite daily luck role - configure XP boost in settings',
-            roleEnv: 'DAILY_BUFF_TIER_3_ROLE',
+            description: 'Tier 3 XP buff role + Tier 3 XP cap role',
+            buffRoleEnv: 'DAILY_XP_BUFF_TIER_3_ROLE',
+            capRoleEnv: 'DAILY_XP_CAP_TIER_3_ROLE',
+            cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_3) || 5000,
             emoji: '👑'
         }
     };
@@ -174,46 +186,56 @@ async function showSpinAnimation(interaction, finalTier, tierInfo) {
     const resultEmbed = new EmbedBuilder()
         .setColor(tierInfo.color)
         .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-        .setDescription(`\`\`\`diff\n+ FORTUNE ASSESSMENT COMPLETE!\n+ ${tierInfo.emoji} TIER ${finalTier}: ${tierInfo.name.toUpperCase()}\n+ Role Awarded: ${tierInfo.name}\n+ Valid Until: ${getNextResetTime()}\n\`\`\``)
+        .setDescription(`\`\`\`diff\n+ FORTUNE ASSESSMENT COMPLETE!\n+ ${tierInfo.emoji} TIER ${finalTier}: ${tierInfo.name.toUpperCase()}\n+ Buff Role: ${tierInfo.buffRoleName}\n+ Cap Role: ${tierInfo.capRoleName}\n+ Daily XP Cap: ${tierInfo.cap.toLocaleString()}\n+ Valid Until: ${getNextResetTime()}\n\`\`\``)
         .addFields({
-            name: `${tierInfo.emoji} DAILY ASSIGNMENT`,
-            value: `\`\`\`yaml\nRole: ${tierInfo.name}\nDuration: Until 3:00 AM EST\nXP Boost: Configure in /settings\nStatus: ACTIVE\n\`\`\``,
+            name: `${tierInfo.emoji} DUAL ROLE ASSIGNMENT`,
+            value: `\`\`\`yaml\nXP Buff Role: ${tierInfo.buffRoleName}\nXP Cap Role: ${tierInfo.capRoleName}\nDuration: Until 3:00 AM EST\nXP Multiplier: Configure in /settings\nStatus: BOTH ROLES ACTIVE\n\`\`\``,
             inline: false
         })
-        .setFooter({ text: '⚓ Marine Intelligence • Daily Role Active' })
+        .setFooter({ text: '⚓ Marine Intelligence • Daily Roles Active' })
         .setTimestamp();
 
     await interaction.editReply({ embeds: [resultEmbed], components: [] });
 }
 
-async function awardDailyBuffRole(interaction, tier, tierInfo) {
+async function awardDailyRoles(interaction, tier, tierInfo) {
     try {
-        const roleId = process.env[tierInfo.roleEnv];
-        if (!roleId || roleId.includes('role_id')) {
-            console.log(`[DAILY BUFF] Role not configured for tier ${tier}`);
+        const buffRoleId = process.env[tierInfo.buffRoleEnv];
+        const capRoleId = process.env[tierInfo.capRoleEnv];
+        
+        if ((!buffRoleId || buffRoleId.includes('ROLE_ID')) || (!capRoleId || capRoleId.includes('ROLE_ID'))) {
+            console.log(`[DAILY BUFF] Roles not configured for tier ${tier}`);
             return;
         }
 
-        const role = interaction.guild.roles.cache.get(roleId);
-        if (!role) {
-            console.log(`[DAILY BUFF] Role ${roleId} not found for tier ${tier}`);
+        const buffRole = interaction.guild.roles.cache.get(buffRoleId);
+        const capRole = interaction.guild.roles.cache.get(capRoleId);
+        
+        if (!buffRole || !capRole) {
+            console.log(`[DAILY BUFF] Roles not found for tier ${tier}`);
             return;
         }
 
         const member = interaction.guild.members.cache.get(interaction.user.id);
         if (!member) return;
 
-        // Remove any existing daily buff roles first
-        const allBuffRoles = [
-            process.env.DAILY_BUFF_TIER_1_ROLE,
-            process.env.DAILY_BUFF_TIER_2_ROLE,
-            process.env.DAILY_BUFF_TIER_3_ROLE,
+        // Remove any existing daily roles first
+        const allDailyRoles = [
+            // All buff roles
+            process.env.DAILY_XP_BUFF_TIER_1_ROLE,
+            process.env.DAILY_XP_BUFF_TIER_2_ROLE,
+            process.env.DAILY_XP_BUFF_TIER_3_ROLE,
+            // All cap roles
+            process.env.DAILY_XP_CAP_TIER_1_ROLE,
+            process.env.DAILY_XP_CAP_TIER_2_ROLE,
+            process.env.DAILY_XP_CAP_TIER_3_ROLE,
+            // Quest completion role
             process.env.DAILY_QUEST_COMPLETION_ROLE
-        ].filter(id => id && !id.includes('role_id'));
+        ].filter(id => id && !id.includes('ROLE_ID'));
 
-        for (const buffRoleId of allBuffRoles) {
-            if (member.roles.cache.has(buffRoleId)) {
-                const oldRole = interaction.guild.roles.cache.get(buffRoleId);
+        for (const roleId of allDailyRoles) {
+            if (member.roles.cache.has(roleId)) {
+                const oldRole = interaction.guild.roles.cache.get(roleId);
                 if (oldRole) {
                     await member.roles.remove(oldRole);
                     console.log(`[DAILY BUFF] Removed old daily role: ${oldRole.name}`);
@@ -221,12 +243,14 @@ async function awardDailyBuffRole(interaction, tier, tierInfo) {
             }
         }
 
-        // Add new role
-        await member.roles.add(role);
-        console.log(`[DAILY BUFF] Awarded ${role.name} to ${member.user.username}`);
+        // Add BOTH new roles
+        await member.roles.add(buffRole);
+        await member.roles.add(capRole);
+        
+        console.log(`[DAILY BUFF] Awarded ${buffRole.name} + ${capRole.name} to ${member.user.username}`);
 
     } catch (error) {
-        console.error('[DAILY BUFF] Error awarding role:', error);
+        console.error('[DAILY BUFF] Error awarding roles:', error);
     }
 }
 
