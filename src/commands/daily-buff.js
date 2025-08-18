@@ -6,12 +6,12 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const ANIMATION_CONFIG = {
     RAINBOW_DELAY: 350,  // Slower for API lag
     WAVE_FRAMES: 12,
-    REVEAL_FRAMES: 15,   // More frames for 10 height
+    REVEAL_FRAMES: 12,   // Enough frames to reach all corners (max distance is ~10)
     FINAL_PAUSE: 800
 };
 
 class BuffAnimator {
-    static createGrid(width = 20, height = 10, fillColor = '⬜') {
+    static createGrid(width = 20, height = 10, fillColor = '⬛') {
         const grid = [];
         for (let row = 0; row < height; row++) {
             const rowArray = [];
@@ -45,7 +45,7 @@ class BuffAnimator {
     }
 
     static createFluidWaveFrame(frame, tier, width = 20, height = 10) {
-        const grid = this.createGrid(width, height, '⬜');
+        const grid = this.createGrid(width, height, '⬛');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
         const rainbowColors = this.getRainbowColors();
@@ -81,13 +81,14 @@ class BuffAnimator {
     }
 
     static createSquareRevealFrame(frame, tier, width = 20, height = 10) {
-        const grid = this.createGrid(width, height, '⬜');
+        // Start with the LAST wave frame instead of black grid
+        const grid = this.createFluidWaveFrame(ANIMATION_CONFIG.WAVE_FRAMES, tier, width, height);
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
         const tierColor = this.getTierColor(tier);
         const rainbowColors = this.getRainbowColors();
         
-        // Square reveal expanding outward
+        // Square reveal expanding outward from center
         const revealRadius = frame;
         
         for (let row = 0; row < height; row++) {
@@ -102,7 +103,7 @@ class BuffAnimator {
                     const colorIndex = (distance + frame) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
                 }
-                // Rest remains white until reached by square
+                // Keep existing wave colors for unrevealed areas
             }
         }
         
@@ -110,7 +111,7 @@ class BuffAnimator {
     }
 
     static createFinalStableGrid(tier, width = 20, height = 10) {
-        const grid = this.createGrid(width, height, '⬜');
+        const grid = this.createGrid(width, height, '⬛');
         const tierColor = this.getTierColor(tier);
         
         // Fill entire grid with tier color - stays filled permanently
@@ -170,7 +171,7 @@ class BuffAnimator {
                 `**Square formation expanding...**\n\n${this.gridToString(grid)}\n\n**Enhancement pattern locked in...**`
             )
             .setColor(color)
-            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 10) * 100))}%` })
+            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 12) * 100))}%` })
             .setTimestamp();
         
         return embed;
