@@ -94,7 +94,7 @@ module.exports = {
                 if (!targetUser) {
                     return await interaction.reply({
                         content: '❌ **Missing Target User**\n\nPlease specify a user for this operation.',
-                        ephemeral: true
+                        flags: 64 // MessageFlags.Ephemeral
                     });
                 }
 
@@ -102,7 +102,7 @@ module.exports = {
                 if (targetUser.bot) {
                     return await interaction.reply({
                         content: '❌ **Invalid Target**\n\nCannot modify XP or buffs for bot accounts.',
-                        ephemeral: true
+                        flags: 64 // MessageFlags.Ephemeral
                     });
                 }
             }
@@ -112,7 +112,7 @@ module.exports = {
                     if (!amount || amount < 1 || amount > 10000) {
                         return await interaction.reply({
                             content: '❌ **Invalid Amount**\n\nPlease specify an amount between 1 and 10,000 XP.',
-                            ephemeral: true
+                            flags: 64 // MessageFlags.Ephemeral
                         });
                     }
                     await this.handleAddXP(interaction, targetUser, amount, reason);
@@ -132,7 +132,7 @@ module.exports = {
                     if (amount === null || amount < 0 || amount > 100000) {
                         return await interaction.reply({
                             content: '❌ **Invalid Amount**\n\nPlease specify an amount between 0 and 100,000 XP.',
-                            ephemeral: true
+                            flags: 64 // MessageFlags.Ephemeral
                         });
                     }
                     await this.handleSetXP(interaction, targetUser, amount, reason);
@@ -165,7 +165,7 @@ module.exports = {
                 default:
                     return await interaction.reply({
                         content: '❌ **Unknown Action**\n\nPlease use a valid action from the dropdown.',
-                        ephemeral: true
+                        flags: 64 // MessageFlags.Ephemeral
                     });
             }
 
@@ -184,9 +184,9 @@ module.exports = {
                 .setFooter({ text: 'Marine Intelligence Network' });
 
             if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+                await interaction.followUp({ embeds: [errorEmbed], flags: 64 });
             } else {
-                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                await interaction.reply({ embeds: [errorEmbed], flags: 64 });
             }
         }
     },
@@ -731,7 +731,7 @@ async function handleStats(interaction, db) {
         .setTimestamp()
         .setFooter({ text: 'Marine Intelligence Network - Classified Access' });
 
-    await interaction.reply({ embeds: [statsEmbed], ephemeral: true });
+    await interaction.reply({ embeds: [statsEmbed], flags: 64 });
 }
 
 async function handleMaintenance(interaction, db) {
@@ -765,7 +765,7 @@ async function handleMaintenance(interaction, db) {
     await interaction.reply({ 
         embeds: [maintenanceEmbed], 
         components: [maintenanceButtons],
-        ephemeral: true 
+        flags: 64 // MessageFlags.Ephemeral
     });
 }
 
@@ -804,7 +804,7 @@ async function handleNuclear(interaction, db) {
     await interaction.reply({
         embeds: [nuclearEmbed],
         components: [nuclearButtons],
-        ephemeral: true
+        flags: 64 // MessageFlags.Ephemeral
     });
 }
 
