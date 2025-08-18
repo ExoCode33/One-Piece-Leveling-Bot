@@ -38,29 +38,146 @@ class XPTracker {
             // Create index for better performance
             await this.db.query('CREATE INDEX IF NOT EXISTS idx_daily_voice_xp_date ON daily_voice_xp(date)');
 
-            // Load today's data
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            // Load today's data (based on EST reset at 3 AM)
+            const currentDay = this.getCurrentDay();
             const result = await this.db.query(
                 'SELECT user_id, guild_id, total_xp FROM daily_voice_xp WHERE date = $1',
-                [today]
+                [currentDay]
             );
 
             let loadedCount = 0;
             for (const row of result.rows) {
-                const dailyKey = `${row.user_id}_${row.guild_id}_${today}`;
+                const dailyKey = `${row.user_id}_${row.guild_id}_${currentDay}`;
                 this.dailyVoiceXP.set(dailyKey, row.total_xp);
                 loadedCount++;
             }
 
-            console.log(`[DAILY CAP] Loaded ${loadedCount} daily voice XP records for today`);
+            console.log(`[DAILY CAP] Loaded ${loadedCount} daily voice XP records for ${currentDay}`);
 
-            // Clean up old records (older than 7 days)
+            // Clean up old records (older than 30 days for analysis)
             await this.db.query(
-                "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '7 days'"
+                "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '30 days'"
             );
+
+            // Set up daily reset timer for 3 AM EST
+            this.scheduleDailyReset();
 
         } catch (error) {
             console.error('[DAILY CAP] Error loading daily voice XP data:', error);
+        }
+    }
+
+    // Get current day based on 3 AM EST reset
+    getCurrentDay() {
+        const now = new Date();
+        
+        // Convert to EST (UTC-5) or EDT (UTC-4) depending on daylight saving
+        const estOffset = this.isEDT(now) ? -4 : -5; // EDT or EST
+        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        
+        // If it's before 3 AM EST, consider it the previous day
+        if (estTime.getHours() < 3) {
+            estTime.setDate(estTime.getDate() - 1);
+        }
+        
+        return estTime.toISOString().split('T')[0]; // YYYY-MM-DD format
+    }
+
+    // Check if date is in Eastern Daylight Time (EDT)
+    isEDT(date) {
+        const year = date.getFullYear();
+        
+        // EDT starts second Sunday in March
+        const marchSecondSunday = new Date(year, 2, 8); // March 8th
+        marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
+        
+        // EDT ends first Sunday in November
+        const novemberFirstSunday = new Date(year, 10, 1); // November 1st
+        novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
+        
+        return date >= marchSecondSunday && date < novemberFirstSunday;
+    }
+
+    // Schedule daily reset at 3 AM EST
+    scheduleDailyReset() {
+        const scheduleNext = () => {
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            
+            // Set to 3 AM EST
+            const estOffset = this.isEDT(tomorrow) ? -4 : -5;
+            const resetTime = new Date(tomorrow.toISOString().split('T')[0] + 'T03:00:00.000Z');
+            resetTime.setHours(resetTime.getHours() - estOffset); // Convert to UTC
+            
+            const timeUntilReset = resetTime.getTime() - now.getTime();
+            
+            console.log(`[DAILY CAP] Next reset scheduled for: ${resetTime.toISOString()} (in ${Math.round(timeUntilReset / 1000 / 60)} minutes)`);
+            
+            setTimeout(async () => {
+                await this.performDailyReset();
+                scheduleNext(); // Schedule the next reset
+            }, timeUntilReset);
+        };
+        
+        scheduleNext();
+    }
+
+    // Perform daily reset
+    async performDailyReset() {
+        try {
+            console.log('[DAILY CAP] ⏰ Performing daily voice XP reset at 3 AM EST...');
+            
+            const currentDay = this.getCurrentDay();
+            
+            // Clear memory cache for previous day
+            const keysToDelete = [];
+            for (const [key] of this.dailyVoiceXP.entries()) {
+                if (!key.includes(currentDay)) {
+                    keysToDelete.push(key);
+                }
+            }
+            
+            keysToDelete.forEach(key => this.dailyVoiceXP.delete(key));
+            
+            console.log(`[DAILY CAP] ✅ Daily reset complete - cleared ${keysToDelete.length} cached entries`);
+            console.log(`[DAILY CAP] 🆕 New day started: ${currentDay}`);
+            
+            // Optional: Send reset notification to log channels
+            await this.notifyDailyReset(currentDay);
+            
+        } catch (error) {
+            console.error('[DAILY CAP] ❌ Error during daily reset:', error);
+        }
+    }
+
+    // Notify about daily reset in log channels
+    async notifyDailyReset(newDay) {
+        try {
+            const { EmbedBuilder } = require('discord.js');
+            
+            for (const [guildId, guildSettings] of (global.guildSettings || new Map()).entries()) {
+                if (guildSettings.xpLogEnabled && guildSettings.xpLogChannel) {
+                    try {
+                        const channel = await this.client.channels.fetch(guildSettings.xpLogChannel);
+                        if (channel && channel.isTextBased()) {
+                            const embed = new EmbedBuilder()
+                                .setColor(0x00FF00)
+                                .setTitle('🌅 DAILY VOICE XP RESET')
+                                .setDescription(`\`\`\`diff\n+ Daily voice XP limits have been reset\n+ New tracking day: ${newDay}\n+ Daily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500} XP\n+ Reset time: 3:00 AM EST\n\`\`\``)
+                                .setFooter({ text: '⚓ Marine Intelligence • Daily Reset System' })
+                                .setTimestamp();
+                            
+                            await channel.send({ embeds: [embed] });
+                        }
+                    } catch (error) {
+                        // Silently fail for individual guilds
+                        console.log(`[DAILY CAP] Could not notify guild ${guildId}:`, error.message);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[DAILY CAP] Error sending reset notifications:', error);
         }
     }
 
@@ -81,19 +198,19 @@ class XPTracker {
         }
     }
 
-    // Get daily voice XP with proper key format
+    // Get daily voice XP with proper key format (using EST reset)
     getDailyVoiceXP(userId, guildId, date = null) {
         if (!date) {
-            date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            date = this.getCurrentDay(); // Use EST-based day
         }
         const dailyKey = `${userId}_${guildId}_${date}`;
         return this.dailyVoiceXP.get(dailyKey) || 0;
     }
 
-    // Set daily voice XP with proper key format and database persistence
+    // Set daily voice XP with proper key format and database persistence (using EST reset)
     async setDailyVoiceXP(userId, guildId, xp, date = null) {
         if (!date) {
-            date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            date = this.getCurrentDay(); // Use EST-based day
         }
         const dailyKey = `${userId}_${guildId}_${date}`;
         this.dailyVoiceXP.set(dailyKey, xp);
@@ -285,16 +402,16 @@ class XPTracker {
         }
     }
 
-    // Process voice XP with proper daily cap implementation
+    // Process voice XP with proper daily cap implementation (3 AM EST reset)
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000; // Default 1 minute
         const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
-        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500; // Default 1500 XP per day
+        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000; // Use your 20,000 XP cap
         const antiAFK = process.env.VOICE_ANTI_AFK === 'true';
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+        const currentDay = this.getCurrentDay(); // EST-based day
 
-        console.log(`[VOICE XP] Processing voice XP for ${this.voiceSessions.size} active sessions (Daily cap: ${dailyCap} XP)`);
+        console.log(`[VOICE XP] Processing voice XP for ${this.voiceSessions.size} active sessions (Daily cap: ${dailyCap} XP, Day: ${currentDay})`);
 
         for (const [userId, session] of this.voiceSessions.entries()) {
             try {
@@ -328,11 +445,11 @@ class XPTracker {
                 const member = await guild.members.fetch(userId).catch(() => null);
                 if (!member) continue;
 
-                // Check daily cap
-                const currentDailyXP = this.getDailyVoiceXP(userId, session.guildId, today);
+                // Check daily cap (EST-based)
+                const currentDailyXP = this.getDailyVoiceXP(userId, session.guildId, currentDay);
                 
                 if (currentDailyXP >= dailyCap) {
-                    console.log(`[VOICE XP] ${user.username} has reached daily cap: ${currentDailyXP}/${dailyCap} XP`);
+                    console.log(`[VOICE XP] ${user.username} has reached daily cap: ${currentDailyXP}/${dailyCap} XP (Day: ${currentDay})`);
                     continue;
                 }
 
@@ -343,36 +460,72 @@ class XPTracker {
 
                 let finalXP = baseXP;
 
-                // Apply mute/deafen penalty
+                // Apply mute/deafen penalty with exemptions
                 if (antiAFK && (session.isMuted || session.isDeafened)) {
-                    finalXP = Math.round(baseXP * 0.25); // 25% XP when muted/deafened
-                    console.log(`[VOICE XP] ${user.username} mute penalty applied: ${baseXP} → ${finalXP}`);
+                    // Check for exemptions
+                    const exemptUsers = process.env.VOICE_MUTE_EXEMPT_USERS?.split(',') || [];
+                    const exemptUser = process.env.VOICE_MUTE_EXEMPT_USER;
+                    const exemptRoles = process.env.VOICE_MUTE_EXEMPT_ROLES?.split(',') || [];
+                    const exemptMultiplier = parseFloat(process.env.VOICE_MUTE_EXEMPT_MULTIPLIER) || 1.0;
+                    
+                    let isExempt = false;
+                    let exemptReason = '';
+                    
+                    // Check user exemptions
+                    if (exemptUsers.includes(userId) || userId === exemptUser) {
+                        isExempt = true;
+                        finalXP = Math.round(baseXP * exemptMultiplier);
+                        exemptReason = 'EXEMPT USER';
+                    }
+                    
+                    // Check role exemptions
+                    if (!isExempt && exemptRoles.length > 0) {
+                        for (const roleId of exemptRoles) {
+                            if (roleId && member.roles.cache.has(roleId.trim())) {
+                                isExempt = true;
+                                finalXP = Math.round(baseXP * exemptMultiplier);
+                                exemptReason = 'EXEMPT ROLE';
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Apply penalty if not exempt
+                    if (!isExempt) {
+                        finalXP = Math.round(baseXP * 0.25); // 25% XP when muted/deafened
+                        exemptReason = session.isMuted && session.isDeafened ? 'MUTED+DEAFENED' : 
+                                     session.isMuted ? 'MUTED' : 'DEAFENED';
+                    }
+                    
+                    console.log(`[VOICE XP] ${user.username} mute status: ${exemptReason}, XP: ${baseXP} → ${finalXP}`);
                 }
 
-                // Apply daily cap
+                // Apply daily cap properly
                 const newDailyTotal = currentDailyXP + finalXP;
                 let actualXPGain = finalXP;
+                let hitCap = false;
                 
                 if (newDailyTotal > dailyCap) {
                     actualXPGain = Math.max(0, dailyCap - currentDailyXP);
-                    console.log(`[DAILY CAP] ${user.username}: ${finalXP} → ${actualXPGain} (would exceed daily cap)`);
+                    hitCap = true;
+                    console.log(`[DAILY CAP] ${user.username}: ${finalXP} → ${actualXPGain} XP (would exceed daily cap: ${newDailyTotal}/${dailyCap})`);
                 }
                 
                 if (actualXPGain <= 0) {
                     continue;
                 }
 
-                // Update daily XP tracking
+                // Update daily XP tracking (EST-based)
                 const updatedDailyXP = currentDailyXP + actualXPGain;
-                await this.setDailyVoiceXP(userId, session.guildId, updatedDailyXP, today);
+                await this.setDailyVoiceXP(userId, session.guildId, updatedDailyXP, currentDay);
 
-                // Award the XP
+                // Award the XP (skip multiplier since this is raw voice XP)
                 await this.awardXP(userId, session.guildId, actualXPGain, 'voice', user, true);
                 
                 // Update session timestamp
                 session.lastXPTime = now;
 
-                console.log(`[VOICE XP] ${user.username}: +${actualXPGain} XP (Daily: ${updatedDailyXP}/${dailyCap})`);
+                console.log(`[VOICE XP] ${user.username}: +${actualXPGain} XP (Daily: ${updatedDailyXP}/${dailyCap}) ${hitCap ? '[CAP HIT]' : ''} [${currentDay}]`);
 
             } catch (error) {
                 console.error(`[VOICE XP] Error processing user ${userId}:`, error);
@@ -380,17 +533,17 @@ class XPTracker {
         }
     }
 
-    // Clean up daily voice XP
+    // Clean up daily voice XP (now handled by automatic reset at 3 AM EST)
     async cleanupDailyVoiceXP() {
         try {
-            console.log('[DAILY CAP] Starting daily voice XP cleanup...');
+            console.log('[DAILY CAP] Manual cleanup requested...');
             
-            const today = new Date().toISOString().split('T')[0];
+            const currentDay = this.getCurrentDay();
 
-            // Clean up memory cache
+            // Clean up memory cache for old days
             let memoryDeleted = 0;
             for (const [key] of this.dailyVoiceXP.entries()) {
-                if (!key.includes(today)) {
+                if (!key.includes(currentDay)) {
                     this.dailyVoiceXP.delete(key);
                     memoryDeleted++;
                 }
@@ -398,15 +551,73 @@ class XPTracker {
 
             console.log(`[DAILY CAP] Cleaned up ${memoryDeleted} old entries from memory`);
 
-            // Clean up database
+            // Clean up database (keep last 30 days for analysis)
             const dbResult = await this.db.query(
-                "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '7 days'"
+                "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '30 days'"
             );
 
             console.log(`[DAILY CAP] Cleaned up ${dbResult.rowCount || 0} old entries from database`);
+            console.log(`[DAILY CAP] Current day: ${currentDay} | Current memory entries: ${this.dailyVoiceXP.size}`);
 
         } catch (error) {
             console.error('[DAILY CAP] Error during cleanup:', error);
+        }
+    }
+
+    // Get daily voice XP statistics for a user (EST-based)
+    async getDailyVoiceXPStats(userId, guildId, days = 7) {
+        try {
+            const result = await this.db.query(`
+                SELECT date, total_xp 
+                FROM daily_voice_xp 
+                WHERE user_id = $1 AND guild_id = $2 AND date >= CURRENT_DATE - INTERVAL '${days} days'
+                ORDER BY date DESC
+            `, [userId, guildId]);
+
+            return result.rows.map(row => ({
+                date: row.date,
+                xp: row.total_xp,
+                isToday: row.date === this.getCurrentDay()
+            }));
+        } catch (error) {
+            console.error('[DAILY CAP] Error getting daily voice XP stats:', error);
+            return [];
+        }
+    }
+
+    // Get guild-wide daily voice XP statistics (EST-based)
+    async getGuildDailyVoiceXPStats(guildId, date = null) {
+        try {
+            if (!date) {
+                date = this.getCurrentDay();
+            }
+
+            const result = await this.db.query(`
+                SELECT user_id, total_xp 
+                FROM daily_voice_xp 
+                WHERE guild_id = $1 AND date = $2
+                ORDER BY total_xp DESC
+            `, [guildId, date]);
+
+            const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000;
+            const cappedUsers = result.rows.filter(row => row.total_xp >= dailyCap);
+            const totalUsers = result.rows.length;
+            const totalXP = result.rows.reduce((sum, row) => sum + row.total_xp, 0);
+
+            return {
+                date,
+                isToday: date === this.getCurrentDay(),
+                totalUsers,
+                cappedUsers: cappedUsers.length,
+                cappedPercentage: totalUsers > 0 ? (cappedUsers.length / totalUsers) * 100 : 0,
+                totalXP,
+                averageXP: totalUsers > 0 ? totalXP / totalUsers : 0,
+                topUsers: result.rows.slice(0, 10), // Top 10 users by daily voice XP
+                dailyCap
+            };
+        } catch (error) {
+            console.error('[DAILY CAP] Error getting guild daily voice XP stats:', error);
+            return null;
         }
     }
 
