@@ -19,7 +19,7 @@ const TIER_COLORS = {
     6: 0xFF69B4   // Hot Pink - Supreme Buff
 };
 
-// Tier Emojis (Colored Circles)
+// Tier Emojis (Dice faces)
 const TIER_EMOJIS = {
     1: '🟢',
     2: '🔵', 
@@ -58,7 +58,7 @@ class WheelAnimator {
     }
 
     static getSpinningWheel(frame) {
-        const wheelSymbols = ['🟢', '🔵', '🟣', '🟡', '🟠', '🔴'];
+        const wheelSymbols = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
         const currentPosition = frame % wheelSymbols.length;
         
         let wheel = '';
@@ -101,7 +101,7 @@ class WheelAnimator {
         const tierName = TIER_NAMES[finalTier];
         
         // Create a slowing wheel effect
-        const wheelDisplay = `🟢 🔵 🟣 [${tierSymbol}] 🟡 🟠 🔴`;
+        const wheelDisplay = `⚀ ⚁ ⚂ [${tierSymbol}] ⚃ ⚄ ⚅`;
         
         const embed = new EmbedBuilder()
             .setTitle('🎰 DAILY BUFF WHEEL')
@@ -194,12 +194,12 @@ module.exports = {
                 .setDescription(
                     `**Prepare to activate your daily buff!**\n\n` +
                     `🎯 **Available Buffs:**\n` +
-                    `🟢 **${TIER_NAMES[1]}** (40%): Basic buff boost\n` +
-                    `🔵 **${TIER_NAMES[2]}** (25%): Enhanced abilities\n` +
-                    `🟣 **${TIER_NAMES[3]}** (15%): Epic enhancement\n` +
-                    `🟡 **${TIER_NAMES[4]}** (10%): Legendary power\n` +
-                    `🟠 **${TIER_NAMES[5]}** (7%): Mythical strength\n` +
-                    `🔴 **${TIER_NAMES[6]}** (3%): Supreme enhancement\n\n` +
+                    `⚀ **${TIER_NAMES[1]}** (40%): Basic buff boost\n` +
+                    `⚁ **${TIER_NAMES[2]}** (25%): Enhanced abilities\n` +
+                    `⚂ **${TIER_NAMES[3]}** (15%): Epic enhancement\n` +
+                    `⚃ **${TIER_NAMES[4]}** (10%): Legendary power\n` +
+                    `⚄ **${TIER_NAMES[5]}** (7%): Mythical strength\n` +
+                    `⚅ **${TIER_NAMES[6]}** (3%): Supreme enhancement\n\n` +
                     `⏰ **Reset:** <t:${getNextResetUnixTimestamp()}:F>\n\n` +
                     `Click **SPIN** to discover your daily buff!`
                 )
