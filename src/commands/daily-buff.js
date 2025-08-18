@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Daily Spin Wheel (XP Buff Only, No Cap Roles)
+// src/commands/daily-buff.js - Daily Spin Wheel (XP Buff Only with Settings Integration)
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -28,12 +28,24 @@ module.exports = {
 
             if (existingBuff.rows.length > 0) {
                 const buff = existingBuff.rows[0];
-                const tierInfo = getTierInfo(buff.tier);
+                const tierInfo = await getTierInfo(buff.tier, guildId);
                 
                 const embed = new EmbedBuilder()
                     .setColor(0xFF6B6B)
                     .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-                    .setDescription(`\`\`\`diff\n- DAILY XP BUFF ALREADY CLAIMED\n- Current Tier: ${buff.tier}\n- XP Buff Role: ${tierInfo.buffRoleName}\n- Reset Time: <t:${getNextResetUnixTimestamp()}:F>\n\`\`\``)
+                    .setDescription(`**DAILY XP BUFF ALREADY CLAIMED**`)
+                    .addFields(
+                        {
+                            name: 'Current Buff',
+                            value: `**Tier ${buff.tier}** • Duration: Until <t:${getNextResetUnixTimestamp()}:R>`,
+                            inline: false
+                        },
+                        {
+                            name: 'XP Multiplier',
+                            value: `**${tierInfo.multiplier}x** boost active`,
+                            inline: false
+                        }
+                    )
                     .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff System' })
                     .setTimestamp();
 
@@ -44,7 +56,7 @@ module.exports = {
             const spinEmbed = new EmbedBuilder()
                 .setColor(0x4A90E2)
                 .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-                .setDescription(`\`\`\`yaml\nPrepare for Fortune Assessment!\n\nTier 1 (60%): Standard XP Boost\nTier 2 (30%): Enhanced XP Boost  \nTier 3 (10%): Elite XP Boost\n\nEach tier gives you an XP multiplier role!\nConfigure XP multipliers in /settings!\n\nReset Time: \`\`\`<t:${getNextResetUnixTimestamp()}:F>\n\nClick SPIN to test your luck!`)
+                .setDescription(`**Prepare for Fortune Assessment!**\n\n🎯 **Available Rewards:**\n⚡ **Tier 1** (60%): Standard XP Boost\n💎 **Tier 2** (30%): Enhanced XP Boost\n👑 **Tier 3** (10%): Elite XP Boost\n\n⏰ **Reset:** <t:${getNextResetUnixTimestamp()}:F>\n\nClick **SPIN** to test your luck!`)
                 .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff System' })
                 .setTimestamp();
 
@@ -84,10 +96,10 @@ module.exports = {
 
             // Determine tier based on weighted random
             const tier = calculateTier();
-            const tierInfo = getTierInfo(tier);
+            const tierInfo = await getTierInfo(tier, guildId);
 
             // Create spinning animation
-            await showSpinAnimation(interaction, tier, tierInfo);
+            await showWheelOfFortuneAnimation(interaction, tier, tierInfo);
 
             // Save to database
             const today = getCurrentDayKey();
@@ -98,7 +110,7 @@ module.exports = {
                 DO NOTHING
             `, [userId, guildId, today, tier]);
 
-            // Award ONLY the buff role (no cap role)
+            // Award ONLY the buff role
             await awardDailyBuffRole(interaction, tier, tierInfo);
 
         } catch (error) {
@@ -120,68 +132,98 @@ function calculateTier() {
     return 3;                       // 10% chance
 }
 
-function getTierInfo(tier) {
-    const tiers = {
+async function getTierInfo(tier, guildId) {
+    const baseInfo = {
         1: {
             name: 'Standard Operations',
-            buffRoleName: 'Tier-1 XP Buff',
             color: 0x28A745,
-            description: 'Standard XP boost for daily operations',
             buffRoleEnv: 'DAILY_XP_BUFF_TIER_1_ROLE',
             emoji: '⚡'
         },
         2: {
             name: 'Enhanced Operations', 
-            buffRoleName: 'Tier-2 XP Buff',
             color: 0x007BFF,
-            description: 'Enhanced XP boost for advanced operations',
             buffRoleEnv: 'DAILY_XP_BUFF_TIER_2_ROLE',
             emoji: '💎'
         },
         3: {
             name: 'Elite Operations',
-            buffRoleName: 'Tier-3 XP Buff',
             color: 0xFFD700,
-            description: 'Elite XP boost for top-tier operations',
             buffRoleEnv: 'DAILY_XP_BUFF_TIER_3_ROLE',
             emoji: '👑'
         }
     };
 
-    return tiers[tier];
+    const info = baseInfo[tier];
+    
+    // Get the actual multiplier from XP boost settings
+    let multiplier = '1.0';
+    try {
+        if (global.xpBoostManager) {
+            const roleId = process.env[info.buffRoleEnv];
+            if (roleId) {
+                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                if (boostInfo) {
+                    multiplier = parseFloat(boostInfo.boost_multiplier).toFixed(1);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('[DAILY BUFF] Error getting multiplier:', error);
+    }
+
+    return { ...info, multiplier };
 }
 
-async function showSpinAnimation(interaction, finalTier, tierInfo) {
-    const spinFrames = [
-        '🎰 ⚡💎👑 ⚡💎👑 ⚡💎👑',
-        '🎰 💎👑⚡ 💎👑⚡ 💎👑⚡',
-        '🎰 👑⚡💎 👑⚡💎 👑⚡💎',
-        '🎰 ⚡💎👑 ⚡💎👑 ⚡💎👑',
-        '🎰 💎👑⚡ 💎👑⚡ 💎👑⚡'
+async function showWheelOfFortuneAnimation(interaction, finalTier, tierInfo) {
+    // Wheel of Fortune style animation frames
+    const wheelFrames = [
+        '🎰 **SPINNING...**\n```\n    ⚡💎👑\n  ⚡💎👑⚡💎\n👑⚡💎👑⚡💎👑\n  ⚡💎👑⚡💎\n    👑⚡💎\n```',
+        '🎰 **SPINNING...**\n```\n    💎👑⚡\n  💎👑⚡💎👑\n⚡💎👑⚡💎👑⚡\n  👑⚡💎👑⚡\n    ⚡💎👑\n```',
+        '🎰 **SPINNING...**\n```\n    👑⚡💎\n  👑⚡💎👑⚡\n💎👑⚡💎👑⚡💎\n  ⚡💎👑⚡💎\n    💎👑⚡\n```',
+        '🎰 **SPINNING...**\n```\n    ⚡💎👑\n  ⚡💎👑⚡💎\n👑⚡💎👑⚡💎👑\n  ⚡💎👑⚡💎\n    👑⚡💎\n```',
+        '🎰 **SPINNING...**\n```\n    💎👑⚡\n  💎👑⚡💎👑\n⚡💎👑⚡💎👑⚡\n  👑⚡💎👑⚡\n    ⚡💎👑\n```'
     ];
 
     // Show spinning animation
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
+        const frameIndex = i % wheelFrames.length;
         const spinEmbed = new EmbedBuilder()
             .setColor(0xFFD700)
             .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-            .setDescription(`\`\`\`yaml\n${spinFrames[i]}\n\nAnalyzing your fortune...\nMarine Intelligence processing...\n\`\`\``)
+            .setDescription(wheelFrames[frameIndex] + '\n\n**Marine Intelligence analyzing your fortune...**')
             .setFooter({ text: '⚓ Marine Intelligence • Luck Assessment In Progress' });
 
         await interaction.editReply({ embeds: [spinEmbed], components: [] });
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 600));
     }
+
+    // Slow down animation for final result
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Show stopping animation with winner highlighted
+    const winningSymbol = finalTier === 1 ? '⚡' : finalTier === 2 ? '💎' : '👑';
+    const stoppingEmbed = new EmbedBuilder()
+        .setColor(tierInfo.color)
+        .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
+        .setDescription(`🎰 **SLOWING DOWN...**\n\`\`\`\n    ⚡💎👑\n  ⚡💎👑⚡💎\n👑⚡[${winningSymbol}]👑⚡💎👑\n  ⚡💎👑⚡💎\n    👑⚡💎\n\`\`\`\n\n**${winningSymbol} TIER ${finalTier} SELECTED! ${winningSymbol}**`)
+        .setFooter({ text: '⚓ Marine Intelligence • Fortune Determined' });
+
+    await interaction.editReply({ embeds: [stoppingEmbed], components: [] });
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Show final result
     const resultEmbed = new EmbedBuilder()
         .setColor(tierInfo.color)
         .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-        .setDescription(`\`\`\`diff\n+ FORTUNE ASSESSMENT COMPLETE!\n+ ${tierInfo.emoji} TIER ${finalTier}: ${tierInfo.name.toUpperCase()}\n+ XP Buff Role: ${tierInfo.buffRoleName}\n+ Duration: Until reset\n+ Next Reset: \`\`\`<t:${getNextResetUnixTimestamp()}:F>`)
-        .addFields({
-            name: `${tierInfo.emoji} XP BUFF ASSIGNMENT`,
-            value: `\`\`\`yaml\nXP Buff Role: ${tierInfo.buffRoleName}\nMultiplier: Configure in /settings\nStatus: BUFF ROLE ACTIVE\nType: XP Multiplier Only\n\`\`\``,
-            inline: false
-        })
+        .setDescription(`**🎉 FORTUNE ASSESSMENT COMPLETE! 🎉**`)
+        .addFields(
+            {
+                name: `${tierInfo.emoji} Tier ${finalTier} • Duration: Until <t:${getNextResetUnixTimestamp()}:R>`,
+                value: `**${tierInfo.multiplier}x** XP Multiplier boost active!`,
+                inline: false
+            }
+        )
         .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff Active' })
         .setTimestamp();
 
