@@ -22,15 +22,25 @@
     "railway",
     "slash-commands",
     "leaderboard",
-    "roles"
+    "roles",
+    "one-piece",
+    "bounty-system",
+    "wanted-posters",
+    "marine-theme"
   ],
-  "author": "Your Name",
+  "author": "ExoCode",
   "license": "MIT",
   "dependencies": {
     "discord.js": "^14.14.1",
+    "@discordjs/voice": "^0.16.1",
     "pg": "^8.11.3",
     "dotenv": "^16.3.1",
-    "canvas": "^2.11.2"
+    "canvas": "^2.11.2",
+    "sodium": "^3.0.2",
+    "libsodium-wrappers": "^0.7.11",
+    "ffmpeg-static": "^5.2.0",
+    "opusscript": "^0.0.8",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
@@ -41,20 +51,29 @@
   },
   "repository": {
     "type": "git",
-    "url": "your-repository-url"
+    "url": "https://github.com/your-username/discord-leveling-bot"
   },
   "bugs": {
-    "url": "your-repository-url/issues"
+    "url": "https://github.com/your-username/discord-leveling-bot/issues"
   },
-  "homepage": "your-repository-url#readme",
-  "optionalDependencies": {},
+  "homepage": "https://github.com/your-username/discord-leveling-bot#readme",
+  "optionalDependencies": {
+    "bufferutil": "^4.0.8",
+    "utf-8-validate": "^6.0.3",
+    "@discordjs/opus": "^0.9.0"
+  },
   "peerDependencies": {},
   "private": false,
   "config": {
     "bot": {
-      "name": "Discord Leveling Bot",
+      "name": "One Piece Discord Leveling Bot",
       "version": "2.1.0",
-      "description": "Advanced Discord leveling system with comprehensive features"
+      "description": "Advanced Discord leveling system with One Piece theme, bounty system, and comprehensive XP tracking"
     }
+  },
+  "workspaces": [],
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/your-username"
   }
 }
