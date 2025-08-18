@@ -1,4 +1,4 @@
-// src/utils/voiceHandler.js - Voice XP Processing Module
+// src/utils/voiceHandler.js - Voice XP Processing Module (Updated - Simplified Daily Cap)
 
 class VoiceHandler {
     constructor(xpTracker) {
@@ -63,7 +63,7 @@ class VoiceHandler {
         }
     }
 
-    // Process voice XP with proper daily cap implementation using SEPARATED roles
+    // Process voice XP with simplified daily cap implementation
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000; // Default 1 minute
@@ -119,15 +119,14 @@ class VoiceHandler {
                     continue;
                 }
 
-                // NEW: Get user's dynamic daily cap based on their CAP roles
-                const capInfo = this.xpTracker.getUserDailyXPCap(member);
-                const dailyCap = capInfo.cap;
+                // Simplified: Everyone uses the same daily cap
+                const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
                 
-                // Check daily cap with proper key format
+                // Check daily cap
                 const currentDailyXP = this.xpTracker.getDailyVoiceXP(userId, session.guildId, today);
                 
                 if (currentDailyXP >= dailyCap) {
-                    console.log(`[VOICE XP] ${user.username} has reached daily cap: ${currentDailyXP}/${dailyCap} XP (${capInfo.source})`);
+                    console.log(`[VOICE XP] ${user.username} has reached daily cap: ${currentDailyXP}/${dailyCap} XP (Default)`);
                     continue;
                 }
 
@@ -203,5 +202,70 @@ class VoiceHandler {
                     finalXP = afterGlobal;
                 }
 
-                // Apply daily cap properly with dynamic cap
-                const newDailyTotal = currentDailyXP + finalXP
+                // Apply daily cap properly with simplified system
+                const newDailyTotal = currentDailyXP + finalXP;
+                if (newDailyTotal > dailyCap) {
+                    finalXP = dailyCap - currentDailyXP;
+                    console.log(`[VOICE XP] ${user.username} capped at daily limit: ${finalXP} XP awarded (${newDailyTotal}/${dailyCap})`);
+                }
+
+                if (finalXP > 0) {
+                    // Award XP using the main awardXP method with skipMultiplier=true
+                    await this.xpTracker.awardXP(userId, session.guildId, finalXP, 'voice', user, true);
+                    
+                    // Update daily voice XP
+                    await this.xpTracker.setDailyVoiceXP(userId, session.guildId, currentDailyXP + finalXP, today);
+                    
+                    // Update session timestamp
+                    session.lastXPTime = now;
+                    
+                    console.log(`[VOICE XP] ${user.username}: +${finalXP} XP (Daily: ${currentDailyXP + finalXP}/${dailyCap})`);
+                    
+                    // Track activity for potential quest progress
+                    voiceActivities.push({
+                        userId,
+                        guildId: session.guildId,
+                        xpAwarded: finalXP,
+                        channelId: session.channelId
+                    });
+                } else {
+                    console.log(`[VOICE XP] ${user.username}: No XP awarded (already at daily cap)`);
+                }
+
+            } catch (error) {
+                console.error(`[VOICE XP] Error processing user ${userId}:`, error);
+            }
+        }
+
+        // Update quest progress for voice activities
+        if (global.dailyQuests && voiceActivities.length > 0) {
+            for (const activity of voiceActivities) {
+                try {
+                    // Update voice_time quest (tracks minutes)
+                    await global.dailyQuests.updateQuestProgress(
+                        activity.userId, 
+                        activity.guildId, 
+                        'voice_time', 
+                        1, // 1 minute
+                        { channelId: activity.channelId }
+                    );
+                    
+                    // Update voice_champion quest (tracks minutes for longer sessions)
+                    await global.dailyQuests.updateQuestProgress(
+                        activity.userId, 
+                        activity.guildId, 
+                        'voice_champion', 
+                        1, // 1 minute
+                        { channelId: activity.channelId }
+                    );
+                } catch (questError) {
+                    console.error(`[VOICE XP] Error updating quest progress for ${activity.userId}:`, questError);
+                }
+            }
+        }
+
+        console.log(`[VOICE XP] Processed ${voiceActivities.length} voice XP awards this cycle`);
+    }
+}
+
+module.exports = VoiceHandler;
