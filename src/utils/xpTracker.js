@@ -1,45 +1,4 @@
-async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
-        try {
-            const guild = this.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            let finalXP = xpAmount;
-            
-            if (xpAmount === null) {
-                finalXP = this.getRandomXP(source);
-                console.log(`[XP CALC] Generated base XP for ${source}: ${finalXP}`);
-            }
-            
-            if (!skipMultiplier) {
-                if (global.xpBoostManager && member) {
-                    try {
-                        const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
-                        if (boostResult.multiplier > 1.0) {
-                            const boostedXP = Math.round(finalXP * boostResult.multiplier);
-                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} base → ${boostedXP} boosted`);
-                            finalXP = boostedXP;
-                        }
-                    } catch (error) {
-                        console.error('[XP BOOST ERROR] Failed to calculate user boost:', error);
-                    }
-                }
-                
-                const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
-                const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
-                
-                if (multiplier !== 1.0) {
-                    const rawFinalXP = finalXP * multiplier;
-                    const afterGlobal = Math.round(rawFinalXP);
-                    console.log(`[XP CALC] ${user.username} ${source}: ${finalXP} boosted → ${afterGlobal} final`);
-                    finalXP = afterGlobal;
-                }
-            }
-            
-            const actualXP = (xpAmount > 0 && finalXP === 0) ? 1 : finalXP;
-
-            console.log(`[XP AWARD] Final XP to award: ${actualXP} (source: ${source}, skipMultiplier: ${skipMultiplier})`);
-
-            const beforeResult = await this.db.query(
+const beforeResult = await this.db.query(
                 'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                 [userId, guildId]
             );
@@ -202,7 +161,6 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
             
             try {
                 canvas = await this.createWantedPoster(wantedPosterData, guild);
-                const { AttachmentBuilder } = require('discord.js');
                 attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${user.id}.png` });
             } catch (canvasError) {
                 console.error('[LEVEL UP] Error creating wanted poster:', canvasError);
@@ -664,60 +622,6 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         this.dailyVoiceXP.clear();
     }
 
-    async reinitializeVoiceSessions() {
-        try {
-            console.log('[VOICE XP] Manually reinitializing voice sessions...');
-            this.voiceSessions.clear();
-            
-            let totalFound = 0;
-            
-            for (const [guildId, guild] of this.client.guilds.cache) {
-                try {
-                    await guild.fetch();
-                    
-                    const voiceChannels = guild.channels.cache.filter(channel => 
-                        channel.type === 2
-                    );
-                    
-                    for (const [channelId, channel] of voiceChannels) {
-                        try {
-                            await channel.fetch();
-                            
-                            if (channel.members && channel.members.size > 0) {
-                                for (const [memberId, member] of channel.members) {
-                                    if (!member.user.bot) {
-                                        this.voiceSessions.set(memberId, {
-                                            guildId: guildId,
-                                            channelId: channelId,
-                                            joinTime: Date.now(),
-                                            lastXPTime: Date.now(),
-                                            isMuted: member.voice.mute || member.voice.selfMute,
-                                            isDeafened: member.voice.deaf || member.voice.selfDeaf
-                                        });
-                                        totalFound++;
-                                        console.log(`[VOICE XP] Reinitialized: ${member.user.username} in ${channel.name} (${guild.name})`);
-                                    }
-                                }
-                            }
-                        } catch (channelError) {
-                            console.error(`[VOICE XP] Error with channel ${channel.name}:`, channelError);
-                        }
-                    }
-                    
-                } catch (guildError) {
-                    console.error(`[VOICE XP] Error with guild ${guild.name}:`, guildError);
-                }
-            }
-            
-            console.log(`[VOICE XP] Successfully reinitialized ${totalFound} voice sessions`);
-            return totalFound;
-            
-        } catch (error) {
-            console.error('[VOICE XP] Error reinitializing voice sessions:', error);
-            return 0;
-        }
-    }
-
     async createWantedPoster(userData, guild) {
         const { createCanvas, loadImage } = require('canvas');
         const path = require('path');
@@ -751,7 +655,7 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         ctx.fillStyle = '#111';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = '81px CaptainKiddNF, Arial, sans-serif';
+        ctx.font = '81px Arial, sans-serif';
         const wantedY = height * (1 - 92/100);
         const wantedX = (50/100) * width;
         ctx.fillText('WANTED', wantedX, wantedY);
@@ -764,12 +668,7 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         ctx.lineWidth = 3;
         ctx.strokeRect(photoX, photoY, photoSize, photoSize);
 
-        let member = null;
-        try {
-            if (guild && userData.userId) member = await guild.members.fetch(userData.userId);
-        } catch {}
-        
-        const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
+                const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
         if (member) {
             try {
                 const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
@@ -793,12 +692,12 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         ctx.fillStyle = '#111';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = '57px CaptainKiddNF, Arial, sans-serif';
+        ctx.font = '57px Arial, sans-serif';
         const deadOrAliveY = height * (1 - 39/100);
         const deadOrAliveX = (50/100) * width;
         ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
 
-        ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
+        ctx.font = '69px Arial, sans-serif';
         let displayName = 'UNKNOWN PIRATE';
         if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
         else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
@@ -806,7 +705,7 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         ctx.textAlign = 'center';
         let nameWidth = ctx.measureText(displayName).width;
         if (nameWidth > width - 60) {
-            ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
+            ctx.font = '55px Arial, sans-serif';
         }
         
         const nameY = height * (1 - 30/100);
@@ -821,7 +720,7 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         
         console.log(`[LEVEL UP] Level ${userData.level} = Bounty ฿${bountyStr}`);
         
-        ctx.font = '54px Cinzel, Georgia, serif';
+        ctx.font = '54px serif';
         const bountyTextWidth = ctx.measureText(bountyStr).width;
         
         const berrySize = (32/100) * 150;
@@ -832,22 +731,16 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         const berryX = bountyUnitStartX + (berrySize/2);
         const berryY = height * (1 - 22/100) - (berrySize/2);
         
-        let berryImg;
-        try {
-            const berryPath = path.join(__dirname, '../../assets/berry.png');
-            berryImg = await loadImage(berryPath);
-        } catch {
-            const berryCanvas = createCanvas(berrySize, berrySize);
-            const berryCtx = berryCanvas.getContext('2d');
-            berryCtx.fillStyle = '#111';
-            berryCtx.font = `bold ${berrySize}px serif`;
-            berryCtx.textAlign = 'center';
-            berryCtx.textBaseline = 'middle';
-            berryCtx.fillText('฿', berrySize/2, berrySize/2);
-            berryImg = berryCanvas;
-        }
+        // Simple berry symbol
+        const berryCanvas = createCanvas(berrySize, berrySize);
+        const berryCtx = berryCanvas.getContext('2d');
+        berryCtx.fillStyle = '#111';
+        berryCtx.font = `bold ${berrySize}px serif`;
+        berryCtx.textAlign = 'center';
+        berryCtx.textBaseline = 'middle';
+        berryCtx.fillText('฿', berrySize/2, berrySize/2);
         
-        ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
+        ctx.drawImage(berryCanvas, berryX - (berrySize/2), berryY, berrySize, berrySize);
 
         const bountyX = bountyUnitStartX + berrySize + gapPixels;
         const bountyY = height * (1 - 22/100);
@@ -857,25 +750,9 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
         ctx.fillStyle = '#111';
         ctx.fillText(bountyStr, bountyX, bountyY);
 
-        try {
-            const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
-            const onePieceLogo = await loadImage(onePieceLogoPath);
-            const logoSize = (26/100) * 200;
-            const logoX = ((50/100) * width) - (logoSize/2);
-            const logoY = height * (1 - 4.5/100) - (logoSize/2);
-            
-            ctx.globalAlpha = 0.6;
-            ctx.filter = 'sepia(0.2) brightness(0.9)';
-            ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
-            ctx.globalAlpha = 1.0;
-            ctx.filter = 'none';
-        } catch {
-            console.log('[DEBUG] One Piece logo not found at assets/one-piece-symbol.png');
-        }
-
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.font = '24px TimesNewNormal, Times, serif';
+        ctx.font = '24px serif';
         ctx.fillStyle = '#111';
         
         const marineText = 'M A R I N E';
@@ -939,11 +816,67 @@ async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
             return null;
         }
     }
+
+    async reinitializeVoiceSessions() {
+        try {
+            console.log('[VOICE XP] Manually reinitializing voice sessions...');
+            this.voiceSessions.clear();
+            
+            let totalFound = 0;
+            
+            for (const [guildId, guild] of this.client.guilds.cache) {
+                try {
+                    await guild.fetch();
+                    
+                    const voiceChannels = guild.channels.cache.filter(channel => 
+                        channel.type === 2
+                    );
+                    
+                    for (const [channelId, channel] of voiceChannels) {
+                        try {
+                            await channel.fetch();
+                            
+                            if (channel.members && channel.members.size > 0) {
+                                for (const [memberId, member] of channel.members) {
+                                    if (!member.user.bot) {
+                                        this.voiceSessions.set(memberId, {
+                                            guildId: guildId,
+                                            channelId: channelId,
+                                            joinTime: Date.now(),
+                                            lastXPTime: Date.now(),
+                                            isMuted: member.voice.mute || member.voice.selfMute,
+                                            isDeafened: member.voice.deaf || member.voice.selfDeaf
+                                        });
+                                        totalFound++;
+                                        console.log(`[VOICE XP] Reinitialized: ${member.user.username} in ${channel.name} (${guild.name})`);
+                                    }
+                                }
+                            }
+                        } catch (channelError) {
+                            console.error(`[VOICE XP] Error with channel ${channel.name}:`, channelError);
+                        }
+                    }
+                    
+                } catch (guildError) {
+                    console.error(`[VOICE XP] Error with guild ${guild.name}:`, guildError);
+                }
+            }
+            
+            console.log(`[VOICE XP] Successfully reinitialized ${totalFound} voice sessions`);
+            return totalFound;
+            
+        } catch (error) {
+            console.error('[VOICE XP] Error reinitializing voice sessions:', error);
+            return 0;
+        }
+    }
 }
 
-module.exports = XPTracker;// src/utils/xpTracker.js - Complete version with ALL RED Marine Intelligence logs
+module.exports = XPTracker;
+        
+        // src/utils/xpTracker.js - Complete Marine Intelligence XP Tracking System
 
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 
 class XPTracker {
     constructor(client, database) {
@@ -951,11 +884,11 @@ class XPTracker {
         this.db = database;
         this.voiceSessions = new Map();
         this.cooldowns = new Map();
-        this.dailyVoiceXP = new Map(); // Format: "userId_YYYY-MM-DD" -> total XP earned today
+        this.dailyVoiceXP = new Map(); // Format: "userId_guildId_YYYY-MM-DD" -> total XP earned today
         
         this.loadGuildSettingsFromDatabase();
         this.initializeExistingVoiceSessions();
-        this.loadDailyVoiceXPFromDatabase(); // Load existing daily caps from database
+        this.loadDailyVoiceXPFromDatabase();
     }
 
     // Load daily voice XP from database on startup
@@ -1537,9 +1470,6 @@ class XPTracker {
             console.log('[DAILY CAP] Starting daily voice XP cleanup...');
             
             const today = new Date().toISOString().split('T')[0];
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayString = yesterday.toISOString().split('T')[0];
 
             // Clean up memory cache
             let memoryDeleted = 0;
@@ -1603,4 +1533,9 @@ class XPTracker {
                 }
             }
             
-            const actualXP = (xpAmount > 0 && final
+            const actualXP = (xpAmount > 0 && finalXP === 0) ? 1 : finalXP;
+
+            console.log(`[XP AWARD] Final XP to award: ${actualXP} (source: ${source}, skipMultiplier: ${skipMultiplier})`);
+
+            const beforeResult = await this.db.query(
+                'SELECT total_xp, level FROM user_levels WHERE user_i
