@@ -928,117 +928,6 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // Test voice logging command
-    if (message.content === '!testlog') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return message.reply('❌ You need Manage Channels permission to test logging!');
-        }
-
-        try {
-            // Test if the channel exists
-            const channelId = process.env.VOICE_LOG_CHANNEL_ID;
-            if (!channelId) {
-                return message.reply('❌ VOICE_LOG_CHANNEL_ID not set in environment variables!');
-            }
-
-            const testChannel = message.guild.channels.cache.get(channelId);
-            if (!testChannel) {
-                return message.reply(`❌ Channel with ID ${channelId} not found in this server!`);
-            }
-
-            // Test sending a message
-            await testChannel.send('🧪 **Test Message** - Voice logging should work if you can see this!');
-            
-            // Test sending an embed (like the voice logs)
-            const testEmbed = new EmbedBuilder()
-                .setColor('#00FF00')
-                .setTitle('🧪 Test Voice Log with XP')
-                .setDescription(`<@${message.author.id}> joined <#${message.channel.id}>`)
-                .addFields(
-                    { name: '👤 User', value: message.author.displayName, inline: true },
-                    { name: '🏠 Channel', value: 'Test Channel', inline: true },
-                    { name: '⚡ XP Earned', value: '+25 XP (test)', inline: true }
-                )
-                .setTimestamp()
-                .setFooter({ text: 'Voice Activity Logger with XP - TEST' });
-
-            await testChannel.send({ embeds: [testEmbed] });
-            
-            message.reply(`✅ Test successful! Check ${testChannel} for test messages with XP display.`);
-        } catch (error) {
-            message.reply(`❌ Error testing channel: ${error.message}`);
-            console.error('Test log error:', error);
-        }
-    }
-
-    // Debug voice logging status
-    if (message.content === '!debuglog') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return message.reply('❌ You need Manage Channels permission!');
-        }
-
-        const status = `🔍 **Voice Logging & XP Debug Info:**
-**Enabled:** ${process.env.ENABLE_VOICE_LOGGING}
-**Channel ID:** ${process.env.VOICE_LOG_CHANNEL_ID || 'Not set'}
-**Channel Name Fallback:** ${process.env.VOICE_LOG_CHANNEL || 'voice-activity-log'}
-**Voice Tracker Active:** ${voiceTimeTracker ? 'Yes' : 'No'}
-**Active Sessions:** ${voiceTimeTracker ? voiceTimeTracker.getActiveSessionsCount() : 0}
-**XP Per Minute:** ${process.env.XP_PER_MINUTE || 5}
-**Daily XP Cap:** ${process.env.DAILY_XP_CAP || 500}
-**Weekly XP Cap:** ${process.env.WEEKLY_XP_CAP || 2500}
-**Monthly XP Cap:** ${process.env.MONTHLY_XP_CAP || 10000}`;
-
-        message.reply(status);
-    }
-
-    // Force test voice event with XP
-    if (message.content === '!forcelog') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return message.reply('❌ You need Manage Channels permission!');
-        }
-
-        try {
-            // Manually trigger a voice log event with XP info
-            await voiceTimeTracker.channelLogger.logVoiceEvent(
-                message.guild.id,
-                message.author.id,
-                message.author.displayName,
-                message.channel.id,
-                message.channel.name,
-                'LEAVE',
-                {
-                    sessionDuration: 300, // 5 minutes
-                    xpEarned: 25, // 5 minutes * 5 XP/min
-                    xpCapHit: false,
-                    capType: null
-                }
-            );
-            message.reply('🧪 Forced voice log event with XP info sent!');
-        } catch (error) {
-            message.reply(`❌ Error: ${error.message}`);
-            console.error('Force log error:', error);
-        }
-    }
-
-    // Command to create voice log channel
-    if (message.content === '!createvoicelog') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return message.reply('❌ You need Manage Channels permission to create the voice log channel!');
-        }
-
-        try {
-            const newChannel = await voiceTimeTracker.createLogChannel(message.guild);
-            if (newChannel) {
-                message.reply(`✅ Created voice log channel: ${newChannel}\n🔍 Voice activity with XP tracking will now be logged here!`);
-            } else {
-                message.reply('❌ Error creating voice log channel. Please check bot permissions.');
-            }
-        } catch (error) {
-            console.error('❌ Error creating voice log channel:', error);
-            message.reply('❌ Error creating voice log channel. Please check bot permissions.');
-        }
-    }
-    
     // Ping command
     if (message.content === '!ping') {
         const ping = Date.now() - message.createdTimestamp;
@@ -1046,31 +935,6 @@ client.on('messageCreate', async (message) => {
 📡 Bot Latency: \`${ping}ms\`
 💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
 ⚓ Ready to set sail with XP tracking!`);
-    }
-    
-    // Test sound command
-    if (message.content === '!testsound') {
-        if (!message.member.voice.channel) {
-            return message.reply('❌ You need to be in a voice channel to test the sound!');
-        }
-        
-        message.reply('🎵 Testing welcome sound...');
-        playWelcomeSound(message.member.voice.channel);
-    }
-    
-    // Check sound file command
-    if (message.content === '!checksound') {
-        if (fs.existsSync(WELCOME_SOUND)) {
-            const stats = fs.statSync(WELCOME_SOUND);
-            message.reply(`✅ **Sound file found!**
-📁 **Path:** \`${WELCOME_SOUND}\`
-📏 **Size:** ${(stats.size / 1024 / 1024).toFixed(2)} MB
-🔊 **Volume:** ${Math.round(AUDIO_VOLUME * 100)}%`);
-        } else {
-            message.reply(`❌ **Sound file NOT found!**
-📁 **Expected path:** \`${WELCOME_SOUND}\`
-💡 **Solution:** Create a 'sounds' folder and add 'The Going Merry One Piece.ogg'`);
-        }
     }
     
     // Enhanced help command with XP system
@@ -1087,23 +951,12 @@ client.on('messageCreate', async (message) => {
 \`!voicestats\` - Legacy voice stats command (now with XP)
 \`!ping\` - Check bot latency
 
-**🎵 Audio Testing:**
-\`!testsound\` - Test welcome sound in your current voice channel
-\`!checksound\` - Check if sound file exists and show details
-
-**🔧 Debug Commands:**
-\`!testlog\` - Test voice logging channel with XP display (Manage Channels required)
-\`!debuglog\` - Show voice logging and XP debug info (Manage Channels required)
-\`!forcelog\` - Force send a test voice event with XP (Manage Channels required)
-\`!createvoicelog\` - Create voice log channel (Manage Channels required)
-
 **🚢 How to Use:**
 1. Join "${CREATE_CHANNEL_NAME}" voice channel
 2. Bot will create a new crew with a One Piece themed name
 3. You become the captain with full channel permissions
-4. Bot plays welcome sound (if file exists)
-5. **Earn XP automatically while in voice channels!**
-6. Empty crews are automatically deleted after ${DELETE_DELAY/1000} seconds
+4. **Earn XP automatically while in voice channels!**
+5. Empty crews are automatically deleted after ${DELETE_DELAY/1000} seconds
 
 **⚡ XP System:**
 • **${process.env.XP_PER_MINUTE || 5} XP per minute** in voice channels
