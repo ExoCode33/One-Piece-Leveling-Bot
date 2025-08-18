@@ -1,4 +1,4 @@
-// src/utils/xpUtils.js - Utility Functions for XP System
+// src/utils/xpUtils.js - Utility Functions for XP System (Updated - Simplified Daily Cap)
 
 async function getUserStats(xpTracker, userId, guildId) {
     try {
@@ -93,7 +93,7 @@ function setCooldown(xpTracker, key) {
     xpTracker.cooldowns.set(key, Date.now());
 }
 
-// Get daily voice XP statistics for a user with dynamic cap info
+// Get daily voice XP statistics for a user with simplified cap info
 async function getDailyVoiceXPStats(xpTracker, userId, guildId, days = 7) {
     try {
         const result = await xpTracker.db.query(`
@@ -103,15 +103,12 @@ async function getDailyVoiceXPStats(xpTracker, userId, guildId, days = 7) {
             ORDER BY date DESC
         `, [userId, guildId]);
 
-        // Get user's current cap for context
-        const guild = xpTracker.client.guilds.cache.get(guildId);
-        let currentCap = { cap: 1500, source: 'Default', tier: 0 };
-        if (guild) {
-            const member = await guild.members.fetch(userId).catch(() => null);
-            if (member) {
-                currentCap = xpTracker.getUserDailyXPCap(member);
-            }
-        }
+        // Simplified - everyone uses the same cap
+        const currentCap = {
+            cap: parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500,
+            source: 'Default',
+            tier: 0
+        };
 
         return {
             stats: result.rows.map(row => ({
@@ -122,11 +119,18 @@ async function getDailyVoiceXPStats(xpTracker, userId, guildId, days = 7) {
         };
     } catch (error) {
         console.error('[DAILY CAP] Error getting daily voice XP stats:', error);
-        return { stats: [], currentCap: { cap: 1500, source: 'Default', tier: 0 } };
+        return { 
+            stats: [], 
+            currentCap: { 
+                cap: parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500, 
+                source: 'Default', 
+                tier: 0 
+            } 
+        };
     }
 }
 
-// Get guild-wide daily voice XP statistics with dynamic cap breakdown
+// Get guild-wide daily voice XP statistics with simplified cap system
 async function getGuildDailyVoiceXPStats(xpTracker, guildId, date = null) {
     try {
         if (!date) {
@@ -140,15 +144,9 @@ async function getGuildDailyVoiceXPStats(xpTracker, guildId, date = null) {
             ORDER BY total_xp DESC
         `, [guildId, date]);
 
-        const guild = xpTracker.client.guilds.cache.get(guildId);
-        let capBreakdown = {
-            'Default': { count: 0, users: [], cap: parseInt(process.env.DAILY_VOICE_XP_CAP_DEFAULT) || 1500 },
-            'Tier-1 XP Cap': { count: 0, users: [], cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_1) || 2000 },
-            'Tier-2 XP Cap': { count: 0, users: [], cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000 },
-            'Tier-3 XP Cap': { count: 0, users: [], cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_3) || 5000 },
-            'Quest Master': { count: 0, users: [], cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000 }
-        };
-
+        // Simplified - single cap for everyone
+        const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+        
         let totalCappedUsers = 0;
         let totalUsers = result.rows.length;
         let totalXP = 0;
@@ -157,21 +155,8 @@ async function getGuildDailyVoiceXPStats(xpTracker, guildId, date = null) {
         for (const row of result.rows) {
             totalXP += row.total_xp;
             
-            if (guild) {
-                const member = await guild.members.fetch(row.user_id).catch(() => null);
-                if (member) {
-                    const capInfo = xpTracker.getUserDailyXPCap(member);
-                    capBreakdown[capInfo.source].count++;
-                    capBreakdown[capInfo.source].users.push({
-                        userId: row.user_id,
-                        xp: row.total_xp,
-                        cappedOut: row.total_xp >= capInfo.cap
-                    });
-                    
-                    if (row.total_xp >= capInfo.cap) {
-                        totalCappedUsers++;
-                    }
-                }
+            if (row.total_xp >= dailyCap) {
+                totalCappedUsers++;
             }
         }
 
@@ -182,7 +167,8 @@ async function getGuildDailyVoiceXPStats(xpTracker, guildId, date = null) {
             cappedPercentage: totalUsers > 0 ? (totalCappedUsers / totalUsers) * 100 : 0,
             totalXP,
             averageXP: totalUsers > 0 ? totalXP / totalUsers : 0,
-            capBreakdown: capBreakdown,
+            dailyCap: dailyCap,
+            capSource: 'Default Daily Cap',
             topUsers: result.rows.slice(0, 10) // Top 10 users by daily voice XP
         };
     } catch (error) {
