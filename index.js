@@ -86,9 +86,9 @@ const client = new Client({
 // Track audio connections
 const activeConnections = new Map();
 
-// Audio file paths - Make audio optional
+// Audio file paths
 const SOUNDS_DIR = path.join(__dirname, 'sounds');
-const WELCOME_SOUND = path.join(SOUNDS_DIR, 'welcome.mp3'); // Changed to mp3
+const WELCOME_SOUND = path.join(SOUNDS_DIR, 'The Going Merry One Piece.ogg');
 
 // Helper functions
 function log(message) {
@@ -105,46 +105,17 @@ function getRandomCrewName() {
     return CREW_NAMES[Math.floor(Math.random() * CREW_NAMES.length)];
 }
 
-// Fixed database functions for guild settings
+// Database functions for guild settings
 async function initializeDatabase() {
     try {
-        // Create guild_settings table with proper columns
         await pool.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
                 guild_id VARCHAR(255) PRIMARY KEY,
-                category_id VARCHAR(255),
-                category_name VARCHAR(255),
-                levelup_channel VARCHAR(255),
-                levelup_enabled BOOLEAN DEFAULT true,
-                xp_log_channel VARCHAR(255),
-                xp_log_enabled BOOLEAN DEFAULT false,
-                xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
-                excluded_role VARCHAR(255),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                category_id VARCHAR(255) NOT NULL,
+                category_name VARCHAR(255) NOT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        
-        // Check if columns exist and add them if missing
-        const columnChecks = [
-            { column: 'category_id', type: 'VARCHAR(255)' },
-            { column: 'category_name', type: 'VARCHAR(255)' },
-            { column: 'levelup_channel', type: 'VARCHAR(255)' },
-            { column: 'levelup_enabled', type: 'BOOLEAN DEFAULT true' },
-            { column: 'xp_log_channel', type: 'VARCHAR(255)' },
-            { column: 'xp_log_enabled', type: 'BOOLEAN DEFAULT false' },
-            { column: 'xp_multiplier', type: 'DECIMAL(3,2) DEFAULT 1.0' },
-            { column: 'excluded_role', type: 'VARCHAR(255)' }
-        ];
-        
-        for (const { column, type } of columnChecks) {
-            try {
-                await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS ${column} ${type}`);
-            } catch (error) {
-                debugLog(`Column ${column} might already exist: ${error.message}`);
-            }
-        }
-        
         log('✅ Database tables initialized successfully');
     } catch (error) {
         console.error('❌ Error initializing database:', error);
@@ -153,12 +124,10 @@ async function initializeDatabase() {
 
 async function getCategoryForGuild(guildId) {
     try {
-        // Fixed query to handle missing columns gracefully
-        const result = await pool.query(`
-            SELECT category_id, category_name 
-            FROM guild_settings 
-            WHERE guild_id = $1
-        `, [guildId]);
+        const result = await pool.query(
+            'SELECT category_id, category_name FROM guild_settings WHERE guild_id = $1',
+            [guildId]
+        );
         
         if (result.rows.length > 0) {
             return {
@@ -169,7 +138,6 @@ async function getCategoryForGuild(guildId) {
         return null;
     } catch (error) {
         console.error('❌ Error getting category from database:', error);
-        // Return null if there's a database error
         return null;
     }
 }
@@ -191,18 +159,11 @@ async function updateCategoryForGuild(guildId, categoryId, categoryName) {
     }
 }
 
-// Function to play welcome sound with error handling - Made optional
+// Function to play welcome sound with error handling
 async function playWelcomeSound(channel) {
     try {
-        // Check if audio file exists and audio is enabled
         if (!fs.existsSync(WELCOME_SOUND)) {
-            debugLog(`🎵 Welcome sound file not found, skipping audio: ${WELCOME_SOUND}`);
-            return;
-        }
-
-        // Check if audio is disabled
-        if (process.env.DISABLE_AUDIO === 'true') {
-            debugLog('🎵 Audio disabled by configuration');
+            debugLog(`❌ Welcome sound file not found: ${WELCOME_SOUND}`);
             return;
         }
 
@@ -447,7 +408,6 @@ client.once('ready', async () => {
         log(`🎵 Welcome sound ready: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
     } else {
         console.warn(`⚠️ Welcome sound not found at: ${WELCOME_SOUND}`);
-        log(`🎵 Audio features disabled - no welcome sound file`);
     }
     
     if (CATEGORY_ID) {
@@ -565,10 +525,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                     await member.voice.setChannel(newChannel);
                     debugLog(`✅ Successfully moved ${member.displayName} to ${crewName}`);
                     
-                    // Play welcome sound with delay - only if audio is available
                     setTimeout(() => {
                         playWelcomeSound(newChannel).catch(error => {
-                            debugLog(`⚠️ Could not play welcome sound: ${error.message}`);
+                            console.log(`⚠️ Could not play welcome sound: ${error.message}`);
                         });
                     }, 1500);
                     
@@ -806,7 +765,7 @@ client.on('messageCreate', async (message) => {
 • **Marine Intelligence logging system**
 • Captain permissions for channel creators
 • Automatic cleanup of empty channels
-• Welcome sounds with pirate theme (if available)
+• Welcome sounds with The Going Merry theme
 • **Comprehensive slash commands for XP management**
 • **Wanted poster generation for level-ups**
 
@@ -826,49 +785,6 @@ client.on('messageReactionAdd', async (reaction, user) => {
         if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
             xpTracker.setCooldown(cooldownKey);
             await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
-        }
-    }
-});
-
-// Button interaction handler for leaderboard
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    
-    try {
-        // Handle leaderboard button interactions
-        if (interaction.customId.startsWith('leaderboard_')) {
-            const leaderboardCommand = require('./src/commands/leaderboard');
-            if (leaderboardCommand.handleButtonInteraction) {
-                await leaderboardCommand.handleButtonInteraction(interaction, xpTracker);
-            }
-            return;
-        }
-        
-        // Handle admin maintenance/nuclear buttons
-        if (['cleanup_inactive', 'optimize_db', 'backup_stats'].includes(interaction.customId)) {
-            const adminCommand = require('./src/commands/admin');
-            if (adminCommand.handleMaintenanceButtons) {
-                await adminCommand.handleMaintenanceButtons(interaction, pool);
-            }
-            return;
-        }
-        
-        if (['nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
-            const adminCommand = require('./src/commands/admin');
-            if (adminCommand.handleNuclearButtons) {
-                await adminCommand.handleNuclearButtons(interaction, pool);
-            }
-            return;
-        }
-        
-    } catch (error) {
-        console.error('❌ Error handling button interaction:', error);
-        
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-                content: '❌ An error occurred while processing this button.',
-                ephemeral: true
-            }).catch(console.error);
         }
     }
 });
