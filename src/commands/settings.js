@@ -523,7 +523,7 @@ module.exports = {
         }
     },
 
-    // Save guild settings to database - FIXED FOR CATEGORY_ID CONSTRAINT
+    // Save guild settings to database - FIXED FOR ALL VOICE CHANNEL CONSTRAINTS
     async saveGuildSettings(guildId, settings) {
         try {
             // Try multiple ways to access the database
@@ -553,7 +553,7 @@ module.exports = {
                 return false;
             }
 
-            // First, check what columns exist in the table
+            // First, check what columns exist and their constraints
             const tableInfo = await database.query(`
                 SELECT column_name, is_nullable, column_default 
                 FROM information_schema.columns 
@@ -563,14 +563,21 @@ module.exports = {
             
             console.log('[SETTINGS] Guild settings table columns:', tableInfo.rows.map(r => `${r.column_name} (nullable: ${r.is_nullable})`).join(', '));
 
-            // Handle the category_id constraint by providing a default value or making it nullable
+            // Handle voice channel constraints by making them nullable
             const categoryIdExists = tableInfo.rows.find(r => r.column_name === 'category_id');
+            const categoryNameExists = tableInfo.rows.find(r => r.column_name === 'category_name');
             
             if (categoryIdExists && categoryIdExists.is_nullable === 'NO') {
-                console.log('[SETTINGS] Making category_id nullable to fix constraint...');
+                console.log('[SETTINGS] Making category_id nullable...');
                 await database.query('ALTER TABLE guild_settings ALTER COLUMN category_id DROP NOT NULL');
             }
+            
+            if (categoryNameExists && categoryNameExists.is_nullable === 'NO') {
+                console.log('[SETTINGS] Making category_name nullable...');
+                await database.query('ALTER TABLE guild_settings ALTER COLUMN category_name DROP NOT NULL');
+            }
 
+            // Now try to insert/update the settings
             const result = await database.query(`
                 INSERT INTO guild_settings (guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
@@ -598,19 +605,25 @@ module.exports = {
 
         } catch (error) {
             console.error('[SETTINGS] ❌ Error saving to database:', error);
-            console.error('[SETTINGS] Settings data that failed to save:', {
-                guildId,
-                settings
-            });
             
-            // If it's still the category_id constraint, try a different approach
-            if (error.message && error.message.includes('category_id')) {
-                console.log('[SETTINGS] Attempting to fix category_id constraint with default value...');
+            // If constraints are still causing issues, provide default values for voice channel columns
+            if (error.message && (error.message.includes('category_id') || error.message.includes('category_name'))) {
+                console.log('[SETTINGS] Attempting to save with default voice channel values...');
                 try {
                     const database = global.xpTracker?.db || require('../../index').db;
                     const result = await database.query(`
-                        INSERT INTO guild_settings (guild_id, category_id, category_name, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier, updated_at)
-                        VALUES ($1, '0', 'default', $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                        INSERT INTO guild_settings (
+                            guild_id, 
+                            category_id, 
+                            category_name, 
+                            levelup_channel, 
+                            levelup_enabled, 
+                            xp_log_channel, 
+                            xp_log_enabled, 
+                            xp_multiplier, 
+                            updated_at
+                        )
+                        VALUES ($1, '0', 'Default Category', $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
                         ON CONFLICT (guild_id)
                         DO UPDATE SET
                             levelup_channel = EXCLUDED.levelup_channel,
@@ -629,13 +642,17 @@ module.exports = {
                         settings.xpMultiplier
                     ]);
                     
-                    console.log(`[SETTINGS] ✅ Fixed and saved settings with default category_id`);
+                    console.log(`[SETTINGS] ✅ Successfully saved with default voice channel values`);
                     return true;
                 } catch (retryError) {
-                    console.error('[SETTINGS] ❌ Retry with default category_id also failed:', retryError);
+                    console.error('[SETTINGS] ❌ Retry with defaults also failed:', retryError);
                 }
             }
             
+            console.error('[SETTINGS] Settings data that failed to save:', {
+                guildId,
+                settings
+            });
             return false;
         }
     }
