@@ -4,10 +4,10 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation Configuration
 const ANIMATION_CONFIG = {
-    RAINBOW_DELAY: 200,  // Fast for dramatic effect
-    BUILDUP_FRAMES: 8,   // Energy buildup phase
-    EXPLOSION_FRAMES: 12, // Epic explosion sequence
-    FINAL_PAUSE: 400
+    RAINBOW_DELAY: 180,  // Even faster for dramatic impact
+    BUILDUP_FRAMES: 6,   // Shorter buildup
+    EXPLOSION_FRAMES: 15, // Longer explosion for full effect
+    FINAL_PAUSE: 300
 };
 
 class BuffAnimator {
@@ -64,28 +64,31 @@ class BuffAnimator {
         const tierColor = this.getTierColor(tier);
         const energyColor = this.getEnergyColor(tier);
         
-        // Energy buildup - starts as a small pulsing core
-        const coreSize = Math.floor(frame / 2); // Slowly expanding core
-        const pulseIntensity = Math.sin(frame * 0.8) > 0; // Pulsing effect
+        // Intense energy concentration at center - building to explosion
+        const coreIntensity = Math.min(frame + 1, 4);
         
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
                 
                 if (distance === 0) {
-                    // Center core - always tier color
+                    // Always bright center
                     grid[row][col] = tierColor;
-                } else if (distance <= coreSize) {
-                    // Growing energy core
-                    grid[row][col] = pulseIntensity ? tierColor : energyColor;
-                } else if (distance === coreSize + 1 && frame > 3) {
-                    // Energy ring building up
-                    grid[row][col] = energyColor;
-                } else if (distance === coreSize + 2 && frame > 6) {
-                    // Outer energy ring (weaker)
-                    grid[row][col] = Math.random() > 0.5 ? energyColor : '⬛';
+                } else if (distance <= coreIntensity) {
+                    // Expanding energy core
+                    grid[row][col] = Math.random() > 0.3 ? tierColor : energyColor;
                 }
             }
+        }
+        
+        // Add cross-hints in final buildup frames
+        if (frame >= 4) {
+            // Subtle horizontal line
+            grid[centerY][centerX - 1] = energyColor;
+            grid[centerY][centerX + 1] = energyColor;
+            // Subtle vertical line  
+            if (centerY > 0) grid[centerY - 1][centerX] = energyColor;
+            if (centerY < height - 1) grid[centerY + 1][centerX] = energyColor;
         }
         
         return grid;
@@ -98,58 +101,46 @@ class BuffAnimator {
         const tierColor = this.getTierColor(tier);
         const energyColor = this.getEnergyColor(tier);
         
-        // Ultra-dynamic explosion with multiple effects
-        const explosionRadius = Math.min(Math.pow(frame * 1.8, 1.4), Math.max(centerX, centerY) + 3);
-        const energyWave1 = explosionRadius + Math.sin(frame * 0.5) * 2;
-        const energyWave2 = explosionRadius + Math.cos(frame * 0.7) * 3;
-        const sparkRadius = explosionRadius + 4;
+        // Perfect cross explosion like in the gif
+        const explosionRadius = Math.min(frame * 1.2, Math.max(centerX, centerY));
+        const beamLength = Math.min(frame * 2, Math.max(width, height));
         
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
-                const randomFactor = Math.random();
                 
+                // Central explosion core
                 if (distance <= explosionRadius) {
-                    // Solid core explosion
                     grid[row][col] = tierColor;
-                } else if (distance <= energyWave1 && randomFactor > 0.3) {
-                    // Primary shockwave with some gaps for realism
-                    grid[row][col] = energyColor;
-                } else if (distance <= energyWave2 && randomFactor > 0.6) {
-                    // Secondary wave
-                    grid[row][col] = energyColor;
-                } else if (distance <= sparkRadius && randomFactor > 0.85) {
-                    // Energy sparks
-                    grid[row][col] = energyColor;
+                }
+                
+                // Perfect horizontal beam (full width)
+                if (row === centerY && Math.abs(col - centerX) <= beamLength) {
+                    grid[row][col] = tierColor;
+                    // Add beam thickness
+                    if (row > 0) grid[row - 1][col] = energyColor;
+                    if (row < height - 1) grid[row + 1][col] = energyColor;
+                }
+                
+                // Perfect vertical beam (full height)
+                if (col === centerX && Math.abs(row - centerY) <= beamLength) {
+                    grid[row][col] = tierColor;
+                    // Add beam thickness
+                    if (col > 0) grid[row][col - 1] = energyColor;
+                    if (col < width - 1) grid[row][col + 1] = energyColor;
                 }
             }
         }
         
-        // Enhanced cross-beam effects
-        if (frame > 2) {
-            const beamIntensity = Math.min(frame - 2, 6);
-            
-            // Horizontal energy beam
-            for (let col = Math.max(0, centerX - beamIntensity * 2); col <= Math.min(width - 1, centerX + beamIntensity * 2); col++) {
-                if (Math.abs(col - centerX) > explosionRadius) {
-                    if (Math.random() > 0.4) {
-                        grid[centerY][col] = energyColor;
+        // Add energy rings around the explosion
+        if (frame > 3) {
+            const ringRadius = explosionRadius + 1;
+            for (let row = 0; row < height; row++) {
+                for (let col = 0; col < width; col++) {
+                    const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
+                    if (distance === ringRadius && Math.random() > 0.4) {
+                        grid[row][col] = energyColor;
                     }
-                    // Add beam thickness
-                    if (centerY > 0 && Math.random() > 0.6) grid[centerY - 1][col] = energyColor;
-                    if (centerY < height - 1 && Math.random() > 0.6) grid[centerY + 1][col] = energyColor;
-                }
-            }
-            
-            // Vertical energy beam
-            for (let row = Math.max(0, centerY - beamIntensity); row <= Math.min(height - 1, centerY + beamIntensity); row++) {
-                if (Math.abs(row - centerY) > explosionRadius) {
-                    if (Math.random() > 0.4) {
-                        grid[row][centerX] = energyColor;
-                    }
-                    // Add beam thickness
-                    if (centerX > 0 && Math.random() > 0.6) grid[row][centerX - 1] = energyColor;
-                    if (centerX < width - 1 && Math.random() > 0.6) grid[row][centerX + 1] = energyColor;
                 }
             }
         }
