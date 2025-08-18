@@ -15,12 +15,12 @@ const DEFAULT_CATEGORY_NAME = process.env.CATEGORY_NAME || '✘ SOCIAL ✘';
 const CATEGORY_ID = process.env.CATEGORY_ID;
 const DELETE_DELAY = parseInt(process.env.DELETE_DELAY) || 1000;
 const DEBUG = process.env.DEBUG === 'true';
+const AUDIO_VOLUME = parseFloat(process.env.AUDIO_VOLUME) || 0.4;
 
 // Global variables
 let pool;
 let xpTracker;
 let xpBoostManager;
-let dailyQuests;
 
 // Initialize database connection
 async function initializeConnection() {
@@ -83,6 +83,13 @@ const client = new Client({
     ]
 });
 
+// Track audio connections
+const activeConnections = new Map();
+
+// Audio file paths - Make audio optional
+const SOUNDS_DIR = path.join(__dirname, 'sounds');
+const WELCOME_SOUND = path.join(SOUNDS_DIR, 'welcome.mp3'); // Changed to mp3
+
 // Helper functions
 function log(message) {
     console.log(`🏴‍☠️ ${message}`);
@@ -98,12 +105,12 @@ function getRandomCrewName() {
     return CREW_NAMES[Math.floor(Math.random() * CREW_NAMES.length)];
 }
 
-// Enhanced database initialization with daily system tables
+// AUTO-INITIALIZE DATABASE - Complete database setup with error recovery
 async function initializeDatabase() {
     try {
         log('🔧 Starting auto-initialization of database...');
         
-        // 1. Create guild_settings table
+        // 1. Create guild_settings table with ALL required columns
         log('📊 Creating guild_settings table...');
         await pool.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
@@ -121,7 +128,40 @@ async function initializeDatabase() {
             )
         `);
         
-        // 2. Create user_levels table for XP tracking
+        // 2. Auto-fix missing columns with robust error handling
+        log('🔧 Checking and adding missing columns...');
+        const columnUpdates = [
+            { column: 'category_id', type: 'VARCHAR(255)', description: 'Voice category tracking' },
+            { column: 'category_name', type: 'VARCHAR(255)', description: 'Voice category name' },
+            { column: 'levelup_channel', type: 'VARCHAR(255)', description: 'Level up announcements' },
+            { column: 'levelup_enabled', type: 'BOOLEAN', default: 'true', description: 'Level up toggle' },
+            { column: 'xp_log_channel', type: 'VARCHAR(255)', description: 'XP activity logs' },
+            { column: 'xp_log_enabled', type: 'BOOLEAN', default: 'false', description: 'XP log toggle' },
+            { column: 'xp_multiplier', type: 'DECIMAL(3,2)', default: '1.0', description: 'Global XP multiplier' },
+            { column: 'excluded_role', type: 'VARCHAR(255)', description: 'Pirate King role exclusion' },
+            { column: 'created_at', type: 'TIMESTAMP', default: 'CURRENT_TIMESTAMP', description: 'Record creation' },
+            { column: 'updated_at', type: 'TIMESTAMP', default: 'CURRENT_TIMESTAMP', description: 'Record updates' }
+        ];
+        
+        for (const col of columnUpdates) {
+            try {
+                let alterQuery = `ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS ${col.column} ${col.type}`;
+                if (col.default) {
+                    alterQuery += ` DEFAULT ${col.default}`;
+                }
+                
+                await pool.query(alterQuery);
+                debugLog(`✅ Column ${col.column} verified/added (${col.description})`);
+            } catch (error) {
+                if (error.code === '42701') {
+                    debugLog(`ℹ️ Column ${col.column} already exists`);
+                } else {
+                    console.warn(`⚠️ Issue with column ${col.column}:`, error.message);
+                }
+            }
+        }
+        
+        // 3. Create user_levels table for XP tracking
         log('👥 Creating user_levels table...');
         await pool.query(`
             CREATE TABLE IF NOT EXISTS user_levels (
@@ -138,7 +178,7 @@ async function initializeDatabase() {
             )
         `);
         
-        // 3. Create daily_voice_xp table for daily caps
+        // 4. Create daily_voice_xp table for daily caps
         log('📅 Creating daily_voice_xp table...');
         await pool.query(`
             CREATE TABLE IF NOT EXISTS daily_voice_xp (
@@ -152,7 +192,7 @@ async function initializeDatabase() {
             )
         `);
         
-        // 4. Create xp_boosts table for role multipliers
+        // 5. Create xp_boosts table for role multipliers
         log('🚀 Creating xp_boosts table...');
         await pool.query(`
             CREATE TABLE IF NOT EXISTS xp_boosts (
@@ -166,20 +206,6 @@ async function initializeDatabase() {
                 UNIQUE(guild_id, role_id)
             )
         `);
-
-        // 5. Create daily_buffs table for spin wheel results
-        log('🎰 Creating daily_buffs table...');
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS daily_buffs (
-                id SERIAL PRIMARY KEY,
-                user_id VARCHAR(20) NOT NULL,
-                guild_id VARCHAR(20) NOT NULL,
-                date DATE NOT NULL,
-                tier INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, guild_id, date)
-            )
-        `);
         
         // 6. Create performance indexes
         log('⚡ Creating database indexes for performance...');
@@ -187,8 +213,7 @@ async function initializeDatabase() {
             'CREATE INDEX IF NOT EXISTS idx_user_levels_guild_xp ON user_levels(guild_id, total_xp DESC)',
             'CREATE INDEX IF NOT EXISTS idx_user_levels_guild_level ON user_levels(guild_id, level DESC)',
             'CREATE INDEX IF NOT EXISTS idx_daily_voice_xp_date ON daily_voice_xp(date)',
-            'CREATE INDEX IF NOT EXISTS idx_xp_boosts_guild_role ON xp_boosts(guild_id, role_id)',
-            'CREATE INDEX IF NOT EXISTS idx_daily_buffs_date ON daily_buffs(date)'
+            'CREATE INDEX IF NOT EXISTS idx_xp_boosts_guild_role ON xp_boosts(guild_id, role_id)'
         ];
         
         for (const indexQuery of indexes) {
@@ -200,7 +225,17 @@ async function initializeDatabase() {
             }
         }
         
-        // 7. Clean up old data (maintain performance)
+        // 7. Verify table structure
+        const tableCheck = await pool.query(`
+            SELECT table_name, column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns 
+            WHERE table_name IN ('guild_settings', 'user_levels', 'daily_voice_xp', 'xp_boosts')
+            ORDER BY table_name, ordinal_position
+        `);
+        
+        log(`📋 Database verification: ${tableCheck.rows.length} columns across 4 tables`);
+        
+        // 8. Clean up old data (maintain performance)
         try {
             const cleanupResult = await pool.query(
                 "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '7 days'"
@@ -213,97 +248,32 @@ async function initializeDatabase() {
         }
         
         log('✅ Database auto-initialization completed successfully!');
+        log('🎯 All tables, columns, and indexes are ready');
         
     } catch (error) {
         console.error('❌ Critical error in database initialization:', error);
-        throw new Error('Database initialization failed - please check connection');
-    }
-}
-
-// Initialize enhanced XP system with daily features
-async function initializeXP() {
-    try {
-        // Check if database is available first
-        if (!pool) {
-            console.error('[XP INIT] Database pool not available');
-            return;
-        }
-
-        // Test database connection
+        
+        // Emergency fallback - try to create minimal structure
         try {
-            await pool.query('SELECT NOW()');
-            console.log('[XP INIT] Database connection verified');
-        } catch (dbError) {
-            console.error('[XP INIT] Database connection failed:', dbError);
-            return;
+            log('🆘 Attempting emergency database recovery...');
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS guild_settings (
+                    guild_id VARCHAR(255) PRIMARY KEY,
+                    category_id VARCHAR(255),
+                    category_name VARCHAR(255)
+                )
+            `);
+            log('✅ Emergency database structure created');
+        } catch (emergencyError) {
+            console.error('💥 Emergency database creation failed:', emergencyError);
+            throw new Error('Database initialization completely failed - please check connection');
         }
-
-        // Initialize XP Tracker with database
-        const XPTracker = require('./src/utils/xpTracker');
-        xpTracker = new XPTracker(client, pool);
-        global.xpTracker = xpTracker;
-        console.log(`⏱️ XP Tracker initialized successfully`);
-        
-        // Initialize XP Boost Manager with database
-        const XPBoostManager = require('./src/utils/xpBoost');
-        xpBoostManager = new XPBoostManager(pool);
-        global.xpBoostManager = xpBoostManager;
-        console.log(`🚀 XP Boost Manager initialized successfully`);
-
-        // Initialize Daily Quests System
-        const DailyQuests = require('./src/utils/dailyQuests');
-        dailyQuests = new DailyQuests(pool, client);
-        global.dailyQuests = dailyQuests;
-        console.log(`📋 Daily Quests System initialized successfully`);
-        
-        // Start voice XP processing
-        setInterval(async () => {
-            if (xpTracker && xpTracker.processVoiceXP) {
-                try {
-                    await xpTracker.processVoiceXP();
-                } catch (error) {
-                    console.error('[VOICE XP] Error in processing:', error);
-                }
-            }
-        }, 60000); // Every 60 seconds
-        
-        // Daily cleanup at 3 AM EST
-        setInterval(async () => {
-            if (xpTracker && xpTracker.cleanupDailyVoiceXP) {
-                try {
-                    await xpTracker.cleanupDailyVoiceXP();
-                } catch (error) {
-                    console.error('[DAILY CLEANUP] Error:', error);
-                }
-            }
-            if (dailyQuests && dailyQuests.cleanupDailyQuests) {
-                try {
-                    await dailyQuests.cleanupDailyQuests();
-                } catch (error) {
-                    console.error('[QUEST CLEANUP] Error:', error);
-                }
-            }
-        }, 24 * 60 * 60 * 1000); // Every 24 hours
-        
-        console.log('[XP INIT] ✅ Full XP system initialization complete');
-        console.log('[XP INIT] - Voice XP processing: Every 60 seconds');
-        console.log('[XP INIT] - Daily cleanup: Every 24 hours');
-        console.log('[XP INIT] - Daily quests: Active with 3 AM EST reset');
-        console.log('[XP INIT] - Daily buffs: Active with spin wheel system');
-        
-    } catch (error) {
-        console.error('⚠️ XP System initialization failed:', error.message);
-        console.log('🚢 Bot will run with limited XP functionality');
-        
-        // Set globals to null so other parts know XP system isn't available
-        global.xpTracker = null;
-        global.xpBoostManager = null;
-        global.dailyQuests = null;
     }
 }
 
 async function getCategoryForGuild(guildId) {
     try {
+        // Enhanced error handling for missing columns
         const result = await pool.query(`
             SELECT category_id, category_name 
             FROM guild_settings 
@@ -318,8 +288,23 @@ async function getCategoryForGuild(guildId) {
         }
         return null;
     } catch (error) {
-        console.error('❌ Error getting category from database:', error);
-        return null;
+        if (error.code === '42703') { // Column does not exist
+            console.warn('⚠️ Database column missing - auto-fixing...');
+            try {
+                // Auto-fix missing columns
+                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_id VARCHAR(255)');
+                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_name VARCHAR(255)');
+                log('✅ Auto-fixed missing database columns');
+                // Retry the query
+                return await getCategoryForGuild(guildId);
+            } catch (fixError) {
+                console.error('❌ Could not auto-fix database:', fixError);
+                return null;
+            }
+        } else {
+            console.error('❌ Error getting category from database:', error);
+            return null;
+        }
     }
 }
 
@@ -336,10 +321,26 @@ async function updateCategoryForGuild(guildId, categoryId, categoryName) {
         `, [guildId, categoryId, categoryName]);
         debugLog(`📝 Updated category for guild ${guildId}: ${categoryName} (${categoryId})`);
     } catch (error) {
-        console.error('❌ Error updating category in database:', error);
+        if (error.code === '42703') { // Column does not exist
+            console.warn('⚠️ Database column missing during update - auto-fixing...');
+            try {
+                // Auto-fix and retry
+                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_id VARCHAR(255)');
+                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_name VARCHAR(255)');
+                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+                log('✅ Auto-fixed missing database columns during update');
+                // Retry the update
+                return await updateCategoryForGuild(guildId, categoryId, categoryName);
+            } catch (fixError) {
+                console.error('❌ Could not auto-fix database during update:', fixError);
+            }
+        } else {
+            console.error('❌ Error updating category in database:', error);
+        }
     }
 }
 
+// Remove ALL audio-related code - Marine Intelligence doesn't use audio
 // Function to sync channel permissions with category
 async function syncChannelWithCategory(channel, category, creatorId) {
     try {
@@ -433,12 +434,80 @@ async function registerSlashCommands(clientId, token) {
     }
 }
 
+// Initialize XP system - FIXED VERSION
+async function initializeXP() {
+    try {
+        // Check if database is available first
+        if (!pool) {
+            console.error('[XP INIT] Database pool not available');
+            return;
+        }
+
+        // Test database connection
+        try {
+            await pool.query('SELECT NOW()');
+            console.log('[XP INIT] Database connection verified');
+        } catch (dbError) {
+            console.error('[XP INIT] Database connection failed:', dbError);
+            return;
+        }
+
+        // Initialize XP Tracker with database
+        const XPTracker = require('./src/utils/xpTracker');
+        xpTracker = new XPTracker(client, pool);
+        global.xpTracker = xpTracker;
+        console.log(`⏱️ XP Tracker initialized successfully`);
+        
+        // Initialize XP Boost Manager with database
+        const XPBoostManager = require('./src/utils/xpBoost');
+        xpBoostManager = new XPBoostManager(pool);
+        global.xpBoostManager = xpBoostManager;
+        console.log(`🚀 XP Boost Manager initialized successfully`);
+        
+        // Start voice XP processing - Fixed async issue
+        setInterval(async () => {
+            if (xpTracker && xpTracker.processVoiceXP) {
+                try {
+                    await xpTracker.processVoiceXP();
+                } catch (error) {
+                    console.error('[VOICE XP] Error in processing:', error);
+                }
+            }
+        }, 60000); // Every 60 seconds
+        
+        // Daily cleanup - Fixed async issue
+        setInterval(async () => {
+            if (xpTracker && xpTracker.cleanupDailyVoiceXP) {
+                try {
+                    await xpTracker.cleanupDailyVoiceXP();
+                } catch (error) {
+                    console.error('[DAILY CLEANUP] Error:', error);
+                }
+            }
+        }, 24 * 60 * 60 * 1000); // Every 24 hours
+        
+        console.log('[XP INIT] ✅ Full XP system initialization complete');
+        console.log('[XP INIT] - Voice XP processing: Every 60 seconds');
+        console.log('[XP INIT] - Daily cleanup: Every 24 hours');
+        console.log('[XP INIT] - 3 AM EST reset: Automatic scheduling active');
+        
+    } catch (error) {
+        console.error('⚠️ XP System initialization failed:', error.message);
+        console.log('🚢 Bot will run with limited XP functionality');
+        
+        // Set globals to null so other parts know XP system isn't available
+        global.xpTracker = null;
+        global.xpBoostManager = null;
+    }
+}
+
 // Bot ready event
 client.once('ready', async () => {
     log(`Marine Intelligence Bot is ready for surveillance!`);
     log(`⚓ Logged in as ${client.user.tag}`);
     log(`🏴‍☠️ Monitoring ${client.guilds.cache.size} server(s) for criminal activity`);
     
+    // Remove all audio-related logging since this isn't an audio bot
     if (CATEGORY_ID) {
         log(`🎯 Using direct category ID: ${CATEGORY_ID}`);
     } else {
@@ -459,8 +528,6 @@ client.once('ready', async () => {
         log('🗄️ Database connection test successful!');
         log('⚓ Marine Intelligence System fully operational!');
         log('🎯 Ready to track criminal bounties and XP!');
-        log('🎰 Daily buff system active!');
-        log('📋 Daily quest system active!');
         
     } catch (error) {
         console.error('❌ Initialization failed:', error);
@@ -479,12 +546,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         // Handle voice time tracking with XP system
         if (xpTracker && xpTracker.handleVoiceStateUpdate) {
             await xpTracker.handleVoiceStateUpdate(oldState, newState);
-        }
-
-        // Update quest progress for voice activities
-        if (dailyQuests && newState.channelId && !oldState.channelId) {
-            // User joined voice - update voice_sessions quest
-            await dailyQuests.updateQuestProgress(userId, guildId, 'voice_sessions', 1);
         }
 
         // Dynamic Voice Channel Creation
@@ -562,6 +623,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 if (member.voice.channelId) {
                     await member.voice.setChannel(newChannel);
                     debugLog(`✅ Successfully moved ${member.displayName} to ${crewName}`);
+                    
+                    // Marine Intelligence doesn't use audio - remove welcome sound
+                    
                 } else {
                     debugLog(`User ${member.displayName} disconnected before move, cleaning up channel`);
                     setTimeout(async () => {
@@ -603,6 +667,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 
                 debugLog(`🕐 Scheduling deletion of empty crew: ${oldChannel.name} in ${DELETE_DELAY}ms`);
                 
+                // Marine Intelligence doesn't use voice connections - remove audio cleanup
+                
                 setTimeout(async () => {
                     try {
                         const channelToDelete = oldChannel.guild.channels.cache.get(oldChannel.id);
@@ -624,51 +690,32 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// Enhanced slash command handler with daily systems
+// Handle category moves
+client.on('channelUpdate', async (oldChannel, newChannel) => {
+    try {
+        if (newChannel.type === ChannelType.GuildCategory) {
+            const guildId = newChannel.guild.id;
+            const savedCategory = await getCategoryForGuild(guildId);
+            
+            if (savedCategory && savedCategory.categoryId === newChannel.id) {
+                if (savedCategory.categoryName !== newChannel.name) {
+                    await updateCategoryForGuild(guildId, newChannel.id, newChannel.name);
+                    log(`📁 Category renamed and synced: ${savedCategory.categoryName} → ${newChannel.name}`);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error handling category update:', error);
+    }
+});
+
+// Slash command handler
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
+    if (!interaction.isChatInputCommand()) return;
+
+    const { commandName } = interaction;
 
     try {
-        // Handle button interactions for daily systems
-        if (interaction.isButton()) {
-            if (interaction.customId.startsWith('daily_buff_spin_')) {
-                const dailyBuffCommand = require('./src/commands/daily-buff');
-                if (dailyBuffCommand.handleSpinInteraction) {
-                    await dailyBuffCommand.handleSpinInteraction(interaction);
-                }
-                return;
-            }
-            
-            // Handle other button interactions (leaderboard, admin, etc.)
-            if (interaction.customId.startsWith('leaderboard_')) {
-                const leaderboardCommand = require('./src/commands/leaderboard');
-                if (leaderboardCommand.handleButtonInteraction) {
-                    await leaderboardCommand.handleButtonInteraction(interaction, xpTracker);
-                }
-                return;
-            }
-            
-            if (['cleanup_inactive', 'optimize_db', 'backup_stats'].includes(interaction.customId)) {
-                const adminCommand = require('./src/commands/admin');
-                if (adminCommand.handleMaintenanceButtons) {
-                    await adminCommand.handleMaintenanceButtons(interaction, pool);
-                }
-                return;
-            }
-            
-            if (['nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
-                const adminCommand = require('./src/commands/admin');
-                if (adminCommand.handleNuclearButtons) {
-                    await adminCommand.handleNuclearButtons(interaction, pool);
-                }
-                return;
-            }
-            return;
-        }
-
-        // Handle slash commands
-        const { commandName } = interaction;
-        
         // Try to load command from file
         const commandsPath = path.join(__dirname, 'src', 'commands');
         const commandFile = path.join(commandsPath, `${commandName}.js`);
@@ -699,7 +746,44 @@ client.on('interactionCreate', async (interaction) => {
 📡 Bot Latency: \`${ping}ms\`
 💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
 ⚓ Ready to set sail!`);
-        } else {
+        }
+        else if (commandName === 'check-voice-time') {
+            const targetUser = interaction.options.getUser('user') || interaction.user;
+            
+            if (!xpTracker) {
+                return await interaction.reply({
+                    content: '❌ XP Tracker not initialized.',
+                    ephemeral: true
+                });
+            }
+            
+            const userStats = await xpTracker.getUserStats(targetUser.id, interaction.guild.id);
+            
+            if (!userStats) {
+                return await interaction.reply({
+                    content: `📊 ${targetUser.displayName} has no XP data in this server.`,
+                    ephemeral: true
+                });
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('🎤 Voice Time & XP Statistics')
+                .setThumbnail(targetUser.displayAvatarURL())
+                .addFields(
+                    { name: '👤 User', value: targetUser.displayName, inline: true },
+                    { name: '⚡ Total XP', value: `${userStats.total_xp.toLocaleString()} XP`, inline: true },
+                    { name: '🎯 Level', value: `${userStats.level}`, inline: true },
+                    { name: '📨 Messages', value: `${userStats.messages}`, inline: true },
+                    { name: '👍 Reactions', value: `${userStats.reactions}`, inline: true },
+                    { name: '🎤 Voice Time', value: `${userStats.voice_time} minutes`, inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'One Piece XP System' });
+
+            await interaction.reply({ embeds: [embed] });
+        }
+        else {
             await interaction.reply({
                 content: '❌ Command not found or not implemented yet.',
                 ephemeral: true
@@ -707,42 +791,29 @@ client.on('interactionCreate', async (interaction) => {
         }
 
     } catch (error) {
-        console.error('❌ Error handling interaction:', error);
+        console.error('❌ Error handling slash command:', error);
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({
-                content: '❌ An error occurred while processing this interaction.',
+                content: '❌ An error occurred while processing this command.',
                 ephemeral: true
             }).catch(console.error);
         }
     }
 });
 
-// Enhanced message XP handling with quest progress
+// Message XP handling
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
     
-    const userId = message.author.id;
-    const guildId = message.guild.id;
-    
     // Handle XP for messages
     if (xpTracker && xpTracker.isOnCooldown && xpTracker.setCooldown && xpTracker.awardXP) {
-        const cooldownKey = `${guildId}:${userId}:message`;
+        const cooldownKey = `${message.guild.id}:${message.author.id}:message`;
         const cooldown = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
         
         if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
             xpTracker.setCooldown(cooldownKey);
-            await xpTracker.awardXP(userId, guildId, null, 'message', message.author);
+            await xpTracker.awardXP(message.author.id, message.guild.id, null, 'message', message.author);
         }
-    }
-
-    // Update quest progress for messages
-    if (dailyQuests) {
-        await dailyQuests.updateQuestProgress(userId, guildId, 'messages', 1);
-        await dailyQuests.updateQuestProgress(userId, guildId, 'channel_explorer', 1, { channelId: message.channel.id });
-        await dailyQuests.updateQuestProgress(userId, guildId, 'social_butterfly', 1, { channelId: message.channel.id });
-        await dailyQuests.updateQuestProgress(userId, guildId, 'early_bird', 1);
-        await dailyQuests.updateQuestProgress(userId, guildId, 'night_owl', 1);
-        await dailyQuests.updateQuestProgress(userId, guildId, 'streak_keeper', 1);
     }
     
     // Legacy commands
@@ -755,7 +826,7 @@ client.on('messageCreate', async (message) => {
     }
     
     if (message.content === '!help') {
-        message.reply(`🏴‍☠️ **Marine Intelligence Commands - Enhanced Bounty Tracking System**
+        message.reply(`🏴‍☠️ **Marine Intelligence Commands - Bounty Tracking System**
 
 **📊 XP & Bounty Commands:**
 \`/level [@user]\` - Check criminal bounty level and wanted poster
@@ -763,62 +834,94 @@ client.on('messageCreate', async (message) => {
 \`/settings\` - Configure bounty tracking settings (Admin only)
 \`/admin\` - Marine command center operations (Admin only)
 
-**🎰 Daily Systems:**
-\`/daily-buff\` - Spin for daily XP buffs (Tier 1-3 multipliers & caps)
-\`/daily-quest\` - View daily missions for bonus XP and Tier 2 cap
-
 **🚢 Dynamic Voice Channels:**
 1. Join "${CREATE_CHANNEL_NAME}" voice channel
 2. Bot creates a new crew with One Piece themed name
 3. You become the captain with full channel permissions
-4. **Earn XP automatically while in voice channels!**
+4. **Earn XP automatically while in voice channels for criminal activity!**
 5. Empty crews are automatically deleted after ${DELETE_DELAY/1000} seconds
 
-**⚡ Enhanced XP System:**
+**⚡ Criminal Activity Tracking (XP System):**
 • **Message XP**: ${process.env.MESSAGE_XP_MIN || 25}-${process.env.MESSAGE_XP_MAX || 35} per message
 • **Voice XP**: ${process.env.VOICE_XP_MIN || 45}-${process.env.VOICE_XP_MAX || 55} per minute
 • **Reaction XP**: ${process.env.REACTION_XP_MIN || 25}-${process.env.REACTION_XP_MAX || 35} per reaction
-• **Daily XP Caps**: Default ${process.env.DAILY_VOICE_XP_CAP_DEFAULT || 1500} | Tier 1: ${process.env.DAILY_VOICE_XP_CAP_TIER_1 || 2000} | Tier 2: ${process.env.DAILY_VOICE_XP_CAP_TIER_2 || 3000} | Tier 3: ${process.env.DAILY_VOICE_XP_CAP_TIER_3 || 5000}
-• **XP Multipliers**: Tier 1: ${process.env.DAILY_XP_BUFF_TIER_1 || 1.25}x | Tier 2: ${process.env.DAILY_XP_BUFF_TIER_2 || 1.5}x | Tier 3: ${process.env.DAILY_XP_BUFF_TIER_3 || 2.0}x
-• **Daily Reset**: 3:00 AM EST for all daily systems
+• **Daily Voice Cap**: ${process.env.DAILY_VOICE_XP_CAP || 1500} XP (resets at 3 AM EST)
+• **Bounty System**: Automatic bounty increases with level
+• **Role Rewards**: Unlock new roles at milestone levels
 
-**🎯 Daily Features:**
-• **Spin Wheel**: Daily luck-based XP buffs with role rewards
-• **Quest System**: 4-5 daily missions based on Discord activity
-• **Tier Rewards**: Complete all quests for Tier 2 XP cap bonus
-• **Auto-posting**: Quest completions announced in quest channel
+**🎯 Marine Intelligence Features:**
+• Dynamic voice channel creation with One Piece themed names
+• **Advanced criminal activity tracking with multiple sources**
+• **Marine Intelligence logging system**
+• Captain permissions for channel creators
+• Automatic cleanup of empty channels
+• **Comprehensive slash commands for bounty management**
+• **Wanted poster generation for level-ups**
+• **Bounty tracking and criminal surveillance**
+• **3 AM EST daily reset for voice XP caps**
 
 **💡 Use slash commands (/) for the best experience!**
-**⚡ All activity is tracked for Marine Intelligence and daily quests!**
-**🎰 Daily buffs and quests reset at 3:00 AM EST!**`);
+**⚡ All criminal activity is logged for Marine Intelligence!**
+**🏴‍☠️ Increase your bounty by being active in the server!**
+**🕒 Voice XP caps reset at 3:00 AM EST daily!**`);
     }
 });
 
-// Enhanced reaction XP handling with quest progress
+// Reaction XP handling
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot || !reaction.message.guild) return;
     
-    const userId = user.id;
-    const guildId = reaction.message.guild.id;
-    
-    // Handle XP for reactions
     if (xpTracker && xpTracker.isOnCooldown && xpTracker.setCooldown && xpTracker.awardXP) {
-        const cooldownKey = `${guildId}:${userId}:reaction`;
+        const cooldownKey = `${reaction.message.guild.id}:${user.id}:reaction`;
         const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
         
         if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
             xpTracker.setCooldown(cooldownKey);
-            await xpTracker.awardXP(userId, guildId, null, 'reaction', user);
+            await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
         }
     }
+});
 
-    // Update quest progress for reactions
-    if (dailyQuests) {
-        await dailyQuests.updateQuestProgress(userId, guildId, 'reactions', 1);
-        await dailyQuests.updateQuestProgress(userId, guildId, 'reaction_collector', 1);
-        await dailyQuests.updateQuestProgress(userId, guildId, 'early_bird', 1);
-        await dailyQuests.updateQuestProgress(userId, guildId, 'night_owl', 1);
-        await dailyQuests.updateQuestProgress(userId, guildId, 'streak_keeper', 1);
+// Button interaction handler for leaderboard
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    
+    try {
+        // Handle leaderboard button interactions
+        if (interaction.customId.startsWith('leaderboard_')) {
+            const leaderboardCommand = require('./src/commands/leaderboard');
+            if (leaderboardCommand.handleButtonInteraction) {
+                await leaderboardCommand.handleButtonInteraction(interaction, xpTracker);
+            }
+            return;
+        }
+        
+        // Handle admin maintenance/nuclear buttons
+        if (['cleanup_inactive', 'optimize_db', 'backup_stats'].includes(interaction.customId)) {
+            const adminCommand = require('./src/commands/admin');
+            if (adminCommand.handleMaintenanceButtons) {
+                await adminCommand.handleMaintenanceButtons(interaction, pool);
+            }
+            return;
+        }
+        
+        if (['nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
+            const adminCommand = require('./src/commands/admin');
+            if (adminCommand.handleNuclearButtons) {
+                await adminCommand.handleNuclearButtons(interaction, pool);
+            }
+            return;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error handling button interaction:', error);
+        
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                content: '❌ An error occurred while processing this button.',
+                ephemeral: true
+            }).catch(console.error);
+        }
     }
 });
 
@@ -852,6 +955,18 @@ async function gracefulShutdown() {
             await xpTracker.cleanup();
         }
         
+        // Clean up voice connections
+        log(`🔌 Cleaning up ${activeConnections.size} voice connections...`);
+        activeConnections.forEach((connection, key) => {
+            try {
+                connection.destroy();
+                debugLog(`🔌 Destroyed connection for ${key}`);
+            } catch (error) {
+                // Ignore errors during shutdown
+            }
+        });
+        activeConnections.clear();
+        
         // Close database connection
         log('🗄️ Closing database connection...');
         if (pool) {
@@ -874,16 +989,13 @@ setInterval(() => {
     if (DEBUG) {
         const activeSessions = xpTracker && xpTracker.voiceSessions ? 
             Object.keys(xpTracker.voiceSessions).length : 0;
-        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, Uptime: ${Math.floor(process.uptime()/60)}m`);
+        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, Audio Connections: ${activeConnections.size}, Uptime: ${Math.floor(process.uptime()/60)}m`);
     }
 }, 300000); // Log every 5 minutes in debug mode
 
-// Export for use in other modules
-module.exports = { client, pool };
-
 // Start the bot
 async function startBot() {
-    log('🚀 Starting Enhanced Marine Intelligence System...');
+    log('🚀 Starting Marine Intelligence Surveillance System...');
     log(`🔑 Discord Token: ${DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
     log(`🆔 Client ID: ${CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
     log(`🗄️ Database URL: ${process.env.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
@@ -911,4 +1023,8 @@ async function startBot() {
     }
 }
 
+// Export for use in other modules
+module.exports = { client, pool };
+
+// Start the bot
 startBot();
