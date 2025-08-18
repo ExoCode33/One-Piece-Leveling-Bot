@@ -4,10 +4,10 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation Configuration
 const ANIMATION_CONFIG = {
-    RAINBOW_DELAY: 350,  // Slower for API lag
-    WAVE_FRAMES: 12,
-    REVEAL_FRAMES: 12,   // Enough frames to reach all corners (max distance is ~10)
-    FINAL_PAUSE: 800
+    RAINBOW_DELAY: 300,  // Faster for better sync
+    WAVE_FRAMES: 15,     // More frames for smoother waves
+    REVEAL_FRAMES: 14,   // Exact frames needed to reach corners (max distance from center)
+    FINAL_PAUSE: 600
 };
 
 class BuffAnimator {
@@ -50,7 +50,7 @@ class BuffAnimator {
         const centerY = Math.floor(height / 2);
         const rainbowColors = this.getRainbowColors();
         
-        // Create multiple wave layers for fluid effect
+        // Create multiple wave layers for ultra-fluid effect
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
@@ -58,20 +58,26 @@ class BuffAnimator {
                 // Primary wave
                 const primaryWave = frame - distance;
                 
-                // Secondary wave (offset)
-                const secondaryWave = frame - distance - 2;
+                // Secondary wave (offset by 1)
+                const secondaryWave = frame - distance - 1;
                 
-                // Tertiary wave (further offset)
-                const tertiaryWave = frame - distance - 4;
+                // Tertiary wave (offset by 2)
+                const tertiaryWave = frame - distance - 2;
+                
+                // Quaternary wave (offset by 3)
+                const quaternaryWave = frame - distance - 3;
                 
                 if (primaryWave >= 0) {
-                    const colorIndex = (distance + frame * 2) % rainbowColors.length;
+                    const colorIndex = (distance + frame * 3) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
                 } else if (secondaryWave >= 0) {
-                    const colorIndex = (distance + frame * 2 + 1) % rainbowColors.length;
+                    const colorIndex = (distance + frame * 3 + 1) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
                 } else if (tertiaryWave >= 0) {
-                    const colorIndex = (distance + frame * 2 + 2) % rainbowColors.length;
+                    const colorIndex = (distance + frame * 3 + 2) % rainbowColors.length;
+                    grid[row][col] = rainbowColors[colorIndex];
+                } else if (quaternaryWave >= 0) {
+                    const colorIndex = (distance + frame * 3 + 3) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
                 }
             }
@@ -81,10 +87,10 @@ class BuffAnimator {
     }
 
     static createSquareRevealFrame(frame, tier, width = 20, height = 10) {
-        // Start with the LAST wave frame instead of black grid
+        // Start with the LAST wave frame for seamless transition
         const grid = this.createFluidWaveFrame(ANIMATION_CONFIG.WAVE_FRAMES, tier, width, height);
-        const centerX = Math.floor(width / 2);
-        const centerY = Math.floor(height / 2);
+        const centerX = Math.floor(width / 2);  // Center X = 10 (for 0-19 width)
+        const centerY = Math.floor(height / 2); // Center Y = 5 (for 0-9 height)
         const tierColor = this.getTierColor(tier);
         const rainbowColors = this.getRainbowColors();
         
@@ -99,8 +105,8 @@ class BuffAnimator {
                     // Revealed area shows tier color permanently
                     grid[row][col] = tierColor;
                 } else if (distance === revealRadius + 1) {
-                    // Active border shows rainbow effect
-                    const colorIndex = (distance + frame) % rainbowColors.length;
+                    // Active border shows rainbow effect with faster cycling
+                    const colorIndex = (distance + frame * 2) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
                 }
                 // Keep existing wave colors for unrevealed areas
@@ -155,7 +161,7 @@ class BuffAnimator {
                 `**Scanning enhancement possibilities...**\n\n${this.gridToString(grid)}\n\n**Wave analysis in progress...**`
             )
             .setColor(color)
-            .setFooter({ text: `Matrix scan progress: ${Math.min(100, Math.round((frame / 12) * 100))}%` })
+            .setFooter({ text: `Matrix scan progress: ${Math.min(100, Math.round((frame / 15) * 100))}%` })
             .setTimestamp();
         
         return embed;
@@ -171,7 +177,7 @@ class BuffAnimator {
                 `**Square formation expanding...**\n\n${this.gridToString(grid)}\n\n**Enhancement pattern locked in...**`
             )
             .setColor(color)
-            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 12) * 100))}%` })
+            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 14) * 100))}%` })
             .setTimestamp();
         
         return embed;
