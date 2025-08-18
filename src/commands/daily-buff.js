@@ -31,12 +31,12 @@ const TIER_EMOJIS = {
 
 // Generic tier names
 const TIER_NAMES = {
-    1: 'Uncommon Buff',
+    1: 'Common Buff',
     2: 'Rare Buff',
     3: 'Epic Buff',
     4: 'Legendary Buff',
     5: 'Mythical Buff',
-    6: 'Divine Buff'
+    6: 'Supreme Buff'
 };
 
 class WheelAnimator {
@@ -121,7 +121,7 @@ class WheelAnimator {
     static createResultFrame(tier, tierInfo) {
         const embed = new EmbedBuilder()
             .setColor(tierInfo.color)
-            .setTitle('DAILY BUFF WHEEL')
+            .setTitle('🎰 DAILY BUFF WHEEL')
             .setDescription(`**🎉 DAILY BUFF ACTIVATED! 🎉**`)
             .addFields(
                 {
