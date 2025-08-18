@@ -433,4 +433,303 @@ async function logXPActivity(xpTracker, type, user, guildId, xpGain, additionalI
             case 'message':
                 embed
                     .setAuthor({ 
-                        name: '🔴 MARINE INTELLIGENCE
+                        name: '🔴 MARINE INTELLIGENCE BUREAU',
+                        iconURL: user.displayAvatarURL({ size: 32 })
+                    })
+                    .setTitle('🔴 MESSAGE ACTIVITY DETECTED')
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n- THREAT STATUS: ACTIVE\n\`\`\``);
+                break;
+
+            case 'reaction':
+                embed
+                    .setAuthor({ 
+                        name: '🔴 MARINE INTELLIGENCE BUREAU',
+                        iconURL: user.displayAvatarURL({ size: 32 })
+                    })
+                    .setTitle('🔴 REACTION ACTIVITY DETECTED')
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n- THREAT STATUS: ACTIVE\n\`\`\``);
+                break;
+
+            case 'voice':
+            case 'voice_silent':
+                embed
+                    .setAuthor({ 
+                        name: '🔴 MARINE INTELLIGENCE BUREAU',
+                        iconURL: user.displayAvatarURL({ size: 32 })
+                    })
+                    .setTitle('🔴 VOICE ACTIVITY DETECTED')
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}${dailyCapInfo}\n- THREAT STATUS: ACTIVE\n\`\`\``);
+                break;
+
+            case 'levelup':
+                embed
+                    .setAuthor({ 
+                        name: '🔴 MARINE INTELLIGENCE BUREAU',
+                        iconURL: user.displayAvatarURL({ size: 32 })
+                    })
+                    .setTitle('🔴 ⚠️ THREAT LEVEL INCREASED ⚠️')
+                    .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- LEVEL: ${formatLevel(additionalInfo.oldLevel)} → ${formatLevel(additionalInfo.newLevel)}\n- TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n- XP SOURCE: ${additionalInfo.xpSource || 'UNKNOWN'}\n- THREAT STATUS: ESCALATED\n${additionalInfo.roleReward ? `- ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\`\`\``);
+                break;
+
+            case 'admin':
+                embed
+                    .setAuthor({ 
+                        name: '🔴 MARINE COMMAND CENTER',
+                        iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
+                    })
+                    .setTitle('🔴 MANUAL XP ADJUSTMENT')
+                    .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username} (${user.id})\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason'}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- NEW LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n- AUTHORIZATION: CONFIRMED\n\`\`\``);
+                break;
+        }
+
+        await channel.send({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('[XP LOG] Failed to send XP log:', error);
+    }
+}
+
+// Utility functions
+function getRandomXP(type) {
+    let min, max;
+    
+    switch (type) {
+        case 'message':
+            min = parseInt(process.env.MESSAGE_XP_MIN) || 25;
+            max = parseInt(process.env.MESSAGE_XP_MAX) || 35;
+            break;
+        case 'voice':
+            min = parseInt(process.env.VOICE_XP_MIN) || 45;
+            max = parseInt(process.env.VOICE_XP_MAX) || 55;
+            break;
+        case 'reaction':
+            min = parseInt(process.env.REACTION_XP_MIN) || 25;
+            max = parseInt(process.env.REACTION_XP_MAX) || 35;
+            break;
+        default:
+            min = 25;
+            max = 35;
+    }
+    
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function calculateLevel(totalXP) {
+    const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+    const curve = process.env.FORMULA_CURVE || 'exponential';
+    const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+    const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+    
+    const earlyLevelPenalty = parseFloat(process.env.EARLY_LEVEL_PENALTY) || 1.0;
+    const earlyLevelThreshold = parseInt(process.env.EARLY_LEVEL_THRESHOLD) || 0;
+
+    for (let level = 1; level <= maxLevel; level++) {
+        let requiredXP;
+        
+        if (curve === 'exponential') {
+            requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
+        } else if (curve === 'linear') {
+            requiredXP = baseXP * level * multiplier;
+        } else if (curve === 'logarithmic') {
+            requiredXP = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+        } else {
+            requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
+        }
+        
+        if (level <= earlyLevelThreshold && earlyLevelPenalty > 1.0) {
+            const penaltyStrength = 1 + ((earlyLevelPenalty - 1) * (earlyLevelThreshold - level + 1) / earlyLevelThreshold);
+            requiredXP = Math.floor(requiredXP * penaltyStrength);
+        }
+
+        if (totalXP < requiredXP) {
+            return level - 1;
+        }
+    }
+
+    return maxLevel;
+}
+
+function getXPForLevel(level) {
+    const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+    const curve = process.env.FORMULA_CURVE || 'exponential';
+    const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+    
+    const earlyLevelPenalty = parseFloat(process.env.EARLY_LEVEL_PENALTY) || 1.0;
+    const earlyLevelThreshold = parseInt(process.env.EARLY_LEVEL_THRESHOLD) || 0;
+    
+    let xpRequired;
+    
+    if (curve === 'exponential') {
+        xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
+    } else if (curve === 'linear') {
+        xpRequired = baseXP * level * multiplier;
+    } else if (curve === 'logarithmic') {
+        xpRequired = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+    } else {
+        xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
+    }
+    
+    if (level <= earlyLevelThreshold && earlyLevelPenalty > 1.0) {
+        const penaltyStrength = 1 + ((earlyLevelPenalty - 1) * (earlyLevelThreshold - level + 1) / earlyLevelThreshold);
+        const originalXP = xpRequired;
+        xpRequired = Math.floor(xpRequired * penaltyStrength);
+    }
+    
+    return xpRequired;
+}
+
+async function createWantedPoster(userData, guild) {
+    const { createCanvas, loadImage } = require('canvas');
+    const path = require('path');
+    
+    const width = 600, height = 900;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    try {
+        const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+        ctx.drawImage(scrollTexture, 0, 0, width, height);
+    } catch (error) {
+        ctx.fillStyle = '#f5e6c5';
+        ctx.fillRect(0, 0, width, height);
+    }
+    
+    // Borders
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(0, 0, width, height);
+    
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, width - 20, height - 20);
+    
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(18, 18, width - 36, height - 36);
+
+    // WANTED title
+    ctx.fillStyle = '#111';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '81px Arial, sans-serif';
+    const wantedY = height * (1 - 92/100);
+    const wantedX = (50/100) * width;
+    ctx.fillText('WANTED', wantedX, wantedY);
+
+    // Image Box
+    const photoSize = (95/100) * 400;
+    const photoX = ((50/100) * width) - (photoSize/2);
+    const photoY = height * (1 - 65/100) - (photoSize/2);
+    
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(photoX, photoY, photoSize, photoSize);
+
+    const member = userData.member;
+    const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
+    if (member) {
+        try {
+            const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
+            const avatar = await loadImage(avatarURL);
+            
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            ctx.clip();
+            
+            ctx.filter = 'contrast(0.95) sepia(0.05)';
+            ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+            ctx.filter = 'none';
+            
+            ctx.restore();
+        } catch {
+            // No avatar, texture shows through
+        }
+    }
+
+    // DEAD OR ALIVE
+    ctx.fillStyle = '#111';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '57px Arial, sans-serif';
+    const deadOrAliveY = height * (1 - 39/100);
+    const deadOrAliveX = (50/100) * width;
+    ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
+
+    // Name
+    ctx.font = '69px Arial, sans-serif';
+    let displayName = 'UNKNOWN PIRATE';
+    if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+    else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
+    
+    ctx.textAlign = 'center';
+    let nameWidth = ctx.measureText(displayName).width;
+    if (nameWidth > width - 60) {
+        ctx.font = '55px Arial, sans-serif';
+    }
+    
+    const nameY = height * (1 - 30/100);
+    const nameX = (50/100) * width;
+    ctx.fillText(displayName, nameX, nameY);
+
+    // Bounty
+    const { getBountyForLevel } = require('./bountySystem');
+    const bountyAmount = getBountyForLevel(userData.level);
+    const bountyStr = bountyAmount.toLocaleString();
+    
+    ctx.font = '54px serif';
+    const bountyTextWidth = ctx.measureText(bountyStr).width;
+    
+    const berrySize = (32/100) * 150;
+    const gapPixels = (5/100) * width;
+    const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+    const bountyUnitStartX = (width - totalBountyWidth) / 2;
+    
+    const berryX = bountyUnitStartX + (berrySize/2);
+    const berryY = height * (1 - 22/100) - (berrySize/2);
+    
+    // Simple berry symbol
+    const berryCanvas = createCanvas(berrySize, berrySize);
+    const berryCtx = berryCanvas.getContext('2d');
+    berryCtx.fillStyle = '#111';
+    berryCtx.font = `bold ${berrySize}px serif`;
+    berryCtx.textAlign = 'center';
+    berryCtx.textBaseline = 'middle';
+    berryCtx.fillText('฿', berrySize/2, berrySize/2);
+    
+    ctx.drawImage(berryCanvas, berryX - (berrySize/2), berryY, berrySize, berrySize);
+
+    const bountyX = bountyUnitStartX + berrySize + gapPixels;
+    const bountyY = height * (1 - 22/100);
+    
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#111';
+    ctx.fillText(bountyStr, bountyX, bountyY);
+
+    // MARINE text
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.font = '24px serif';
+    ctx.fillStyle = '#111';
+    
+    const marineText = 'M A R I N E';
+    const marineX = (96/100) * width;
+    const marineY = height * (1 - 2/100);
+    ctx.fillText(marineText, marineX, marineY);
+
+    return canvas;
+}
+
+module.exports = {
+    awardXP,
+    handleLevelUp,
+    sendMarineLevelUpNotification,
+    createMarineLevelUpEmbed,
+    awardLevelRoles,
+    logXPActivity,
+    getRandomXP,
+    calculateLevel,
+    getXPForLevel,
+    createWantedPoster
+};
