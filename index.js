@@ -340,120 +340,7 @@ async function updateCategoryForGuild(guildId, categoryId, categoryName) {
     }
 }
 
-// Function to play welcome sound with error handling - Made optional
-async function playWelcomeSound(channel) {
-    try {
-        // Check if audio file exists and audio is enabled
-        if (!fs.existsSync(WELCOME_SOUND)) {
-            debugLog(`🎵 Welcome sound file not found, skipping audio: ${WELCOME_SOUND}`);
-            return;
-        }
-
-        // Check if audio is disabled
-        if (process.env.DISABLE_AUDIO === 'true') {
-            debugLog('🎵 Audio disabled by configuration');
-            return;
-        }
-
-        log(`🎵 Joining ${channel.name} for welcome sound...`);
-        const connection = joinVoiceChannel({
-            channelId: channel.id,
-            guildId: channel.guild.id,
-            adapterCreator: channel.guild.voiceAdapterCreator,
-        });
-
-        activeConnections.set(channel.id, connection);
-
-        const playAudio = () => {
-            try {
-                const player = createAudioPlayer();
-                let resource;
-                
-                try {
-                    resource = createAudioResource(WELCOME_SOUND, { 
-                        inlineVolume: true,
-                        inputType: 'arbitrary'
-                    });
-                } catch (ffmpegError) {
-                    console.warn(`⚠️ FFmpeg issue, trying alternative:`, ffmpegError.message);
-                    try {
-                        resource = createAudioResource(WELCOME_SOUND);
-                    } catch (fallbackError) {
-                        console.error(`❌ Audio creation failed:`, fallbackError);
-                        connection.destroy();
-                        activeConnections.delete(channel.id);
-                        return;
-                    }
-                }
-                
-                if (resource.volume) {
-                    resource.volume.setVolume(AUDIO_VOLUME);
-                }
-
-                player.play(resource);
-                connection.subscribe(player);
-                log(`🎵 ✅ Playing welcome sound in ${channel.name}!`);
-
-                player.on(AudioPlayerStatus.Idle, () => {
-                    log(`🎵 Welcome sound finished, leaving ${channel.name}`);
-                    if (activeConnections.has(channel.id)) {
-                        const conn = activeConnections.get(channel.id);
-                        conn.destroy();
-                        activeConnections.delete(channel.id);
-                    }
-                });
-
-                player.on('error', error => {
-                    console.error(`❌ Audio error in ${channel.name}:`, error);
-                    if (activeConnections.has(channel.id)) {
-                        const conn = activeConnections.get(channel.id);
-                        conn.destroy();
-                        activeConnections.delete(channel.id);
-                    }
-                });
-            } catch (audioError) {
-                console.error(`❌ Audio setup error:`, audioError);
-                connection.destroy();
-                activeConnections.delete(channel.id);
-            }
-        };
-
-        connection.on(VoiceConnectionStatus.Ready, () => {
-            log(`✅ Connected to ${channel.name}, starting audio...`);
-            playAudio();
-        });
-
-        connection.on(VoiceConnectionStatus.Disconnected, () => {
-            activeConnections.delete(channel.id);
-            debugLog(`🔌 Disconnected from ${channel.name}`);
-        });
-
-        connection.on('error', error => {
-            console.error(`❌ Connection error in ${channel.name}:`, error);
-            activeConnections.delete(channel.id);
-        });
-
-        setTimeout(() => {
-            if (activeConnections.has(channel.id)) {
-                const conn = activeConnections.get(channel.id);
-                if (conn.state.status !== VoiceConnectionStatus.Ready) {
-                    log(`⚠️ Connection timeout for ${channel.name}`);
-                    conn.destroy();
-                    activeConnections.delete(channel.id);
-                }
-            }
-        }, 5000);
-
-    } catch (error) {
-        console.error(`❌ Error joining ${channel.name}:`, error);
-        if (activeConnections.has(channel.id)) {
-            const conn = activeConnections.get(channel.id);
-            conn.destroy();
-            activeConnections.delete(channel.id);
-        }
-    }
-}
-
+// Remove ALL audio-related code - Marine Intelligence doesn't use audio
 // Function to sync channel permissions with category
 async function syncChannelWithCategory(channel, category, creatorId) {
     try {
@@ -586,19 +473,11 @@ async function initializeXP() {
 
 // Bot ready event
 client.once('ready', async () => {
-    log(`One Piece Dynamic Voice Bot with XP System is ready to set sail!`);
+    log(`Marine Intelligence Bot is ready for surveillance!`);
     log(`⚓ Logged in as ${client.user.tag}`);
-    log(`🏴‍☠️ Serving ${client.guilds.cache.size} server(s)`);
-    log(`🔊 Audio Volume: ${Math.round(AUDIO_VOLUME * 100)}%`);
+    log(`🏴‍☠️ Monitoring ${client.guilds.cache.size} server(s) for criminal activity`);
     
-    if (fs.existsSync(WELCOME_SOUND)) {
-        const stats = fs.statSync(WELCOME_SOUND);
-        log(`🎵 Welcome sound ready: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
-    } else {
-        console.warn(`⚠️ Welcome sound not found at: ${WELCOME_SOUND}`);
-        log(`🎵 Audio features disabled - no welcome sound file`);
-    }
-    
+    // Remove all audio-related logging since this isn't an audio bot
     if (CATEGORY_ID) {
         log(`🎯 Using direct category ID: ${CATEGORY_ID}`);
     } else {
@@ -617,7 +496,8 @@ client.once('ready', async () => {
         const result = await pool.query('SELECT NOW()');
         log(`⏰ Database time: ${result.rows[0].now}`);
         log('🗄️ Database connection test successful!');
-        log('🎯 All systems initialized and ready!');
+        log('⚓ Marine Intelligence System fully operational!');
+        log('🎯 Ready to track criminal bounties and XP!');
         
     } catch (error) {
         console.error('❌ Initialization failed:', error);
@@ -714,12 +594,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                     await member.voice.setChannel(newChannel);
                     debugLog(`✅ Successfully moved ${member.displayName} to ${crewName}`);
                     
-                    // Play welcome sound with delay - only if audio is available
-                    setTimeout(() => {
-                        playWelcomeSound(newChannel).catch(error => {
-                            debugLog(`⚠️ Could not play welcome sound: ${error.message}`);
-                        });
-                    }, 1500);
+                    // Marine Intelligence doesn't use audio - remove welcome sound
                     
                 } else {
                     debugLog(`User ${member.displayName} disconnected before move, cleaning up channel`);
@@ -762,12 +637,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 
                 debugLog(`🕐 Scheduling deletion of empty crew: ${oldChannel.name} in ${DELETE_DELAY}ms`);
                 
-                if (activeConnections.has(oldChannel.id)) {
-                    const connection = activeConnections.get(oldChannel.id);
-                    connection.destroy();
-                    activeConnections.delete(oldChannel.id);
-                    debugLog(`🔌 Cleaned up voice connection for ${oldChannel.name}`);
-                }
+                // Marine Intelligence doesn't use voice connections - remove audio cleanup
                 
                 setTimeout(async () => {
                     try {
@@ -919,48 +789,49 @@ client.on('messageCreate', async (message) => {
     // Legacy commands
     if (message.content === '!ping') {
         const ping = Date.now() - message.createdTimestamp;
-        message.reply(`🏴‍☠️ **Pong!** 
+        message.reply(`🏴‍☠️ **Marine Intelligence - Pong!** 
 📡 Bot Latency: \`${ping}ms\`
 💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
-⚓ Ready to set sail with XP tracking!`);
+⚓ Marine Intelligence System operational and tracking bounties!`);
     }
     
     if (message.content === '!help') {
-        message.reply(`🏴‍☠️ **One Piece Voice Bot Commands - XP System Edition**
+        message.reply(`🏴‍☠️ **Marine Intelligence Commands - Bounty Tracking System**
 
-**📊 XP & Level Commands:**
-\`/level [@user]\` - Check level information and bounty
-\`/leaderboard\` - Show server leaderboard with wanted posters
-\`/settings\` - Configure XP settings (Admin only)
-\`/admin\` - Advanced XP management (Admin only)
+**📊 XP & Bounty Commands:**
+\`/level [@user]\` - Check criminal bounty level and wanted poster
+\`/leaderboard\` - Show most wanted criminals with bounty posters
+\`/settings\` - Configure bounty tracking settings (Admin only)
+\`/admin\` - Marine command center operations (Admin only)
 
 **🚢 Dynamic Voice Channels:**
 1. Join "${CREATE_CHANNEL_NAME}" voice channel
 2. Bot creates a new crew with One Piece themed name
 3. You become the captain with full channel permissions
-4. **Earn XP automatically while in voice channels!**
+4. **Earn XP automatically while in voice channels for criminal activity!**
 5. Empty crews are automatically deleted after ${DELETE_DELAY/1000} seconds
 
-**⚡ XP System:**
+**⚡ Criminal Activity Tracking (XP System):**
 • **Message XP**: ${process.env.MESSAGE_XP_MIN || 25}-${process.env.MESSAGE_XP_MAX || 35} per message
 • **Voice XP**: ${process.env.VOICE_XP_MIN || 45}-${process.env.VOICE_XP_MAX || 55} per minute
 • **Reaction XP**: ${process.env.REACTION_XP_MIN || 25}-${process.env.REACTION_XP_MAX || 35} per reaction
 • **Daily Voice Cap**: ${process.env.DAILY_VOICE_XP_CAP || 1500} XP
-• **Level System**: Automatic bounty progression
+• **Bounty System**: Automatic bounty increases with level
 • **Role Rewards**: Unlock new roles at milestone levels
 
-**🎯 Features:**
+**🎯 Marine Intelligence Features:**
 • Dynamic voice channel creation with One Piece themed names
-• **Advanced XP tracking with multiple sources**
+• **Advanced criminal activity tracking with multiple sources**
 • **Marine Intelligence logging system**
 • Captain permissions for channel creators
 • Automatic cleanup of empty channels
-• Welcome sounds with pirate theme (if available)
-• **Comprehensive slash commands for XP management**
+• **Comprehensive slash commands for bounty management**
 • **Wanted poster generation for level-ups**
+• **Bounty tracking and criminal surveillance**
 
 **💡 Use slash commands (/) for the best experience!**
-**⚡ All XP activity is logged for Marine Intelligence!**`);
+**⚡ All criminal activity is logged for Marine Intelligence!**
+**🏴‍☠️ Increase your bounty by being active in the server!**`);
     }
 });
 
@@ -1092,7 +963,7 @@ setInterval(() => {
 
 // Start the bot
 async function startBot() {
-    log('🚀 Starting One Piece Dynamic Voice Bot with XP System...');
+    log('🚀 Starting Marine Intelligence Surveillance System...');
     log(`🔑 Discord Token: ${DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
     log(`🆔 Client ID: ${CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
     log(`🗄️ Database URL: ${process.env.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
