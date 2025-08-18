@@ -133,13 +133,13 @@ module.exports = {
 
                     guildSettings.levelupChannel = channel.id;
                     global.guildSettings.set(guildId, guildSettings);
-                    await this.saveGuildSettings(guildId, guildSettings);
+                    const saveSuccess1 = await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
                         embeds: [new EmbedBuilder()
                             .setColor('#00FF00')
                             .setTitle('✅ Level Up Channel Updated')
-                            .setDescription(`Level up announcements will now be sent to ${channel}`)
+                            .setDescription(`Level up announcements will now be sent to ${channel}${saveSuccess1 ? '\n\n✅ Settings saved to database' : '\n\n⚠️ Settings saved in memory only'}`)
                             .setFooter({ text: '⚓ Marine Intelligence • Settings Updated' })
                             .setTimestamp()
                         ]
@@ -163,13 +163,13 @@ module.exports = {
                     guildSettings.xpLogChannel = channel.id;
                     guildSettings.xpLogEnabled = true;
                     global.guildSettings.set(guildId, guildSettings);
-                    await this.saveGuildSettings(guildId, guildSettings);
+                    const saveSuccess2 = await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
                         embeds: [new EmbedBuilder()
                             .setColor('#00FF00')
                             .setTitle('✅ XP Log Channel Updated')
-                            .setDescription(`XP activity logs will now be sent to ${channel}\n\n*XP logging has been automatically enabled.*`)
+                            .setDescription(`XP activity logs will now be sent to ${channel}\n\n*XP logging has been automatically enabled.*${saveSuccess2 ? '\n\n✅ Settings saved to database' : '\n\n⚠️ Settings saved in memory only'}`)
                             .setFooter({ text: '⚓ Marine Intelligence • Settings Updated' })
                             .setTimestamp()
                         ]
@@ -192,13 +192,13 @@ module.exports = {
 
                     guildSettings.xpMultiplier = multiplier;
                     global.guildSettings.set(guildId, guildSettings);
-                    await this.saveGuildSettings(guildId, guildSettings);
+                    const saveSuccess3 = await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
                         embeds: [new EmbedBuilder()
                             .setColor('#00FF00')
                             .setTitle('✅ XP Multiplier Updated')
-                            .setDescription(`XP multiplier set to **${multiplier}x**\n\nAll XP gains will be multiplied by this amount.`)
+                            .setDescription(`XP multiplier set to **${multiplier}x**\n\nAll XP gains will be multiplied by this amount.${saveSuccess3 ? '\n\n✅ Settings saved to database' : '\n\n⚠️ Settings saved in memory only'}`)
                             .setFooter({ text: '⚓ Marine Intelligence • Settings Updated' })
                             .setTimestamp()
                         ]
@@ -523,25 +523,48 @@ module.exports = {
         }
     },
 
-    // Save guild settings to database
+    // Save guild settings to database - BETTER VERSION
     async saveGuildSettings(guildId, settings) {
         try {
-            if (!global.xpTracker || !global.xpTracker.db) {
-                console.error('[SETTINGS] Database not available');
-                return;
+            // Try multiple ways to access the database
+            let database = null;
+            
+            // Method 1: Try global xpTracker
+            if (global.xpTracker && global.xpTracker.db) {
+                database = global.xpTracker.db;
+                console.log('[SETTINGS] Using database from global.xpTracker');
+            }
+            
+            // Method 2: Try require from index (fallback)
+            if (!database) {
+                try {
+                    const { db } = require('../../index');
+                    if (db) {
+                        database = db;
+                        console.log('[SETTINGS] Using database from index.js require');
+                    }
+                } catch (requireError) {
+                    console.log('[SETTINGS] Could not require database from index.js:', requireError.message);
+                }
+            }
+            
+            if (!database) {
+                console.error('[SETTINGS] No database connection available - settings will not persist');
+                return false;
             }
 
-            await global.xpTracker.db.query(`
+            const result = await database.query(`
                 INSERT INTO guild_settings (guild_id, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET
-                    levelup_channel = $2,
-                    levelup_enabled = $3,
-                    xp_log_channel = $4,
-                    xp_log_enabled = $5,
-                    xp_multiplier = $6,
+                    levelup_channel = EXCLUDED.levelup_channel,
+                    levelup_enabled = EXCLUDED.levelup_enabled,
+                    xp_log_channel = EXCLUDED.xp_log_channel,
+                    xp_log_enabled = EXCLUDED.xp_log_enabled,
+                    xp_multiplier = EXCLUDED.xp_multiplier,
                     updated_at = CURRENT_TIMESTAMP
+                RETURNING *
             `, [
                 guildId,
                 settings.levelupChannel,
@@ -551,10 +574,17 @@ module.exports = {
                 settings.xpMultiplier
             ]);
 
-            console.log(`[SETTINGS] Saved settings for guild ${guildId}`);
+            console.log(`[SETTINGS] ✅ Successfully saved settings for guild ${guildId}`);
+            console.log(`[SETTINGS] Database result:`, result.rows[0]);
+            return true;
 
         } catch (error) {
-            console.error('[SETTINGS] Error saving to database:', error);
+            console.error('[SETTINGS] ❌ Error saving to database:', error);
+            console.error('[SETTINGS] Settings data that failed to save:', {
+                guildId,
+                settings
+            });
+            return false;
         }
     }
 };
