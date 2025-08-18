@@ -434,18 +434,35 @@ async function registerSlashCommands(clientId, token) {
     }
 }
 
-// Initialize XP system
+// Initialize XP system - FIXED VERSION
 async function initializeXP() {
     try {
+        // Check if database is available first
+        if (!pool) {
+            console.error('[XP INIT] Database pool not available');
+            return;
+        }
+
+        // Test database connection
+        try {
+            await pool.query('SELECT NOW()');
+            console.log('[XP INIT] Database connection verified');
+        } catch (dbError) {
+            console.error('[XP INIT] Database connection failed:', dbError);
+            return;
+        }
+
+        // Initialize XP Tracker with database
         const XPTracker = require('./src/utils/xpTracker');
         xpTracker = new XPTracker(client, pool);
         global.xpTracker = xpTracker;
-        log(`⏱️ XP Tracker initialized successfully`);
+        console.log(`⏱️ XP Tracker initialized successfully`);
         
+        // Initialize XP Boost Manager with database
         const XPBoostManager = require('./src/utils/xpBoost');
         xpBoostManager = new XPBoostManager(pool);
         global.xpBoostManager = xpBoostManager;
-        log(`🚀 XP Boost Manager initialized successfully`);
+        console.log(`🚀 XP Boost Manager initialized successfully`);
         
         // Start voice XP processing - Fixed async issue
         setInterval(async () => {
@@ -456,7 +473,7 @@ async function initializeXP() {
                     console.error('[VOICE XP] Error in processing:', error);
                 }
             }
-        }, 60000);
+        }, 60000); // Every 60 seconds
         
         // Daily cleanup - Fixed async issue
         setInterval(async () => {
@@ -467,11 +484,20 @@ async function initializeXP() {
                     console.error('[DAILY CLEANUP] Error:', error);
                 }
             }
-        }, 24 * 60 * 60 * 1000);
+        }, 24 * 60 * 60 * 1000); // Every 24 hours
+        
+        console.log('[XP INIT] ✅ Full XP system initialization complete');
+        console.log('[XP INIT] - Voice XP processing: Every 60 seconds');
+        console.log('[XP INIT] - Daily cleanup: Every 24 hours');
+        console.log('[XP INIT] - 3 AM EST reset: Automatic scheduling active');
         
     } catch (error) {
-        console.warn('⚠️ XP System not available:', error.message);
-        log('🚢 Bot will run without XP tracking');
+        console.error('⚠️ XP System initialization failed:', error.message);
+        console.log('🚢 Bot will run with limited XP functionality');
+        
+        // Set globals to null so other parts know XP system isn't available
+        global.xpTracker = null;
+        global.xpBoostManager = null;
     }
 }
 
@@ -819,7 +845,7 @@ client.on('messageCreate', async (message) => {
 • **Message XP**: ${process.env.MESSAGE_XP_MIN || 25}-${process.env.MESSAGE_XP_MAX || 35} per message
 • **Voice XP**: ${process.env.VOICE_XP_MIN || 45}-${process.env.VOICE_XP_MAX || 55} per minute
 • **Reaction XP**: ${process.env.REACTION_XP_MIN || 25}-${process.env.REACTION_XP_MAX || 35} per reaction
-• **Daily Voice Cap**: ${process.env.DAILY_VOICE_XP_CAP || 1500} XP
+• **Daily Voice Cap**: ${process.env.DAILY_VOICE_XP_CAP || 1500} XP (resets at 3 AM EST)
 • **Bounty System**: Automatic bounty increases with level
 • **Role Rewards**: Unlock new roles at milestone levels
 
@@ -832,10 +858,12 @@ client.on('messageCreate', async (message) => {
 • **Comprehensive slash commands for bounty management**
 • **Wanted poster generation for level-ups**
 • **Bounty tracking and criminal surveillance**
+• **3 AM EST daily reset for voice XP caps**
 
 **💡 Use slash commands (/) for the best experience!**
 **⚡ All criminal activity is logged for Marine Intelligence!**
-**🏴‍☠️ Increase your bounty by being active in the server!**`);
+**🏴‍☠️ Increase your bounty by being active in the server!**
+**🕒 Voice XP caps reset at 3:00 AM EST daily!**`);
     }
 });
 
