@@ -149,13 +149,12 @@ class BuffAnimator {
     }
 
     static createFluidWaveFrame(frame, tier, width = 18, height = 9) {
-        const grid = this.createGrid(width, height, '⬛');
+        const grid = this.createGrid(width, height, ' ');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
-        const tierColor = this.getTierColor(tier);
-        const energyColor = this.getEnergyColor(tier);
+        const intensity = this.getTierIntensity(tier);
         
-        // Scanning waves with tier colors
+        // Scanning waves with intensity gradients
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
@@ -164,9 +163,11 @@ class BuffAnimator {
                 const wave2 = frame - distance - 2;
                 
                 if (wave1 >= 0 && wave1 <= 2) {
-                    grid[row][col] = tierColor;
+                    if (wave1 === 0) grid[row][col] = intensity.core;
+                    else if (wave1 === 1) grid[row][col] = intensity.bright;
+                    else grid[row][col] = intensity.medium;
                 } else if (wave2 >= 0 && wave2 <= 1) {
-                    grid[row][col] = energyColor;
+                    grid[row][col] = intensity.light;
                 }
             }
         }
