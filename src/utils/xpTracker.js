@@ -123,14 +123,14 @@ class XPTracker {
         scheduleNext();
     }
 
-    // Perform daily reset
+    // Perform daily reset (now includes buff reset)
     async performDailyReset() {
         try {
-            console.log('[DAILY CAP] ⏰ Performing daily voice XP reset at 3 AM EST...');
+            console.log('[DAILY CAP] ⏰ Performing daily reset at 3 AM EST...');
             
             const currentDay = this.getCurrentDay();
             
-            // Clear memory cache for previous day
+            // Clear memory cache for previous day voice XP
             const keysToDelete = [];
             for (const [key] of this.dailyVoiceXP.entries()) {
                 if (!key.includes(currentDay)) {
@@ -140,7 +140,11 @@ class XPTracker {
             
             keysToDelete.forEach(key => this.dailyVoiceXP.delete(key));
             
-            console.log(`[DAILY CAP] ✅ Daily reset complete - cleared ${keysToDelete.length} cached entries`);
+            console.log(`[DAILY CAP] ✅ Voice XP reset complete - cleared ${keysToDelete.length} cached entries`);
+
+            // Reset daily buffs - remove all buff roles from all users
+            await this.resetDailyBuffs();
+            
             console.log(`[DAILY CAP] 🆕 New day started: ${currentDay}`);
             
             // Optional: Send reset notification to log channels
@@ -151,7 +155,68 @@ class XPTracker {
         }
     }
 
-    // Notify about daily reset in log channels
+    // Reset daily buffs for all users
+    async resetDailyBuffs() {
+        try {
+            console.log('[DAILY BUFF] 🔄 Resetting daily buffs for all users...');
+            
+            // Get all buff role IDs
+            const buffRoles = [];
+            for (let i = 1; i <= 6; i++) {
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                if (roleId) {
+                    buffRoles.push(roleId);
+                }
+            }
+
+            if (buffRoles.length === 0) {
+                console.log('[DAILY BUFF] No buff roles configured in environment variables');
+                return;
+            }
+
+            let totalUsersReset = 0;
+
+            // Remove buff roles from all users across all guilds
+            for (const [guildId, guild] of this.client.guilds.cache) {
+                try {
+                    let guildUsersReset = 0;
+                    
+                    for (const roleId of buffRoles) {
+                        const role = guild.roles.cache.get(roleId);
+                        if (role && role.members.size > 0) {
+                            console.log(`[DAILY BUFF] Removing ${role.name} from ${role.members.size} users in ${guild.name}`);
+                            
+                            // Remove role from all members who have it
+                            for (const [memberId, member] of role.members) {
+                                try {
+                                    await member.roles.remove(role);
+                                    guildUsersReset++;
+                                } catch (error) {
+                                    console.error(`[DAILY BUFF] Failed to remove role from ${member.user.username}:`, error.message);
+                                }
+                                
+                                // Add small delay to avoid rate limits
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                        }
+                    }
+                    
+                    totalUsersReset += guildUsersReset;
+                    console.log(`[DAILY BUFF] Reset ${guildUsersReset} users in ${guild.name}`);
+                    
+                } catch (error) {
+                    console.error(`[DAILY BUFF] Error resetting buffs in guild ${guild.name}:`, error);
+                }
+            }
+
+            console.log(`[DAILY BUFF] ✅ Daily buff reset complete - removed roles from ${totalUsersReset} total users`);
+
+        } catch (error) {
+            console.error('[DAILY BUFF] ❌ Error during daily buff reset:', error);
+        }
+    }
+
+    // Notify about daily reset in log channels (updated with buff info)
     async notifyDailyReset(newDay) {
         try {
             const { EmbedBuilder } = require('discord.js');
@@ -163,8 +228,20 @@ class XPTracker {
                         if (channel && channel.isTextBased()) {
                             const embed = new EmbedBuilder()
                                 .setColor(0x00FF00)
-                                .setTitle('🌅 DAILY VOICE XP RESET')
-                                .setDescription(`\`\`\`diff\n+ Daily voice XP limits have been reset\n+ New tracking day: ${newDay}\n+ Daily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500} XP\n+ Reset time: 3:00 AM EST\n\`\`\``)
+                                .setTitle('🌅 DAILY RESET COMPLETE')
+                                .setDescription(`\`\`\`diff\n+ Daily systems have been reset\n+ New tracking day: ${newDay}\n+ Reset time: 3:00 AM EST\n\`\`\``)
+                                .addFields(
+                                    {
+                                        name: '🎤 Voice XP Reset',
+                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000} XP\nStatus: All daily limits reset\n\`\`\``,
+                                        inline: true
+                                    },
+                                    {
+                                        name: '🎰 Daily Buffs Reset',
+                                        value: `\`\`\`yaml\nAll buff roles removed\nNew rolls available\nCommand: /daily-buff\n\`\`\``,
+                                        inline: true
+                                    }
+                                )
                                 .setFooter({ text: '⚓ Marine Intelligence • Daily Reset System' })
                                 .setTimestamp();
                             
@@ -564,24 +641,61 @@ class XPTracker {
         }
     }
 
-    // Get daily voice XP statistics for a user (EST-based)
-    async getDailyVoiceXPStats(userId, guildId, days = 7) {
+    // Get daily buff multiplier for a user
+    async getDailyBuffMultiplier(member) {
         try {
-            const result = await this.db.query(`
-                SELECT date, total_xp 
-                FROM daily_voice_xp 
-                WHERE user_id = $1 AND guild_id = $2 AND date >= CURRENT_DATE - INTERVAL '${days} days'
-                ORDER BY date DESC
-            `, [userId, guildId]);
+            if (!member) return 1.0;
 
-            return result.rows.map(row => ({
-                date: row.date,
-                xp: row.total_xp,
-                isToday: row.date === this.getCurrentDay()
-            }));
+            // Check which daily buff role the user has
+            const buffTiers = {
+                1: 1.1, // Common - 10% boost
+                2: 1.2, // Rare - 20% boost  
+                3: 1.3, // Epic - 30% boost
+                4: 1.5, // Legendary - 50% boost
+                5: 1.7, // Mythical - 70% boost
+                6: 2.0  // Divine - 100% boost
+            };
+
+            for (const [tier, multiplier] of Object.entries(buffTiers)) {
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
+                if (roleId && member.roles.cache.has(roleId)) {
+                    return multiplier;
+                }
+            }
+
+            return 1.0; // No daily buff
         } catch (error) {
-            console.error('[DAILY CAP] Error getting daily voice XP stats:', error);
-            return [];
+            console.error('[DAILY BUFF] Error getting daily buff multiplier:', error);
+            return 1.0;
+        }
+    }
+
+    // Get daily buff multiplier for a user
+    async getDailyBuffMultiplier(member) {
+        try {
+            if (!member) return 1.0;
+
+            // Check which daily buff role the user has
+            const buffTiers = {
+                1: 1.1, // Common - 10% boost
+                2: 1.2, // Rare - 20% boost  
+                3: 1.3, // Epic - 30% boost
+                4: 1.5, // Legendary - 50% boost
+                5: 1.7, // Mythical - 70% boost
+                6: 2.0  // Divine - 100% boost
+            };
+
+            for (const [tier, multiplier] of Object.entries(buffTiers)) {
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
+                if (roleId && member.roles.cache.has(roleId)) {
+                    return multiplier;
+                }
+            }
+
+            return 1.0; // No daily buff
+        } catch (error) {
+            console.error('[DAILY BUFF] Error getting daily buff multiplier:', error);
+            return 1.0;
         }
     }
 
@@ -636,13 +750,21 @@ class XPTracker {
             
             // Apply multipliers if not skipping
             if (!skipMultiplier) {
-                // Apply XP boost if available
+                // Apply daily buff multiplier first
+                const dailyBuffMultiplier = await this.getDailyBuffMultiplier(member);
+                if (dailyBuffMultiplier > 1.0) {
+                    const buffedXP = Math.round(finalXP * dailyBuffMultiplier);
+                    console.log(`[DAILY BUFF] ${user.username} ${source}: ${finalXP} → ${buffedXP} (${dailyBuffMultiplier}x daily buff)`);
+                    finalXP = buffedXP;
+                }
+
+                // Apply XP role boosts (stacks with daily buff)
                 if (global.xpBoostManager && member) {
                     try {
                         const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
                         if (boostResult.multiplier > 1.0) {
                             const boostedXP = Math.round(finalXP * boostResult.multiplier);
-                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} → ${boostedXP}`);
+                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} → ${boostedXP} (${boostResult.multiplier}x role boost)`);
                             finalXP = boostedXP;
                         }
                     } catch (error) {
@@ -650,7 +772,7 @@ class XPTracker {
                     }
                 }
                 
-                // Apply global multiplier
+                // Apply global multiplier last
                 const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
                 const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
                 
