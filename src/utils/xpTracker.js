@@ -1,8 +1,19 @@
-// src/utils/xpTracker.js - Complete XP Tracker for One Piece Leveling Bot
+// src/utils/xpTracker.js - Complete XP Tracker for One Piece Leveling Bot with Canvas Support
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage, registerFont } = require('canvas');
 const path = require('path');
+
+// Register custom fonts at the top of the file
+try {
+    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+    console.log('[XP TRACKER] Successfully registered custom fonts for wanted posters');
+} catch (error) {
+    console.error('[XP TRACKER] Failed to register custom fonts:', error.message);
+    console.log('[XP TRACKER] Falling back to system fonts');
+}
 
 class XPTracker {
     constructor(client, database) {
@@ -15,6 +26,192 @@ class XPTracker {
         this.loadGuildSettingsFromDatabase();
         this.initializeExistingVoiceSessions();
         this.loadDailyVoiceXPFromDatabase();
+    }
+
+    // Canvas function for wanted posters (SAME as leaderboard.js)
+    async createWantedPoster(userData, guild) {
+        const width = 600, height = 900;
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+
+        // Load and draw scroll texture background
+        try {
+            const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
+            ctx.drawImage(scrollTexture, 0, 0, width, height);
+            console.log('[XP TRACKER] Successfully loaded scroll texture background');
+        } catch (error) {
+            console.log('[XP TRACKER] Scroll texture not found, using fallback parchment color');
+            ctx.fillStyle = '#f5e6c5';
+            ctx.fillRect(0, 0, width, height);
+        }
+        
+        // Borders
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(0, 0, width, height);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(10, 10, width - 20, height - 20);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(18, 18, width - 36, height - 36);
+
+        // WANTED title
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '81px CaptainKiddNF, Arial, sans-serif';
+        const wantedY = height * (1 - 92/100);
+        const wantedX = (50/100) * width;
+        ctx.fillText('WANTED', wantedX, wantedY);
+
+        // Image Box
+        const photoSize = (95/100) * 400;
+        const photoX = ((50/100) * width) - (photoSize/2);
+        const photoY = height * (1 - 65/100) - (photoSize/2);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(photoX, photoY, photoSize, photoSize);
+
+        let member = null;
+        try {
+            if (guild && userData.userId) member = await guild.members.fetch(userData.userId);
+        } catch {}
+        
+        const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
+        if (member) {
+            try {
+                const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
+                const avatar = await loadImage(avatarURL);
+                
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.clip();
+                
+                ctx.filter = 'contrast(0.95) sepia(0.05)';
+                ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
+                ctx.filter = 'none';
+                
+                ctx.restore();
+            } catch {
+                console.log('[XP TRACKER] No avatar found, texture will show through');
+            }
+        }
+
+        // "DEAD OR ALIVE"
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '57px CaptainKiddNF, Arial, sans-serif';
+        const deadOrAliveY = height * (1 - 39/100);
+        const deadOrAliveX = (50/100) * width;
+        ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
+
+        // Name
+        ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
+        let displayName = 'UNKNOWN PIRATE';
+        if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
+        else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
+        
+        // Check if name is too long and adjust
+        ctx.textAlign = 'center';
+        let nameWidth = ctx.measureText(displayName).width;
+        if (nameWidth > width - 60) {
+            ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
+        }
+        
+        const nameY = height * (1 - 30/100);
+        const nameX = (50/100) * width;
+        ctx.fillText(displayName, nameX, nameY);
+
+        // Berry Symbol and Bounty Numbers
+        const berryBountyGap = 5;
+        
+        // Get BOUNTY amount for user's level and check if Pirate King
+        const { getBountyForLevel } = require('./bountySystem');
+        const isPirateKingData = userData.isPirateKing || false;
+        const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
+        const bountyStr = bountyAmount.toLocaleString();
+        
+        console.log(`[XP TRACKER] Level ${userData.level} ${isPirateKingData ? '(PIRATE KING)' : ''} = Bounty ฿${bountyStr}`);
+        
+        ctx.font = '54px Cinzel, Georgia, serif';
+        const bountyTextWidth = ctx.measureText(bountyStr).width;
+        
+        // Berry symbol size
+        const berrySize = (32/100) * 150;
+        
+        // Calculate total width of the bounty unit (berry + gap + text)
+        const gapPixels = (berryBountyGap/100) * width;
+        const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
+        
+        // Center the entire bounty unit horizontally
+        const bountyUnitStartX = (width - totalBountyWidth) / 2;
+        
+        // Position berry symbol at the start of the centered unit
+        const berryX = bountyUnitStartX + (berrySize/2);
+        const berryY = height * (1 - 22/100) - (berrySize/2);
+        
+        let berryImg;
+        try {
+            const berryPath = path.join(__dirname, '../../assets/berry.png');
+            berryImg = await loadImage(berryPath);
+        } catch {
+            // Create simple berry symbol
+            const berryCanvas = createCanvas(berrySize, berrySize);
+            const berryCtx = berryCanvas.getContext('2d');
+            berryCtx.fillStyle = '#111';
+            berryCtx.font = `bold ${berrySize}px serif`;
+            berryCtx.textAlign = 'center';
+            berryCtx.textBaseline = 'middle';
+            berryCtx.fillText('฿', berrySize/2, berrySize/2);
+            berryImg = berryCanvas;
+        }
+        
+        ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
+
+        // Position bounty numbers with fixed gap from berry
+        const bountyX = bountyUnitStartX + berrySize + gapPixels;
+        const bountyY = height * (1 - 22/100);
+        
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#111';
+        ctx.fillText(bountyStr, bountyX, bountyY);
+
+        // One Piece logo
+        try {
+            const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
+            const onePieceLogo = await loadImage(onePieceLogoPath);
+            const logoSize = (26/100) * 200;
+            const logoX = ((50/100) * width) - (logoSize/2);
+            const logoY = height * (1 - 4.5/100) - (logoSize/2);
+            
+            ctx.globalAlpha = 0.6;
+            ctx.filter = 'sepia(0.2) brightness(0.9)';
+            ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
+            ctx.globalAlpha = 1.0;
+            ctx.filter = 'none';
+        } catch {
+            console.log('[XP TRACKER] One Piece logo not found at assets/one-piece-symbol.png');
+        }
+
+        // "MARINE" text
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.font = '24px TimesNewNormal, Times, serif';
+        ctx.fillStyle = '#111';
+        
+        const marineText = 'M A R I N E';
+        const marineX = (96/100) * width;
+        const marineY = height * (1 - 2/100);
+        ctx.fillText(marineText, marineX, marineY);
+
+        return canvas;
     }
 
     // Load daily voice XP from database on startup
@@ -811,7 +1008,7 @@ class XPTracker {
             // Award level roles
             const roleReward = await this.awardLevelRoles(userId, guildId, newLevel);
 
-            // Send level up notification
+            // Send level up notification with wanted poster
             await this.sendLevelUpNotification(userId, guildId, oldLevel, newLevel, totalXP, user, roleReward);
 
             // Log level up
@@ -892,12 +1089,12 @@ class XPTracker {
             
             try {
                 // Generate wanted poster using canvas
+                console.log(`[LEVEL UP] Creating wanted poster for ${user.username}...`);
                 canvas = await this.createWantedPoster(wantedPosterData, guild);
-                const { AttachmentBuilder } = require('discord.js');
                 attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${user.id}.png` });
-                console.log('[LEVEL UP] Successfully created wanted poster');
+                console.log('[LEVEL UP] ✅ Successfully created wanted poster');
             } catch (canvasError) {
-                console.error('[LEVEL UP] Error creating wanted poster:', canvasError);
+                console.error('[LEVEL UP] ❌ Error creating wanted poster:', canvasError);
                 // Continue without poster if canvas fails
             }
 
@@ -923,10 +1120,10 @@ class XPTracker {
             }
             
             await channel.send(messageOptions);
-            console.log(`[LEVEL UP] Level up notification with wanted poster sent for ${user.username} in #${channel.name}`);
+            console.log(`[LEVEL UP] ✅ Level up notification with wanted poster sent for ${user.username} in #${channel.name}`);
 
         } catch (error) {
-            console.error('Error sending level up notification:', error);
+            console.error('❌ Error sending level up notification:', error);
         }
     }
 
@@ -938,33 +1135,19 @@ class XPTracker {
             const newBounty = getBountyForLevel(newLevel);
 
             const embed = new EmbedBuilder()
-                .setColor('#DC143C')
+                .setAuthor({ 
+                    name: '🌐 WORLD GOVERNMENT INTELLIGENCE BUREAU'
+                })
+                .setColor(0xFF0000)
                 .setTitle('🚨 WORLD GOVERNMENT BOUNTY UPDATE 🚨')
                 .setDescription(`**${user.username}** has reached a new level of infamy!`)
-                .setThumbnail(user.displayAvatarURL({ size: 128 }))
-                .addFields(
-                    {
-                        name: '💰 BOUNTY PROGRESSION',
-                        value: `**Old:** ฿${oldBounty.toLocaleString()} (Level ${oldLevel})\n**New:** ฿${newBounty.toLocaleString()} (Level ${newLevel})`,
-                        inline: false
-                    },
-                    {
-                        name: '📊 Criminal Activity',
-                        value: `**Total XP:** ${totalXP.toLocaleString()}`,
-                        inline: false
-                    }
-                );
-
-            if (roleReward) {
-                embed.addFields({
-                    name: '👑 New Authority Granted',
-                    value: `**${roleReward}** role assigned!`,
+                .addFields({
+                    name: '📊 INTELLIGENCE SUMMARY',
+                    value: `\`\`\`diff\n- Subject: ${user.username}\n- Previous Bounty: ฿${oldBounty.toLocaleString()}\n- New Bounty: ฿${newBounty.toLocaleString()}\n- Level: ${oldLevel} → ${newLevel}\n- Total XP: ${totalXP.toLocaleString()}\n${roleReward ? `- Role Awarded: ${roleReward}\n` : ''}\`\`\``,
                     inline: false
-                });
-            }
-
-            embed.setFooter({ text: '⚓ Marine Intelligence • Bounty System' })
-                 .setTimestamp();
+                })
+                .setFooter({ text: '⚓ Marine Intelligence Division • Bounty System' })
+                .setTimestamp();
 
             return embed;
         } catch (error) {
