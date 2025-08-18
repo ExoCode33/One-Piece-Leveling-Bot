@@ -192,8 +192,6 @@ class BuffAnimator {
         return embed;
     }
 }
-}
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
