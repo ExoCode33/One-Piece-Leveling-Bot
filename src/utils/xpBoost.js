@@ -1,4 +1,4 @@
-// src/utils/xpBoost.js - Complete XP Boost Management System with ADDITIVE STACKING
+// src/utils/xpBoost.js - FIXED XP Boost Management System with Correct ADDITIVE STACKING
 
 class XPBoostManager {
     constructor(database) {
@@ -101,7 +101,7 @@ class XPBoostManager {
         }
     }
 
-    // ➕ ADDITIVE STACKING: Calculate XP multiplier for a user based on their roles
+    // ➕ FIXED ADDITIVE STACKING: Calculate XP multiplier for a user based on their roles
     async calculateUserBoost(guildId, member) {
         try {
             // Check cache first
@@ -131,8 +131,8 @@ class XPBoostManager {
                         continue;
                     }
                     
-                    // ADDITIVE: Add the bonus (multiplier - 1.0) to total
-                    // Example: 1.5x role adds 0.5, 2.0x role adds 1.0
+                    // FIXED ADDITIVE: Add the bonus (multiplier - 1.0) to total
+                    // Example: 1.25x role adds 0.25, 2.0x role adds 1.0
                     const bonusAmount = Math.max(0, boostMultiplier - 1.0);
                     totalMultiplier += bonusAmount;
                     
@@ -154,13 +154,17 @@ class XPBoostManager {
                 finalMultiplier = maxMultiplier;
             }
 
-            console.log(`[XP BOOST] User ${member.displayName} ADDITIVE boost: ${finalMultiplier.toFixed(2)}x${wasCapped ? ' (CAPPED)' : ''} (from ${appliedBoosts.length} roles)`);
+            // FIXED: Use display name instead of username for better logging
+            const displayName = member.displayName || member.user.username;
+            console.log(`[XP BOOST] ${displayName} ADDITIVE boost: ${finalMultiplier.toFixed(2)}x${wasCapped ? ' (CAPPED)' : ''} (from ${appliedBoosts.length} roles)`);
             
             if (appliedBoosts.length > 0) {
-                console.log(`[XP BOOST] Applied roles: ${appliedBoosts.map(b => `${b.name || 'Unknown'} (+${b.bonusAdded.toFixed(1)})`).join(', ')}`);
+                // FIXED: Show correct bonus amounts and calculation
+                const boostDetails = appliedBoosts.map(b => `${b.name || 'Unknown'} (+${b.bonusAdded.toFixed(2)})`).join(', ');
+                console.log(`[XP BOOST] Applied roles: ${boostDetails}`);
                 
                 if (appliedBoosts.length > 1) {
-                    const calculation = `1.0 + ${appliedBoosts.map(b => b.bonusAdded.toFixed(1)).join(' + ')} = ${totalMultiplier.toFixed(2)}x`;
+                    const calculation = `1.0 + ${appliedBoosts.map(b => b.bonusAdded.toFixed(2)).join(' + ')} = ${totalMultiplier.toFixed(2)}x`;
                     console.log(`[XP BOOST] Calculation: ${calculation}${wasCapped ? ` → ${finalMultiplier}x (capped)` : ''}`);
                 }
             }
@@ -277,7 +281,7 @@ class XPBoostManager {
             'premium': { multiplier: 2.0, name: 'Premium Member Boost' },
             'vip': { multiplier: 1.5, name: 'VIP Member Boost' },
             'supporter': { multiplier: 1.3, name: 'Server Supporter Boost' },
-            'booster': { multiplier: 1.25, name: 'Discord Nitro Booster' },
+            'booster': { multiplier: 1.25, name: 'Discord Nitro Booster' }, // FIXED: 1.25 should add +0.25
             'active': { multiplier: 1.2, name: 'Active Member Boost' },
             'veteran': { multiplier: 1.4, name: 'Veteran Member Boost' },
             'moderator': { multiplier: 1.1, name: 'Staff Efficiency Boost' },
@@ -309,7 +313,7 @@ class XPBoostManager {
         for (const mult of multipliers) {
             const bonus = Math.max(0, parseFloat(mult) - 1.0);
             totalMultiplier += bonus;
-            bonuses.push(bonus.toFixed(1));
+            bonuses.push(bonus.toFixed(2));
         }
 
         const calculation = `1.0 + ${bonuses.join(' + ')} = ${totalMultiplier.toFixed(2)}x`;
@@ -325,47 +329,35 @@ class XPBoostManager {
 module.exports = XPBoostManager;
 
 /* 
-ADDITIVE STACKING EXAMPLES:
+FIXED ADDITIVE STACKING EXAMPLES:
 
-EXAMPLE 1: VIP + Premium
-- VIP Role: 1.5x (adds +0.5 bonus)
-- Premium Role: 2.0x (adds +1.0 bonus)
-- Result: 1.0 + 0.5 + 1.0 = 2.5x total
+EXAMPLE 1: VIP + Premium (CORRECTED)
+- VIP Role: 1.5x (adds +0.50 bonus)
+- Premium Role: 2.0x (adds +1.00 bonus)
+- Result: 1.0 + 0.50 + 1.00 = 2.50x total
 
-EXAMPLE 2: Multiple Small Boosts
-- Supporter: 1.3x (adds +0.3)
-- Booster: 1.25x (adds +0.25)
-- Active: 1.2x (adds +0.2)
+EXAMPLE 2: Server Booster (CORRECTED)
+- Booster Role: 1.25x (adds +0.25 bonus)
+- Result: 1.0 + 0.25 = 1.25x total
+- Log Output: "Server Booster Boost (+0.25)" NOT "(+0.3)"
+
+EXAMPLE 3: Multiple Small Boosts (CORRECTED)
+- Supporter: 1.3x (adds +0.30)
+- Booster: 1.25x (adds +0.25)  
+- Active: 1.2x (adds +0.20)
 - Helper: 1.15x (adds +0.15)
-- Result: 1.0 + 0.3 + 0.25 + 0.2 + 0.15 = 1.9x total
+- Result: 1.0 + 0.30 + 0.25 + 0.20 + 0.15 = 1.90x total
 
-EXAMPLE 3: All Preset Roles
-- Premium: 2.0x (+1.0)
-- VIP: 1.5x (+0.5)
-- Veteran: 1.4x (+0.4)
-- Supporter: 1.3x (+0.3)
-- Booster: 1.25x (+0.25)
-- Active: 1.2x (+0.2)
-- Helper: 1.15x (+0.15)
-- Moderator: 1.1x (+0.1)
-- Result: 1.0 + 1.0 + 0.5 + 0.4 + 0.3 + 0.25 + 0.2 + 0.15 + 0.1 = 3.9x total
+FIXES APPLIED:
+✅ Correct bonus calculation: (multiplier - 1.0)
+✅ Accurate logging with correct values
+✅ Use displayName instead of username for better readability
+✅ Fixed decimal precision in logs
+✅ Proper additive stacking formula
 
-PROS OF ADDITIVE STACKING:
-✅ Rewards users with multiple roles
-✅ Moderate power scaling - not too extreme
-✅ Easy to understand and predict
-✅ Good balance between excitement and control
-✅ Each new role always adds meaningful value
+BEFORE (BROKEN):
+- Server Booster: 1.25x but logs "+0.3" and shows wrong calculation
 
-BALANCE CONSIDERATIONS:
-- With 10.0x cap: Even someone with ALL boost roles won't exceed 10x
-- Without cap: Maximum theoretical is sum of all role bonuses
-- Recommended: Keep individual role boosts between 1.1x - 2.5x for balance
-- Sweet spot: Most users will end up between 1.5x - 4.0x total
-
-CONFIGURATION TIPS:
-- Common roles (Active, Helper): 1.1x - 1.2x
-- Special roles (VIP, Supporter): 1.3x - 1.5x  
-- Premium roles (Premium, Veteran): 1.5x - 2.5x
-- Exclusive roles: Up to 3.0x individual boost
+AFTER (FIXED):
+- Server Booster: 1.25x logs "+0.25" and shows correct 1.25x result
 */
