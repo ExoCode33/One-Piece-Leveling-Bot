@@ -4,14 +4,14 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation Configuration
 const ANIMATION_CONFIG = {
-    RAINBOW_DELAY: 300,  // Faster for better sync
-    WAVE_FRAMES: 15,     // More frames for smoother waves
-    REVEAL_FRAMES: 14,   // Exact frames needed to reach corners (max distance from center)
-    FINAL_PAUSE: 600
+    RAINBOW_DELAY: 250,  // Faster for anime-style
+    WAVE_FRAMES: 12,
+    EXPLOSION_FRAMES: 8, // Anime explosion effect
+    FINAL_PAUSE: 500
 };
 
 class BuffAnimator {
-    static createGrid(width = 20, height = 10, fillColor = '⬛') {
+    static createGrid(width = 18, height = 9, fillColor = '⬛') {
         const grid = [];
         for (let row = 0; row < height; row++) {
             const rowArray = [];
@@ -44,40 +44,30 @@ class BuffAnimator {
         return tierColors[tier] || '🟩';
     }
 
-    static createFluidWaveFrame(frame, tier, width = 20, height = 10) {
+    static createFluidWaveFrame(frame, tier, width = 18, height = 9) {
         const grid = this.createGrid(width, height, '⬛');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
         const rainbowColors = this.getRainbowColors();
         
-        // Create multiple wave layers for ultra-fluid effect
+        // Create multiple wave layers for fluid effect
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
                 
-                // Primary wave
-                const primaryWave = frame - distance;
+                // Multiple overlapping waves
+                const wave1 = frame - distance;
+                const wave2 = frame - distance - 1;
+                const wave3 = frame - distance - 2;
                 
-                // Secondary wave (offset by 1)
-                const secondaryWave = frame - distance - 1;
-                
-                // Tertiary wave (offset by 2)
-                const tertiaryWave = frame - distance - 2;
-                
-                // Quaternary wave (offset by 3)
-                const quaternaryWave = frame - distance - 3;
-                
-                if (primaryWave >= 0) {
-                    const colorIndex = (distance + frame * 3) % rainbowColors.length;
+                if (wave1 >= 0) {
+                    const colorIndex = (distance + frame * 2) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
-                } else if (secondaryWave >= 0) {
-                    const colorIndex = (distance + frame * 3 + 1) % rainbowColors.length;
+                } else if (wave2 >= 0) {
+                    const colorIndex = (distance + frame * 2 + 2) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
-                } else if (tertiaryWave >= 0) {
-                    const colorIndex = (distance + frame * 3 + 2) % rainbowColors.length;
-                    grid[row][col] = rainbowColors[colorIndex];
-                } else if (quaternaryWave >= 0) {
-                    const colorIndex = (distance + frame * 3 + 3) % rainbowColors.length;
+                } else if (wave3 >= 0) {
+                    const colorIndex = (distance + frame * 2 + 4) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
                 }
             }
@@ -86,41 +76,45 @@ class BuffAnimator {
         return grid;
     }
 
-    static createSquareRevealFrame(frame, tier, width = 20, height = 10) {
-        // Start with the LAST wave frame for seamless transition
-        const grid = this.createFluidWaveFrame(ANIMATION_CONFIG.WAVE_FRAMES, tier, width, height);
-        const centerX = Math.floor(width / 2);  // Center X = 10 (for 0-19 width)
-        const centerY = Math.floor(height / 2); // Center Y = 5 (for 0-9 height)
+    static createAnimeExplosionFrame(frame, tier, width = 18, height = 9) {
+        const grid = this.createGrid(width, height, '⬛');
+        const centerX = Math.floor(width / 2);  // Center X = 9 (for 0-17 width)
+        const centerY = Math.floor(height / 2); // Center Y = 4 (for 0-8 height)
         const tierColor = this.getTierColor(tier);
         const rainbowColors = this.getRainbowColors();
         
-        // Square reveal expanding outward from center
-        const revealRadius = frame;
+        // Anime-style explosion - starts small and bursts outward rapidly
+        const explosionRadius = Math.pow(frame + 1, 1.8); // Exponential growth for anime effect
+        const shockwaveRadius = explosionRadius + 2; // Shockwave ahead of main explosion
         
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
                 
-                if (distance <= revealRadius) {
-                    // Revealed area shows tier color permanently
+                if (distance <= explosionRadius) {
+                    // Core explosion area - tier color
                     grid[row][col] = tierColor;
-                } else if (distance === revealRadius + 1) {
-                    // Active border shows rainbow effect with faster cycling
-                    const colorIndex = (distance + frame * 2) % rainbowColors.length;
-                    grid[row][col] = rainbowColors[colorIndex];
+                } else if (distance <= shockwaveRadius) {
+                    // Shockwave area - intense rainbow cycling
+                    const intensity = Math.floor((frame + distance) * 3) % rainbowColors.length;
+                    grid[row][col] = rainbowColors[intensity];
+                } else if (distance <= shockwaveRadius + 3) {
+                    // Outer shockwave - fading rainbow
+                    const fadeIntensity = Math.floor((frame + distance + 2) * 2) % rainbowColors.length;
+                    grid[row][col] = rainbowColors[fadeIntensity];
                 }
-                // Keep existing wave colors for unrevealed areas
+                // Rest stays black for dramatic effect
             }
         }
         
         return grid;
     }
 
-    static createFinalStableGrid(tier, width = 20, height = 10) {
+    static createFinalStableGrid(tier, width = 18, height = 9) {
         const grid = this.createGrid(width, height, '⬛');
         const tierColor = this.getTierColor(tier);
         
-        // Fill entire grid with tier color - stays filled permanently
+        // Fill entire grid with tier color
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 grid[row][col] = tierColor;
@@ -161,23 +155,36 @@ class BuffAnimator {
                 `**Scanning enhancement possibilities...**\n\n${this.gridToString(grid)}\n\n**Wave analysis in progress...**`
             )
             .setColor(color)
-            .setFooter({ text: `Matrix scan progress: ${Math.min(100, Math.round((frame / 15) * 100))}%` })
+            .setFooter({ text: `Matrix scan progress: ${Math.min(100, Math.round((frame / 12) * 100))}%` })
             .setTimestamp();
         
         return embed;
     }
 
-    static createRevealAnimationFrame(frame, tier) {
-        const grid = this.createSquareRevealFrame(frame, tier);
+    static createExplosionAnimationFrame(frame, tier) {
+        const grid = this.createAnimeExplosionFrame(frame, tier);
         const color = this.getTierColorHex(tier);
         
+        const explosionTexts = [
+            '💥 ENERGY SURGE!',
+            '⚡ POWER BURST!',
+            '🔥 EXPLOSION!',
+            '✨ TIER REVEAL!',
+            '💫 BREAKTHROUGH!',
+            '🌟 MANIFESTATION!',
+            '⭐ MATERIALIZATION!',
+            '🎆 COMPLETE!'
+        ];
+        
+        const explosionText = explosionTexts[Math.min(frame, explosionTexts.length - 1)];
+        
         const embed = new EmbedBuilder()
-            .setTitle('ENHANCEMENT MATERIALIZATION')
+            .setTitle(`${explosionText}`)
             .setDescription(
-                `**Square formation expanding...**\n\n${this.gridToString(grid)}\n\n**Enhancement pattern locked in...**`
+                `**Enhancement bursting forth!**\n\n${this.gridToString(grid)}\n\n**Anime-style power explosion!**`
             )
             .setColor(color)
-            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 14) * 100))}%` })
+            .setFooter({ text: `Explosion intensity: ${Math.min(100, Math.round(((frame + 1) / 8) * 100))}%` })
             .setTimestamp();
         
         return embed;
@@ -255,7 +262,7 @@ module.exports = {
         }
     },
 
-    // Professional fluid grid-based animation with square reveal - NO WHITE FLICKER
+    // Professional fluid animation with anime-style explosion reveal
     async performEnhancedBuffRoll(interaction, userId, guildId, member) {
         const buffTiers = this.getBuffTiers();
         
@@ -271,15 +278,15 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
         
-        // Phase 2: Square Reveal Animation (10 frames) - SEAMLESS TRANSITION
-        for (let frame = 0; frame <= ANIMATION_CONFIG.REVEAL_FRAMES; frame++) {
-            const revealEmbed = BuffAnimator.createRevealAnimationFrame(frame, finalResult);
+        // Phase 2: Anime-Style Explosion (8 frames) - SEAMLESS TRANSITION
+        for (let frame = 0; frame <= ANIMATION_CONFIG.EXPLOSION_FRAMES; frame++) {
+            const explosionEmbed = BuffAnimator.createExplosionAnimationFrame(frame, finalResult);
             
-            await interaction.editReply({ embeds: [revealEmbed] });
+            await interaction.editReply({ embeds: [explosionEmbed] });
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
 
-        // Phase 3: IMMEDIATE Final Result - NO INTERMEDIATE STEP
+        // Phase 3: IMMEDIATE Final Result - NO WHITE FLICKER
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
