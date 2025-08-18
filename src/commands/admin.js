@@ -1,4 +1,4 @@
-// src/commands/admin.js - Updated with Daily Buff Removal for Testing
+// src/commands/admin.js - Fixed Admin Command with Proper Structure
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -57,7 +57,7 @@ module.exports = {
             if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
                 return await interaction.reply({
                     content: '❌ **Access Denied**\n\n⚓ **Marine Command Center** requires **Administrator** permissions.\n\nOnly high-ranking Marine officers may access these commands.',
-                    ephemeral: true
+                    flags: 64 // MessageFlags.Ephemeral
                 });
             }
 
@@ -84,7 +84,7 @@ module.exports = {
 
                     return await interaction.reply({
                         embeds: [deniedEmbed],
-                        ephemeral: true
+                        flags: 64 // MessageFlags.Ephemeral
                     });
                 }
             }
@@ -122,7 +122,7 @@ module.exports = {
                     if (!amount || amount < 1 || amount > 10000) {
                         return await interaction.reply({
                             content: '❌ **Invalid Amount**\n\nPlease specify an amount between 1 and 10,000 XP.',
-                            ephemeral: true
+                            flags: 64 // MessageFlags.Ephemeral
                         });
                     }
                     await this.handleRemoveXP(interaction, targetUser, amount, reason);
@@ -308,10 +308,6 @@ module.exports = {
         const novemberFirstSunday = new Date(year, 10, 1);
         novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
         return date >= marchSecondSunday && date < novemberFirstSunday;
-    },
-
-    async handleXPCommand(interaction) {
-        // This method is no longer needed since we handle everything in execute()
     },
 
     async handleAddXP(interaction, targetUser, amount, reason) {
@@ -684,13 +680,7 @@ module.exports = {
     }
 };
 
-// All async functions moved inside module.exports to fix syntax error
-async function handleStats(interaction, db) {
-    // Get comprehensive statistics
-    const [userStats, guildStats, xpStats, levelStats] = await Promise.all([
-        db.query('SELECT COUNT(*) as total_users FROM user_levels'),
-        db.query('SELECT COUNT(*) as total_guilds FROM guild_settings'),
-        db.query('SELECT SUM(total_xp) as total_xp, AVG(total_xp) as avg_xp FROM user_levels WHERE total_xp > 0'),
+// Standalone functions after module.exports
 async function handleStats(interaction, db) {
     // Get comprehensive statistics
     const [userStats, guildStats, xpStats, levelStats] = await Promise.all([
@@ -766,7 +756,7 @@ async function handleMaintenance(interaction, db) {
     await interaction.reply({ 
         embeds: [maintenanceEmbed], 
         components: [maintenanceButtons],
-        flags: 64 // MessageFlags.Ephemeral
+        flags: 64
     });
 }
 
@@ -805,14 +795,11 @@ async function handleNuclear(interaction, db) {
     await interaction.reply({
         embeds: [nuclearEmbed],
         components: [nuclearButtons],
-        flags: 64 // MessageFlags.Ephemeral
+        flags: 64
     });
 }
 
 // Export button handlers for use in index.js
-module.exports.handleStats = handleStats;
-module.exports.handleMaintenance = handleMaintenance;
-module.exports.handleNuclear = handleNuclear;
 module.exports.handleMaintenanceButtons = async (interaction, db) => {
     if (interaction.customId === 'cleanup_inactive') {
         await interaction.deferUpdate();
@@ -899,7 +886,6 @@ module.exports.handleNuclearButtons = async (interaction, db) => {
         await interaction.editReply({ embeds: [abortEmbed], components: [] });
 
     } else if (interaction.customId === 'nuclear_confirm') {
-        // Additional confirmation step
         const finalWarningEmbed = new EmbedBuilder()
             .setColor(0xFF0000)
             .setTitle('☢️ FINAL NUCLEAR AUTHORIZATION REQUIRED')
@@ -931,7 +917,6 @@ module.exports.handleNuclearButtons = async (interaction, db) => {
         await interaction.deferUpdate();
 
         try {
-            // Nuclear option - Complete database wipe
             await db.query('TRUNCATE TABLE user_levels CASCADE');
             await db.query('TRUNCATE TABLE guild_settings CASCADE');
             await db.query('DROP TABLE IF EXISTS daily_voice_xp CASCADE');
