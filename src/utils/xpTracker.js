@@ -1227,6 +1227,17 @@ class XPTracker {
                 return xp !== undefined && xp !== null ? xp.toLocaleString() : '0';
             };
 
+            // Get daily voice XP progress for voice activities
+            let dailyProgress = '';
+            if (type === 'voice') {
+                const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000;
+                const currentDay = this.getCurrentDay();
+                const dailyXP = this.getDailyVoiceXP(user.id, guildId, currentDay);
+                const progressPercent = Math.min(100, Math.round((dailyXP / dailyCap) * 100));
+                const progressBar = '█'.repeat(Math.floor(progressPercent / 10)) + '░'.repeat(10 - Math.floor(progressPercent / 10));
+                dailyProgress = `\n- DAILY PROGRESS: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} XP (${progressPercent}%)\n- PROGRESS BAR: [${progressBar}]`;
+            }
+
             const embed = new EmbedBuilder()
                 .setColor(0xFF0000)
                 .setTimestamp()
@@ -1260,7 +1271,7 @@ class XPTracker {
                             iconURL: user.displayAvatarURL({ size: 32 })
                         })
                         .setTitle('🔴 VOICE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}${dailyProgress}\n\`\`\``);
                     break;
 
                 case 'levelup':
