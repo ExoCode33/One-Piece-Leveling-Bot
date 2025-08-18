@@ -1,4 +1,4 @@
-// src/utils/dailyQuests.js - Daily Quest System Manager (Updated - No Tier Caps, Flat XP Reward)
+// src/utils/dailyQuests.js - Daily Quest System Manager
 
 const { EmbedBuilder } = require('discord.js');
 const { getQuestTypes } = require('./questTypes');
@@ -40,7 +40,7 @@ class DailyQuests {
                     guild_id VARCHAR(20) NOT NULL,
                     date DATE NOT NULL,
                     completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    xp_bonus_awarded BOOLEAN DEFAULT false,
+                    tier_role_awarded BOOLEAN DEFAULT false,
                     UNIQUE(user_id, guild_id, date)
                 )
             `);
@@ -297,7 +297,7 @@ class DailyQuests {
         }
     }
 
-    // Check if all quests are completed and award flat XP bonus
+    // Check if all quests are completed and award tier 2 role
     async checkAllQuestsCompleted(userId, guildId) {
         try {
             const today = this.getCurrentDayKey();
@@ -323,12 +323,12 @@ class DailyQuests {
 
                 // Record completion
                 await this.db.query(`
-                    INSERT INTO daily_quest_completions (user_id, guild_id, date, xp_bonus_awarded)
+                    INSERT INTO daily_quest_completions (user_id, guild_id, date, tier_role_awarded)
                     VALUES ($1, $2, $3, true)
                 `, [userId, guildId, today]);
 
-                // Award flat XP bonus instead of role
-                await this.awardQuestCompletionXP(userId, guildId);
+                // Award Tier 2 role (quest completion gets tier 2 cap)
+                await this.awardQuestCompletionRole(userId, guildId);
 
                 // Post completion announcement
                 await this.postAllQuestsCompleted(userId, guildId);
@@ -341,21 +341,44 @@ class DailyQuests {
         }
     }
 
-    // Award flat XP bonus for completing all quests
-    async awardQuestCompletionXP(userId, guildId) {
+    // Award quest completion role (Tier 2 XP cap)
+    async awardQuestCompletionRole(userId, guildId) {
         try {
-            const completionXP = parseInt(process.env.DAILY_QUEST_COMPLETION_XP) || 500;
+            const roleId = process.env.DAILY_QUEST_COMPLETION_ROLE;
+            if (!roleId || roleId.includes('role_id')) return;
 
-            if (global.xpTracker) {
-                const user = await this.client.users.fetch(userId).catch(() => null);
-                if (user) {
-                    await global.xpTracker.awardXP(userId, guildId, completionXP, 'quest_completion', user, true);
-                    console.log(`[DAILY QUESTS] Awarded ${completionXP} XP completion bonus to ${user.username}`);
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+
+            const role = guild.roles.cache.get(roleId);
+            if (!role) return;
+
+            const member = guild.members.cache.get(userId);
+            if (!member) return;
+
+            // Remove any existing daily buff roles first
+            const allBuffRoles = [
+                process.env.DAILY_BUFF_TIER_1_ROLE,
+                process.env.DAILY_BUFF_TIER_2_ROLE,
+                process.env.DAILY_BUFF_TIER_3_ROLE
+            ].filter(id => id && !id.includes('role_id'));
+
+            for (const buffRoleId of allBuffRoles) {
+                if (member.roles.cache.has(buffRoleId)) {
+                    const oldRole = guild.roles.cache.get(buffRoleId);
+                    if (oldRole) {
+                        await member.roles.remove(oldRole);
+                        console.log(`[DAILY QUESTS] Removed daily buff role: ${oldRole.name}`);
+                    }
                 }
             }
 
+            // Add quest completion role
+            await member.roles.add(role);
+            console.log(`[DAILY QUESTS] Awarded quest completion role: ${role.name} to ${member.user.username}`);
+
         } catch (error) {
-            console.error('[DAILY QUESTS] Error awarding quest completion XP:', error);
+            console.error('[DAILY QUESTS] Error awarding quest completion role:', error);
         }
     }
 
@@ -371,12 +394,12 @@ class DailyQuests {
             const user = await this.client.users.fetch(userId).catch(() => null);
             if (!user) return;
 
-            const completionXP = parseInt(process.env.DAILY_QUEST_COMPLETION_XP) || 500;
+            const tier2Cap = parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000;
 
             const embed = new EmbedBuilder()
                 .setColor(0xFFD700)
                 .setTitle('🏆 ALL MISSIONS ACCOMPLISHED!')
-                .setDescription(`\`\`\`diff\n+ ${user.username} completed ALL daily missions!\n+ Completion Bonus: +${completionXP.toLocaleString()} XP\n+ Outstanding performance, Marine!\n\`\`\``)
+                .setDescription(`\`\`\`diff\n+ ${user.username} completed ALL daily missions!\n+ Tier 2 XP Cap Unlocked: ${tier2Cap.toLocaleString()}\n+ Quest Completion Role Awarded!\n+ Outstanding performance, Marine!\n\`\`\``)
                 .setThumbnail(user.displayAvatarURL({ size: 128 }))
                 .setFooter({ text: '⚓ Marine Intelligence • Exemplary Service' })
                 .setTimestamp();
