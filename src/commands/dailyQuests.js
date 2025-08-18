@@ -1,4 +1,4 @@
-// src/commands/daily-quest.js - Complete Daily Quest Command (Updated - No Tier Caps)
+// src/commands/daily-quest.js - Complete Daily Quest Command
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
@@ -77,18 +77,16 @@ module.exports = {
 
             // Add completion bonus info
             if (allCompleted) {
-                const completionXP = parseInt(process.env.DAILY_QUEST_COMPLETION_XP) || 500;
                 embed.addFields({
                     name: '🏆 MISSION COMPLETE BONUS',
-                    value: `\`\`\`diff\n+ ALL MISSIONS ACCOMPLISHED!\n+ Completion Bonus: +${completionXP.toLocaleString()} XP\n+ Outstanding performance, Marine!\n\`\`\``,
+                    value: `\`\`\`diff\n+ ALL MISSIONS ACCOMPLISHED!\n+ Quest Master Role Awarded\n+ Tier-2 XP Cap Unlocked (${parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000} XP)\n+ Outstanding performance, Marine!\n\`\`\``,
                     inline: false
                 });
             } else {
                 const remaining = totalQuests - completedQuests;
-                const completionXP = parseInt(process.env.DAILY_QUEST_COMPLETION_XP) || 500;
                 embed.addFields({
                     name: '📈 COMPLETION REWARD',
-                    value: `\`\`\`yaml\nComplete ALL daily missions to unlock:\n• Flat XP Bonus: +${completionXP.toLocaleString()} XP\n• Special recognition in quest channel\n\nRemaining: ${remaining} mission${remaining !== 1 ? 's' : ''}\n\`\`\``,
+                    value: `\`\`\`yaml\nComplete ALL daily missions to unlock:\n• Quest Master Role\n• Tier-2 XP Cap (${parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000} daily XP)\n• Special recognition in quest channel\n\nRemaining: ${remaining} mission${remaining !== 1 ? 's' : ''}\n\`\`\``,
                     inline: false
                 });
             }
