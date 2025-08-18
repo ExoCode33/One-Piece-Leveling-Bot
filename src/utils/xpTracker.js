@@ -168,70 +168,14 @@ class XPTracker {
         });
     }
 
-    // NEW: Get user's daily XP cap based on their XP CAP roles (separate from buff roles)
+    // Simplified: Everyone uses the same daily XP cap
     getUserDailyXPCap(member) {
-        try {
-            // Check environment variable linking - if DAILY_QUEST_COMPLETION_ROLE points to a tier cap role
-            let questCompletionRoleId = process.env.DAILY_QUEST_COMPLETION_ROLE;
-            
-            // Handle variable linking (e.g., DAILY_QUEST_COMPLETION_ROLE=DAILY_XP_CAP_TIER_2_ROLE)
-            if (questCompletionRoleId && questCompletionRoleId.startsWith('DAILY_XP_CAP_')) {
-                // This is a reference to another environment variable
-                questCompletionRoleId = process.env[questCompletionRoleId];
-                console.log(`[XP CAP] Quest completion role linked to: ${questCompletionRoleId}`);
-            }
-
-            // Check for daily XP CAP roles (highest priority first) - SEPARATE from buff roles
-            if (process.env.DAILY_XP_CAP_TIER_3_ROLE && member.roles.cache.has(process.env.DAILY_XP_CAP_TIER_3_ROLE)) {
-                console.log(`[XP CAP] ${member.user.username} has Tier-3 XP Cap role`);
-                return {
-                    cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_3) || 5000,
-                    source: 'Tier-3 XP Cap',
-                    tier: 3
-                };
-            }
-            if (process.env.DAILY_XP_CAP_TIER_2_ROLE && member.roles.cache.has(process.env.DAILY_XP_CAP_TIER_2_ROLE)) {
-                console.log(`[XP CAP] ${member.user.username} has Tier-2 XP Cap role`);
-                return {
-                    cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000,
-                    source: 'Tier-2 XP Cap',
-                    tier: 2
-                };
-            }
-            if (process.env.DAILY_XP_CAP_TIER_1_ROLE && member.roles.cache.has(process.env.DAILY_XP_CAP_TIER_1_ROLE)) {
-                console.log(`[XP CAP] ${member.user.username} has Tier-1 XP Cap role`);
-                return {
-                    cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_1) || 2000,
-                    source: 'Tier-1 XP Cap',
-                    tier: 1
-                };
-            }
-            
-            // Check for quest completion role (processed after checking if it's linked to a tier role)
-            if (questCompletionRoleId && questCompletionRoleId !== 'role_id' && member.roles.cache.has(questCompletionRoleId)) {
-                console.log(`[XP CAP] ${member.user.username} has Quest Master role`);
-                return {
-                    cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000,
-                    source: 'Quest Master',
-                    tier: 2
-                };
-            }
-            
-            // Default cap
-            console.log(`[XP CAP] ${member.user.username} using default cap`);
-            return {
-                cap: parseInt(process.env.DAILY_VOICE_XP_CAP_DEFAULT) || 1500,
-                source: 'Default',
-                tier: 0
-            };
-        } catch (error) {
-            console.error('[XP CAP] Error getting user XP cap:', error);
-            return {
-                cap: parseInt(process.env.DAILY_VOICE_XP_CAP_DEFAULT) || 1500,
-                source: 'Default (Error)',
-                tier: 0
-            };
-        }
+        const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || parseInt(process.env.DAILY_VOICE_XP_CAP_DEFAULT) || 1500;
+        return {
+            cap: defaultCap,
+            source: 'Default',
+            tier: 0
+        };
     }
 
     async loadGuildSettingsFromDatabase() {
@@ -425,6 +369,208 @@ class XPTracker {
         this.voiceSessions.clear();
         this.cooldowns.clear();
         this.dailyVoiceXP.clear();
+    }
+
+    // Award XP method
+    async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
+        const { awardXP } = require('./awardManager');
+        return await awardXP(this, userId, guildId, xpAmount, source, user, skipMultiplier);
+    }
+
+    // Get user stats
+    async getUserStats(userId, guildId) {
+        const { getUserStats } = require('./xpUtils');
+        return await getUserStats(this, userId, guildId);
+    }
+
+    // Get user rank
+    async getUserRank(userId, guildId) {
+        const { getUserRank } = require('./xpUtils');
+        return await getUserRank(this, userId, guildId);
+    }
+
+    // Get leaderboard
+    async getLeaderboard(guildId, page = 1, limit = 50) {
+        const { getLeaderboard } = require('./xpUtils');
+        return await getLeaderboard(this, guildId, page, limit);
+    }
+
+    // Calculate level from XP
+    calculateLevel(totalXP) {
+        const { calculateLevel } = require('./awardManager');
+        return calculateLevel(totalXP);
+    }
+
+    // Get XP required for level
+    getXPForLevel(level) {
+        const { getXPForLevel } = require('./awardManager');
+        return getXPForLevel(level);
+    }
+
+    // Log XP activity
+    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
+        const { logXPActivity } = require('./awardManager');
+        return await logXPActivity(this, type, user, guildId, xpGain, additionalInfo);
+    }
+
+    // Handle voice state updates
+    async handleVoiceStateUpdate(oldState, newState) {
+        const { VoiceHandler } = require('./voiceHandler');
+        const voiceHandler = new VoiceHandler(this);
+        return await voiceHandler.handleVoiceStateUpdate(oldState, newState);
+    }
+
+    // Process voice XP
+    async processVoiceXP() {
+        try {
+            const now = Date.now();
+            const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
+            const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
+            const antiAFK = process.env.VOICE_ANTI_AFK === 'true';
+            const today = this.getCurrentDayKey();
+
+            console.log(`[VOICE XP] Processing voice XP for ${this.voiceSessions.size} active sessions (3 AM EST reset)`);
+
+            const processedUsers = new Set();
+
+            for (const [userId, session] of this.voiceSessions.entries()) {
+                try {
+                    if (processedUsers.has(userId)) continue;
+                    processedUsers.add(userId);
+
+                    if (now - session.lastXPTime < voiceXPCooldown) continue;
+
+                    const guild = this.client.guilds.cache.get(session.guildId);
+                    if (!guild) {
+                        this.voiceSessions.delete(userId);
+                        continue;
+                    }
+
+                    const channel = guild.channels.cache.get(session.channelId);
+                    if (!channel) {
+                        this.voiceSessions.delete(userId);
+                        continue;
+                    }
+
+                    const memberCount = channel.members.filter(m => !m.user.bot).size;
+                    if (memberCount < minMembers) {
+                        console.log(`[VOICE XP] ${userId} in ${channel.name}: Not enough members (${memberCount}/${minMembers}), skipping`);
+                        continue;
+                    }
+
+                    const user = await this.client.users.fetch(userId).catch(() => null);
+                    if (!user) continue;
+
+                    const member = await guild.members.fetch(userId).catch(() => null);
+                    if (!member) continue;
+
+                    const guildSettings = global.guildSettings?.get(session.guildId) || { xpMultiplier: 1.0 };
+                    if (guildSettings.excludedRole && member.roles.cache.has(guildSettings.excludedRole)) {
+                        console.log(`[VOICE XP] ${user.username} has excluded role, skipping`);
+                        continue;
+                    }
+
+                    // Get daily cap (simplified - everyone uses same cap)
+                    const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+                    const currentDailyXP = this.getDailyVoiceXP(userId, session.guildId, today);
+                    
+                    if (currentDailyXP >= dailyCap) {
+                        console.log(`[VOICE XP] ${user.username} has reached daily cap: ${currentDailyXP}/${dailyCap} XP`);
+                        continue;
+                    }
+
+                    const voiceXPMin = parseInt(process.env.VOICE_XP_MIN) || 45;
+                    const voiceXPMax = parseInt(process.env.VOICE_XP_MAX) || 55;
+                    const baseXP = Math.floor(Math.random() * (voiceXPMax - voiceXPMin + 1)) + voiceXPMin;
+
+                    let finalXP = baseXP;
+
+                    // Apply mute/deafen penalty
+                    let muteMultiplier = 1.0;
+                    let muteReason = '';
+                    if (antiAFK && (session.isMuted || session.isDeafened)) {
+                        const exemptUsers = process.env.VOICE_MUTE_EXEMPT_USERS?.split(',') || [];
+                        const exemptUser = process.env.VOICE_MUTE_EXEMPT_USER;
+                        const exemptRoles = process.env.VOICE_MUTE_EXEMPT_ROLES?.split(',') || [];
+                        const exemptMultiplier = parseFloat(process.env.VOICE_MUTE_EXEMPT_MULTIPLIER) || 1.0;
+                        
+                        let isExempt = false;
+                        
+                        if (exemptUsers.includes(userId) || userId === exemptUser) {
+                            isExempt = true;
+                            muteMultiplier = exemptMultiplier;
+                            muteReason = 'EXEMPT USER';
+                        }
+                        
+                        if (!isExempt && exemptRoles.length > 0) {
+                            for (const roleId of exemptRoles) {
+                                if (roleId && member.roles.cache.has(roleId.trim())) {
+                                    isExempt = true;
+                                    muteMultiplier = exemptMultiplier;
+                                    muteReason = 'EXEMPT ROLE';
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (!isExempt) {
+                            muteMultiplier = 0.25;
+                            muteReason = session.isMuted && session.isDeafened ? 'MUTED+DEAFENED' : 
+                                       session.isMuted ? 'MUTED' : 'DEAFENED';
+                        }
+                        
+                        console.log(`[VOICE XP] ${user.username} mute status: ${muteReason}, multiplier: ${muteMultiplier}x`);
+                    }
+                    
+                    finalXP = Math.round(baseXP * muteMultiplier);
+                    
+                    // Apply XP boosts
+                    if (global.xpBoostManager && member) {
+                        try {
+                            const boostResult = await global.xpBoostManager.calculateUserBoost(session.guildId, member);
+                            if (boostResult.multiplier > 1.0) {
+                                const boostedXP = Math.round(finalXP * boostResult.multiplier);
+                                console.log(`[XP BOOST] ${user.username} voice: ${finalXP} → ${boostedXP} (${boostResult.multiplier}x boost)`);
+                                finalXP = boostedXP;
+                            }
+                        } catch (error) {
+                            console.error('[XP BOOST ERROR] Failed to calculate user boost for voice:', error);
+                        }
+                    }
+                    
+                    const globalMultiplier = guildSettings.xpMultiplier || 1.0;
+                    if (globalMultiplier !== 1.0) {
+                        const afterGlobal = Math.round(finalXP * globalMultiplier);
+                        console.log(`[XP CALC] ${user.username} voice: ${finalXP} → ${afterGlobal} (${globalMultiplier}x global)`);
+                        finalXP = afterGlobal;
+                    }
+
+                    // Apply daily cap
+                    const newDailyTotal = currentDailyXP + finalXP;
+                    if (newDailyTotal > dailyCap) {
+                        finalXP = dailyCap - currentDailyXP;
+                        console.log(`[VOICE XP] ${user.username} capped at daily limit: ${finalXP} XP awarded (${newDailyTotal}/${dailyCap})`);
+                    }
+
+                    if (finalXP > 0) {
+                        await this.awardXP(userId, session.guildId, finalXP, 'voice', user, true);
+                        
+                        // Update daily voice XP
+                        await this.setDailyVoiceXP(userId, session.guildId, currentDailyXP + finalXP, today);
+                        
+                        session.lastXPTime = now;
+                        
+                        console.log(`[VOICE XP] ${user.username}: +${finalXP} XP (Daily: ${currentDailyXP + finalXP}/${dailyCap})`);
+                    }
+
+                } catch (error) {
+                    console.error(`[VOICE XP] Error processing user ${userId}:`, error);
+                }
+            }
+
+        } catch (error) {
+            console.error('[VOICE XP] Error in processVoiceXP:', error);
+        }
     }
 }
 
