@@ -1,6 +1,69 @@
-// src/commands/daily-buff.js - Enhanced Daily XP Buff System with Smooth Slot Machine Animation
+// src/commands/daily-buff.js - Enhanced Daily XP Buff System with Rainbow Animation
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
+// Animation Configuration
+const ANIMATION_CONFIG = {
+    RAINBOW_DELAY: 300,
+    ANIMATION_FRAMES: 8
+};
+
+class BuffAnimator {
+    static getRainbowPattern(frame, length = 20) {
+        const colors = ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪']; // Removed white
+        const pattern = [];
+        
+        for (let i = 0; i < length; i++) {
+            const colorIndex = (i + frame) % colors.length;
+            pattern.push(colors[colorIndex]);
+        }
+        
+        return pattern.join(' ');
+    }
+
+    static getRainbowColor(frame) {
+        const colors = [0xFF0000, 0xFF8000, 0xFFFF00, 0x00FF00, 0x0080FF, 0x8000FF]; // Removed white
+        return colors[frame % colors.length];
+    }
+
+    static createLoadingFrame(frame) {
+        const pattern = this.getRainbowPattern(frame, 20);
+        const color = this.getRainbowColor(frame);
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎰 DAILY BUFF WHEEL SPINNING')
+            .setDescription(
+                `⚡ **Spinning the Marine power enhancement wheel...**\n\n` +
+                `${pattern}\n\n` +
+                `🌊 **Status:** Channeling Marine technology...\n` +
+                `⚡ **Energy:** Building up power reserves...\n\n` +
+                `${pattern}`
+            )
+            .setColor(color)
+            .setFooter({ text: '🎰 The wheel is spinning... prepare for enhancement!' })
+            .setTimestamp();
+        
+        return embed;
+    }
+
+    static createRevealFrame(frame, isWinning = false) {
+        const pattern = this.getRainbowPattern(frame, 25);
+        const color = this.getRainbowColor(frame);
+        
+        const description = isWinning ? 
+            `✨ **POWER ENHANCEMENT DISCOVERED!** ✨\n\n${pattern}\n\n🎉 **Legendary enhancement found!** 🎉\n\n${pattern}` :
+            `🔍 **Scanning Marine enhancement database...**\n\n${pattern}\n\n⚡ **Enhancement materializing...** ⚡\n\n${pattern}`;
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎰 ENHANCEMENT DISCOVERY')
+            .setDescription(description)
+            .setColor(color)
+            .setFooter({ text: '⚡ Marine enhancement system activating...' })
+            .setTimestamp();
+        
+        return embed;
+    }
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -37,7 +100,7 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the enhanced spinning animation
+            // Start the enhanced rainbow spinning animation
             await interaction.deferReply();
             await this.performEnhancedBuffRoll(interaction, userId, guildId, member);
 
@@ -57,7 +120,7 @@ module.exports = {
         }
     },
 
-    // One Piece Treasure Chest animation inspired by gacha
+    // Enhanced Marine Power Enhancement animation
     async performEnhancedBuffRoll(interaction, userId, guildId, member) {
         const buffTiers = this.getBuffTiers();
         
@@ -66,66 +129,53 @@ module.exports = {
         const resultSymbol = buffTiers[finalResult].symbol;
         const targetColor = this.getTierColorHex(finalResult);
         
-        // Phase 1: Treasure Hunt
-        let embed = new EmbedBuilder()
-            .setColor('#8B4513')
-            .setTitle('🏴‍☠️ TREASURE HUNT')
-            .setDescription('**Searching for treasure...**')
-            .addFields({
-                name: '🗺️ Status',
-                value: '```Sailing the Grand Line...\nSearching for treasure chests...\nFound something!```',
-                inline: false
-            });
-
-        await interaction.editReply({ embeds: [embed] });
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // Phase 2: Chest Opening Animation
-        embed.setTitle('📦 TREASURE CHEST DISCOVERED!')
-             .setDescription('**Opening the chest...**')
-             .setColor('#FFD700');
-        
-        const chestFrames = [
-            '📦 ░░░░░░░░░░',
-            '📦 ████░░░░░░',
-            '📦 ████████░░',
-            '📦 ██████████',
-            '✨ ██████████'
-        ];
-        
-        for (let i = 0; i < chestFrames.length; i++) {
-            embed.spliceFields(0, 1, {
-                name: '🔓 Opening Progress',
-                value: `\`\`\`${chestFrames[i]}\`\`\``,
-                inline: false
-            });
+        // Phase 1: Rainbow Spinning Animation
+        let frame = 0;
+        for (let i = 0; i < ANIMATION_CONFIG.ANIMATION_FRAMES; i++) {
+            const loadingEmbed = BuffAnimator.createLoadingFrame(frame);
             
-            await interaction.editReply({ embeds: [embed] });
-            await new Promise(resolve => setTimeout(resolve, 400));
+            await interaction.editReply({ embeds: [loadingEmbed] });
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
+            frame++;
+        }
+        
+        // Phase 2: Reveal Animation
+        const isHighTier = finalResult >= 4; // Legendary or higher
+        for (let i = 0; i < 4; i++) {
+            const revealEmbed = BuffAnimator.createRevealFrame(frame, isHighTier);
+            
+            await interaction.editReply({ embeds: [revealEmbed] });
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
+            frame++;
         }
 
-        // Phase 3: Treasure Reveal
+        // Phase 3: Final Result
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
         
         const finalEmbed = new EmbedBuilder()
             .setColor(targetColor)
-            .setTitle('🎉 TREASURE DISCOVERED!')
+            .setTitle('🎉 MARINE ENHANCEMENT ACQUIRED!')
             .setDescription(`${rarityEmoji} **${buffInfo.name}** ${buffInfo.symbol}`)
             .addFields(
                 {
-                    name: '💎 Your Treasure',
+                    name: '⚡ Your Enhancement',
                     value: `${rarityEmoji} ${buffInfo.name} ${buffInfo.symbol}`,
                     inline: false
                 },
                 {
-                    name: '⚡ Power Boost',
+                    name: '💪 Power Boost',
                     value: `**${buffInfo.multiplier}x XP** | **${this.getTierRarity(finalResult)}**\n*Active until <t:${nextReset}:R>*`,
+                    inline: false
+                },
+                {
+                    name: '🌊 Enhancement Details',
+                    value: `🔸 **Combat Power:** Enhanced training efficiency\n🔸 **Duration:** Until 3:00 AM EST reset\n🔸 **Effect:** All XP gains boosted by ${buffInfo.multiplier}x`,
                     inline: false
                 }
             )
-            .setFooter({ text: `🏴‍☠️ Marine Intelligence • ${buffInfo.name} Active` })
+            .setFooter({ text: `⚓ Marine Intelligence • ${buffInfo.name} Active` })
             .setTimestamp();
 
         await interaction.editReply({ embeds: [finalEmbed] });
@@ -134,65 +184,17 @@ module.exports = {
         await this.applyBuffRole(userId, guildId, member, finalResult);
     },
 
-    // Get rarity emoji for treasure theme
+    // Get rarity emoji for marine theme
     getRarityEmoji(tier) {
         const emojis = {
-            1: '⚪', // Common
-            2: '🔵', // Rare
-            3: '🟣', // Epic
-            4: '🟡', // Legendary
-            5: '🟠', // Mythical
-            6: '🔴'  // Divine
+            1: '🟢', // Common - Green
+            2: '🔵', // Rare - Blue
+            3: '🟣', // Epic - Purple
+            4: '🟡', // Legendary - Gold
+            5: '🟠', // Mythical - Orange
+            6: '🔴'  // Divine - Red
         };
-        return emojis[tier] || '⚪';
-    },
-
-    // Get tier symbols (circle emojis)
-    getTierSymbols() {
-        return ['🟢', '🔵', '🟣', '🟡', '🟠', '🔴'];
-    },
-
-    // Create a strategic sequence that cycles through symbols to reach the result
-    createStrategicSequence(allSymbols, resultSymbol) {
-        const sequence = [];
-        const resultIndex = allSymbols.indexOf(resultSymbol);
-        
-        // Continue cycling from where medium phase ended (14 total spins so far: 8 fast + 6 medium)
-        const startIndex = 14 % allSymbols.length;
-        
-        // Calculate how many steps to get to result symbol naturally
-        let currentIndex = startIndex;
-        for (let i = 0; i < 3; i++) {
-            currentIndex = (currentIndex + 1) % allSymbols.length;
-            sequence.push(allSymbols[currentIndex]);
-            
-            // If we've reached the result in a natural cycle, stop here
-            if (allSymbols[currentIndex] === resultSymbol) {
-                break;
-            }
-        }
-        
-        // If we haven't reached the result naturally, make the last one the result
-        if (sequence[sequence.length - 1] !== resultSymbol) {
-            sequence[sequence.length - 1] = resultSymbol;
-        }
-        
-        return sequence;
-    },
-
-    // Create realistic surrounding symbols for the wheel
-    createRealisticSurrounding(allSymbols, centerSymbol, isWinning) {
-        if (isWinning) {
-            // For winning spin, create a balanced wheel
-            const otherSymbols = allSymbols.filter(s => s !== centerSymbol);
-            return Array(6).fill().map((_, index) => {
-                // Mix in some variety but avoid too much repetition
-                return otherSymbols[index % otherSymbols.length];
-            });
-        } else {
-            // For regular spins, completely random
-            return Array(6).fill().map(() => allSymbols[Math.floor(Math.random() * allSymbols.length)]);
-        }
+        return emojis[tier] || '🟢';
     },
 
     // Get tier color as hex string for embed colors
@@ -225,7 +227,7 @@ module.exports = {
     calculateBuffTier() {
         const random = Math.random() * 100;
         
-        // Weighted probabilities with slight improvement for higher tiers
+        // Weighted probabilities
         if (random < 45) return 1;        // 45% - Common
         else if (random < 70) return 2;   // 25% - Rare  
         else if (random < 85) return 3;   // 15% - Epic
@@ -273,18 +275,13 @@ module.exports = {
     // Get buff tier information
     getBuffTiers() {
         return {
-            1: { name: 'Common Buff', symbol: '🟢', multiplier: 1.1 },
-            2: { name: 'Rare Buff', symbol: '🔵', multiplier: 1.2 },
-            3: { name: 'Epic Buff', symbol: '🟣', multiplier: 1.3 },
-            4: { name: 'Legendary Buff', symbol: '🟡', multiplier: 1.5 },
-            5: { name: 'Mythical Buff', symbol: '🟠', multiplier: 1.7 },
-            6: { name: 'Divine Buff', symbol: '🔴', multiplier: 2.0 }
+            1: { name: 'Marine Training', symbol: '🟢', multiplier: 1.1 },
+            2: { name: 'Enhanced Drill', symbol: '🔵', multiplier: 1.2 },
+            3: { name: 'Elite Protocol', symbol: '🟣', multiplier: 1.3 },
+            4: { name: 'Admiral Focus', symbol: '🟡', multiplier: 1.5 },
+            5: { name: 'Fleet Command', symbol: '🟠', multiplier: 1.7 },
+            6: { name: 'World Government Authorization', symbol: '🔴', multiplier: 2.0 }
         };
-    },
-
-    // Get tier color for embeds (keeping original function for compatibility)
-    getTierColor(tier) {
-        return this.getTierColorHex(tier);
     },
 
     // Apply the buff role to the user
