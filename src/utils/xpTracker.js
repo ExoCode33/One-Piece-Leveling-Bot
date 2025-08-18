@@ -641,61 +641,24 @@ class XPTracker {
         }
     }
 
-    // Get daily buff multiplier for a user
-    async getDailyBuffMultiplier(member) {
+    // Get daily voice XP statistics for a user (EST-based)
+    async getDailyVoiceXPStats(userId, guildId, days = 7) {
         try {
-            if (!member) return 1.0;
+            const result = await this.db.query(`
+                SELECT date, total_xp 
+                FROM daily_voice_xp 
+                WHERE user_id = $1 AND guild_id = $2 AND date >= CURRENT_DATE - INTERVAL '${days} days'
+                ORDER BY date DESC
+            `, [userId, guildId]);
 
-            // Check which daily buff role the user has
-            const buffTiers = {
-                1: 1.1, // Common - 10% boost
-                2: 1.2, // Rare - 20% boost  
-                3: 1.3, // Epic - 30% boost
-                4: 1.5, // Legendary - 50% boost
-                5: 1.7, // Mythical - 70% boost
-                6: 2.0  // Divine - 100% boost
-            };
-
-            for (const [tier, multiplier] of Object.entries(buffTiers)) {
-                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-                if (roleId && member.roles.cache.has(roleId)) {
-                    return multiplier;
-                }
-            }
-
-            return 1.0; // No daily buff
+            return result.rows.map(row => ({
+                date: row.date,
+                xp: row.total_xp,
+                isToday: row.date === this.getCurrentDay()
+            }));
         } catch (error) {
-            console.error('[DAILY BUFF] Error getting daily buff multiplier:', error);
-            return 1.0;
-        }
-    }
-
-    // Get daily buff multiplier for a user
-    async getDailyBuffMultiplier(member) {
-        try {
-            if (!member) return 1.0;
-
-            // Check which daily buff role the user has
-            const buffTiers = {
-                1: 1.1, // Common - 10% boost
-                2: 1.2, // Rare - 20% boost  
-                3: 1.3, // Epic - 30% boost
-                4: 1.5, // Legendary - 50% boost
-                5: 1.7, // Mythical - 70% boost
-                6: 2.0  // Divine - 100% boost
-            };
-
-            for (const [tier, multiplier] of Object.entries(buffTiers)) {
-                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-                if (roleId && member.roles.cache.has(roleId)) {
-                    return multiplier;
-                }
-            }
-
-            return 1.0; // No daily buff
-        } catch (error) {
-            console.error('[DAILY BUFF] Error getting daily buff multiplier:', error);
-            return 1.0;
+            console.error('[DAILY CAP] Error getting daily voice XP stats:', error);
+            return [];
         }
     }
 
@@ -750,21 +713,13 @@ class XPTracker {
             
             // Apply multipliers if not skipping
             if (!skipMultiplier) {
-                // Apply daily buff multiplier first
-                const dailyBuffMultiplier = await this.getDailyBuffMultiplier(member);
-                if (dailyBuffMultiplier > 1.0) {
-                    const buffedXP = Math.round(finalXP * dailyBuffMultiplier);
-                    console.log(`[DAILY BUFF] ${user.username} ${source}: ${finalXP} → ${buffedXP} (${dailyBuffMultiplier}x daily buff)`);
-                    finalXP = buffedXP;
-                }
-
-                // Apply XP role boosts (stacks with daily buff)
+                // Apply XP role boosts (includes daily buff roles from xp_boosts table)
                 if (global.xpBoostManager && member) {
                     try {
                         const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
                         if (boostResult.multiplier > 1.0) {
                             const boostedXP = Math.round(finalXP * boostResult.multiplier);
-                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} → ${boostedXP} (${boostResult.multiplier}x role boost)`);
+                            console.log(`[XP BOOST] ${user.username} ${source}: ${finalXP} → ${boostedXP} (${boostResult.multiplier}x boost - includes daily buffs)`);
                             finalXP = boostedXP;
                         }
                     } catch (error) {
