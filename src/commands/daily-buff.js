@@ -4,12 +4,13 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation Configuration
 const ANIMATION_CONFIG = {
-    RAINBOW_DELAY: 300,
-    ANIMATION_FRAMES: 8
+    RAINBOW_DELAY: 400,
+    SPINNING_FRAMES: 8,
+    REVEAL_FRAMES: 4
 };
 
 class BuffAnimator {
-    static getRainbowPattern(frame, length = 20) {
+    static getRainbowPattern(frame, length = 15) {
         const colors = ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪']; // Removed white
         const pattern = [];
         
@@ -18,7 +19,7 @@ class BuffAnimator {
             pattern.push(colors[colorIndex]);
         }
         
-        return pattern.join(' ');
+        return pattern.join('');
     }
 
     static getRainbowColor(frame) {
@@ -26,39 +27,40 @@ class BuffAnimator {
         return colors[frame % colors.length];
     }
 
-    static createLoadingFrame(frame) {
-        const pattern = this.getRainbowPattern(frame, 20);
+    static createSpinningFrame(frame) {
+        const pattern = this.getRainbowPattern(frame, 15);
         const color = this.getRainbowColor(frame);
         
         const embed = new EmbedBuilder()
             .setTitle('🎰 DAILY BUFF WHEEL SPINNING')
             .setDescription(
-                `⚡ **Spinning the Marine power enhancement wheel...**\n\n` +
+                `**Spinning the Marine enhancement wheel...**\n\n` +
                 `${pattern}\n\n` +
-                `🌊 **Status:** Channeling Marine technology...\n` +
-                `⚡ **Energy:** Building up power reserves...\n\n` +
-                `${pattern}`
+                `**Status:** Channeling Marine technology...\n` +
+                `**Energy:** Building up power reserves...`
             )
             .setColor(color)
-            .setFooter({ text: '🎰 The wheel is spinning... prepare for enhancement!' })
+            .setFooter({ text: 'The wheel is spinning... prepare for enhancement!' })
             .setTimestamp();
         
         return embed;
     }
 
-    static createRevealFrame(frame, isWinning = false) {
-        const pattern = this.getRainbowPattern(frame, 25);
+    static createRevealFrame(frame, tier) {
+        const pattern = this.getRainbowPattern(frame, 15);
         const color = this.getRainbowColor(frame);
         
-        const description = isWinning ? 
-            `✨ **POWER ENHANCEMENT DISCOVERED!** ✨\n\n${pattern}\n\n🎉 **Legendary enhancement found!** 🎉\n\n${pattern}` :
-            `🔍 **Scanning Marine enhancement database...**\n\n${pattern}\n\n⚡ **Enhancement materializing...** ⚡\n\n${pattern}`;
+        const isHighTier = tier >= 4;
         
         const embed = new EmbedBuilder()
-            .setTitle('🎰 ENHANCEMENT DISCOVERY')
-            .setDescription(description)
+            .setTitle('ENHANCEMENT DISCOVERY')
+            .setDescription(
+                `**${isHighTier ? 'RARE ENHANCEMENT DISCOVERED!' : 'Enhancement materializing...'}**\n\n` +
+                `${pattern}\n\n` +
+                `**Marine enhancement system activating...**`
+            )
             .setColor(color)
-            .setFooter({ text: '⚡ Marine enhancement system activating...' })
+            .setFooter({ text: 'Marine enhancement materializing...' })
             .setTimestamp();
         
         return embed;
@@ -131,18 +133,17 @@ module.exports = {
         
         // Phase 1: Rainbow Spinning Animation
         let frame = 0;
-        for (let i = 0; i < ANIMATION_CONFIG.ANIMATION_FRAMES; i++) {
-            const loadingEmbed = BuffAnimator.createLoadingFrame(frame);
+        for (let i = 0; i < 8; i++) {
+            const spinningEmbed = BuffAnimator.createSpinningFrame(frame);
             
-            await interaction.editReply({ embeds: [loadingEmbed] });
+            await interaction.editReply({ embeds: [spinningEmbed] });
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
             frame++;
         }
         
         // Phase 2: Reveal Animation
-        const isHighTier = finalResult >= 4; // Legendary or higher
         for (let i = 0; i < 4; i++) {
-            const revealEmbed = BuffAnimator.createRevealFrame(frame, isHighTier);
+            const revealEmbed = BuffAnimator.createRevealFrame(frame, finalResult);
             
             await interaction.editReply({ embeds: [revealEmbed] });
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
@@ -153,29 +154,34 @@ module.exports = {
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
+        const rainbowPattern = BuffAnimator.getRainbowPattern(frame, 15);
         
         const finalEmbed = new EmbedBuilder()
             .setColor(targetColor)
-            .setTitle('🎉 MARINE ENHANCEMENT ACQUIRED!')
-            .setDescription(`${rarityEmoji} **${buffInfo.name}** ${buffInfo.symbol}`)
+            .setTitle('MARINE ENHANCEMENT ACQUIRED!')
+            .setDescription(
+                `${rainbowPattern}\n\n` +
+                `${rarityEmoji} **${buffInfo.name}** ${buffInfo.symbol}\n\n` +
+                `${rainbowPattern}`
+            )
             .addFields(
                 {
-                    name: '⚡ Your Enhancement',
-                    value: `${rarityEmoji} ${buffInfo.name} ${buffInfo.symbol}`,
-                    inline: false
+                    name: 'Enhancement Details',
+                    value: `**Name:** ${buffInfo.name}\n**Type:** ${this.getTierRarity(finalResult)}\n**Power:** ${buffInfo.multiplier}x XP Multiplier`,
+                    inline: true
                 },
                 {
-                    name: '💪 Power Boost',
-                    value: `**${buffInfo.multiplier}x XP** | **${this.getTierRarity(finalResult)}**\n*Active until <t:${nextReset}:R>*`,
-                    inline: false
+                    name: 'Duration Info',
+                    value: `**Status:** Active Now\n**Expires:** <t:${nextReset}:R>\n**Reset:** 3:00 AM EST`,
+                    inline: true
                 },
                 {
-                    name: '🌊 Enhancement Details',
-                    value: `🔸 **Combat Power:** Enhanced training efficiency\n🔸 **Duration:** Until 3:00 AM EST reset\n🔸 **Effect:** All XP gains boosted by ${buffInfo.multiplier}x`,
+                    name: 'Combat Benefits',
+                    value: `Enhanced training efficiency\nAll XP gains boosted by ${buffInfo.multiplier}x\nActive until reset`,
                     inline: false
                 }
             )
-            .setFooter({ text: `⚓ Marine Intelligence • ${buffInfo.name} Active` })
+            .setFooter({ text: `Marine Intelligence • ${buffInfo.name} Enhancement Active` })
             .setTimestamp();
 
         await interaction.editReply({ embeds: [finalEmbed] });
