@@ -6,12 +6,12 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const ANIMATION_CONFIG = {
     RAINBOW_DELAY: 350,  // Slower for API lag
     WAVE_FRAMES: 12,
-    REVEAL_FRAMES: 10,   // More frames for 20 width
+    REVEAL_FRAMES: 15,   // More frames for 10 height
     FINAL_PAUSE: 800
 };
 
 class BuffAnimator {
-    static createGrid(width = 20, height = 5, fillColor = '⬜') {
+    static createGrid(width = 20, height = 10, fillColor = '⬜') {
         const grid = [];
         for (let row = 0; row < height; row++) {
             const rowArray = [];
@@ -44,7 +44,7 @@ class BuffAnimator {
         return tierColors[tier] || '🟩';
     }
 
-    static createFluidWaveFrame(frame, tier, width = 20, height = 5) {
+    static createFluidWaveFrame(frame, tier, width = 20, height = 10) {
         const grid = this.createGrid(width, height, '⬜');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
@@ -80,7 +80,7 @@ class BuffAnimator {
         return grid;
     }
 
-    static createSquareRevealFrame(frame, tier, width = 20, height = 5) {
+    static createSquareRevealFrame(frame, tier, width = 20, height = 10) {
         const grid = this.createGrid(width, height, '⬜');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
@@ -109,7 +109,7 @@ class BuffAnimator {
         return grid;
     }
 
-    static createFinalStableGrid(tier, width = 20, height = 5) {
+    static createFinalStableGrid(tier, width = 20, height = 10) {
         const grid = this.createGrid(width, height, '⬜');
         const tierColor = this.getTierColor(tier);
         
@@ -248,7 +248,7 @@ module.exports = {
         }
     },
 
-    // Professional fluid grid-based animation with square reveal
+    // Professional fluid grid-based animation with square reveal - NO WHITE FLICKER
     async performEnhancedBuffRoll(interaction, userId, guildId, member) {
         const buffTiers = this.getBuffTiers();
         
@@ -256,7 +256,7 @@ module.exports = {
         const finalResult = this.calculateBuffTier();
         const targetColor = this.getTierColorHex(finalResult);
         
-        // Phase 1: Fluid Wave Animation (12 frames for longer, smoother effect)
+        // Phase 1: Fluid Wave Animation (12 frames)
         for (let frame = 0; frame <= ANIMATION_CONFIG.WAVE_FRAMES; frame++) {
             const waveEmbed = BuffAnimator.createWaveAnimationFrame(frame, finalResult);
             
@@ -264,7 +264,7 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
         
-        // Phase 2: Square Reveal Animation (10 frames) - explodes outward in square pattern
+        // Phase 2: Square Reveal Animation (10 frames) - SEAMLESS TRANSITION
         for (let frame = 0; frame <= ANIMATION_CONFIG.REVEAL_FRAMES; frame++) {
             const revealEmbed = BuffAnimator.createRevealAnimationFrame(frame, finalResult);
             
@@ -272,8 +272,7 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
 
-        // NO WHITE FLICKER - directly go to final result
-        // Phase 3: Final Result with Details (grid stays tier colored)
+        // Phase 3: IMMEDIATE Final Result - NO INTERMEDIATE STEP
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
