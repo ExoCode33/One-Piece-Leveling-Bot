@@ -447,21 +447,25 @@ async function initializeXP() {
         global.xpBoostManager = xpBoostManager;
         log(`🚀 XP Boost Manager initialized successfully`);
         
-        // Start voice XP processing
-        setInterval(() => {
+        // Start voice XP processing - Fixed async issue
+        setInterval(async () => {
             if (xpTracker && xpTracker.processVoiceXP) {
-                xpTracker.processVoiceXP().catch(error => {
+                try {
+                    await xpTracker.processVoiceXP();
+                } catch (error) {
                     console.error('[VOICE XP] Error in processing:', error);
-                });
+                }
             }
         }, 60000);
         
-        // Daily cleanup
-        setInterval(() => {
+        // Daily cleanup - Fixed async issue
+        setInterval(async () => {
             if (xpTracker && xpTracker.cleanupDailyVoiceXP) {
-                xpTracker.cleanupDailyVoiceXP().catch(error => {
+                try {
+                    await xpTracker.cleanupDailyVoiceXP();
+                } catch (error) {
                     console.error('[DAILY CLEANUP] Error:', error);
-                });
+                }
             }
         }, 24 * 60 * 60 * 1000);
         
