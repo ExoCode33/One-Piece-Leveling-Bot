@@ -4,10 +4,10 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation Configuration
 const ANIMATION_CONFIG = {
-    RAINBOW_DELAY: 250,  // Faster for anime-style
-    WAVE_FRAMES: 12,
-    EXPLOSION_FRAMES: 8, // Anime explosion effect
-    FINAL_PAUSE: 500
+    RAINBOW_DELAY: 200,  // Fast for dramatic effect
+    BUILDUP_FRAMES: 8,   // Energy buildup phase
+    EXPLOSION_FRAMES: 12, // Epic explosion sequence
+    FINAL_PAUSE: 400
 };
 
 class BuffAnimator {
@@ -44,31 +44,46 @@ class BuffAnimator {
         return tierColors[tier] || '🟩';
     }
 
-    static createFluidWaveFrame(frame, tier, width = 18, height = 9) {
+    static getEnergyColor(tier, intensity = 1.0) {
+        // Lighter versions for energy buildup
+        const energyColors = {
+            1: '🟢', // Green energy
+            2: '🔵', // Blue energy  
+            3: '🟣', // Purple energy
+            4: '🟡', // Gold energy
+            5: '🟠', // Orange energy
+            6: '🔴'  // Red energy
+        };
+        return energyColors[tier] || '🟢';
+    }
+
+    static createEnergyBuildupFrame(frame, tier, width = 18, height = 9) {
         const grid = this.createGrid(width, height, '⬛');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
-        const rainbowColors = this.getRainbowColors();
+        const tierColor = this.getTierColor(tier);
+        const energyColor = this.getEnergyColor(tier);
         
-        // Create multiple wave layers for fluid effect
+        // Energy buildup - starts as a small pulsing core
+        const coreSize = Math.floor(frame / 2); // Slowly expanding core
+        const pulseIntensity = Math.sin(frame * 0.8) > 0; // Pulsing effect
+        
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
                 
-                // Multiple overlapping waves
-                const wave1 = frame - distance;
-                const wave2 = frame - distance - 1;
-                const wave3 = frame - distance - 2;
-                
-                if (wave1 >= 0) {
-                    const colorIndex = (distance + frame * 2) % rainbowColors.length;
-                    grid[row][col] = rainbowColors[colorIndex];
-                } else if (wave2 >= 0) {
-                    const colorIndex = (distance + frame * 2 + 2) % rainbowColors.length;
-                    grid[row][col] = rainbowColors[colorIndex];
-                } else if (wave3 >= 0) {
-                    const colorIndex = (distance + frame * 2 + 4) % rainbowColors.length;
-                    grid[row][col] = rainbowColors[colorIndex];
+                if (distance === 0) {
+                    // Center core - always tier color
+                    grid[row][col] = tierColor;
+                } else if (distance <= coreSize) {
+                    // Growing energy core
+                    grid[row][col] = pulseIntensity ? tierColor : energyColor;
+                } else if (distance === coreSize + 1 && frame > 3) {
+                    // Energy ring building up
+                    grid[row][col] = energyColor;
+                } else if (distance === coreSize + 2 && frame > 6) {
+                    // Outer energy ring (weaker)
+                    grid[row][col] = Math.random() > 0.5 ? energyColor : '⬛';
                 }
             }
         }
@@ -76,34 +91,92 @@ class BuffAnimator {
         return grid;
     }
 
-    static createAnimeExplosionFrame(frame, tier, width = 18, height = 9) {
+    static createEpicExplosionFrame(frame, tier, width = 18, height = 9) {
         const grid = this.createGrid(width, height, '⬛');
-        const centerX = Math.floor(width / 2);  // Center X = 9 (for 0-17 width)
-        const centerY = Math.floor(height / 2); // Center Y = 4 (for 0-8 height)
+        const centerX = Math.floor(width / 2);
+        const centerY = Math.floor(height / 2);
         const tierColor = this.getTierColor(tier);
-        const rainbowColors = this.getRainbowColors();
+        const energyColor = this.getEnergyColor(tier);
         
-        // Anime-style explosion - starts small and bursts outward rapidly
-        const explosionRadius = Math.pow(frame + 1, 1.8); // Exponential growth for anime effect
-        const shockwaveRadius = explosionRadius + 2; // Shockwave ahead of main explosion
+        // Ultra-dynamic explosion with multiple effects
+        const explosionRadius = Math.min(Math.pow(frame * 1.8, 1.4), Math.max(centerX, centerY) + 3);
+        const energyWave1 = explosionRadius + Math.sin(frame * 0.5) * 2;
+        const energyWave2 = explosionRadius + Math.cos(frame * 0.7) * 3;
+        const sparkRadius = explosionRadius + 4;
         
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
+                const randomFactor = Math.random();
                 
                 if (distance <= explosionRadius) {
-                    // Core explosion area - tier color
+                    // Solid core explosion
                     grid[row][col] = tierColor;
-                } else if (distance <= shockwaveRadius) {
-                    // Shockwave area - intense rainbow cycling
-                    const intensity = Math.floor((frame + distance) * 3) % rainbowColors.length;
-                    grid[row][col] = rainbowColors[intensity];
-                } else if (distance <= shockwaveRadius + 3) {
-                    // Outer shockwave - fading rainbow
-                    const fadeIntensity = Math.floor((frame + distance + 2) * 2) % rainbowColors.length;
-                    grid[row][col] = rainbowColors[fadeIntensity];
+                } else if (distance <= energyWave1 && randomFactor > 0.3) {
+                    // Primary shockwave with some gaps for realism
+                    grid[row][col] = energyColor;
+                } else if (distance <= energyWave2 && randomFactor > 0.6) {
+                    // Secondary wave
+                    grid[row][col] = energyColor;
+                } else if (distance <= sparkRadius && randomFactor > 0.85) {
+                    // Energy sparks
+                    grid[row][col] = energyColor;
                 }
-                // Rest stays black for dramatic effect
+            }
+        }
+        
+        // Enhanced cross-beam effects
+        if (frame > 2) {
+            const beamIntensity = Math.min(frame - 2, 6);
+            
+            // Horizontal energy beam
+            for (let col = Math.max(0, centerX - beamIntensity * 2); col <= Math.min(width - 1, centerX + beamIntensity * 2); col++) {
+                if (Math.abs(col - centerX) > explosionRadius) {
+                    if (Math.random() > 0.4) {
+                        grid[centerY][col] = energyColor;
+                    }
+                    // Add beam thickness
+                    if (centerY > 0 && Math.random() > 0.6) grid[centerY - 1][col] = energyColor;
+                    if (centerY < height - 1 && Math.random() > 0.6) grid[centerY + 1][col] = energyColor;
+                }
+            }
+            
+            // Vertical energy beam
+            for (let row = Math.max(0, centerY - beamIntensity); row <= Math.min(height - 1, centerY + beamIntensity); row++) {
+                if (Math.abs(row - centerY) > explosionRadius) {
+                    if (Math.random() > 0.4) {
+                        grid[row][centerX] = energyColor;
+                    }
+                    // Add beam thickness
+                    if (centerX > 0 && Math.random() > 0.6) grid[row][centerX - 1] = energyColor;
+                    if (centerX < width - 1 && Math.random() > 0.6) grid[row][centerX + 1] = energyColor;
+                }
+            }
+        }
+        
+        return grid;
+    }
+
+    static createFluidWaveFrame(frame, tier, width = 18, height = 9) {
+        const grid = this.createGrid(width, height, '⬛');
+        const centerX = Math.floor(width / 2);
+        const centerY = Math.floor(height / 2);
+        const tierColor = this.getTierColor(tier);
+        const energyColor = this.getEnergyColor(tier);
+        
+        // Scanning waves with tier colors
+        for (let row = 0; row < height; row++) {
+            for (let col = 0; col < width; col++) {
+                const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
+                
+                const wave1 = frame - distance;
+                const wave2 = frame - distance - 2;
+                
+                if (wave1 >= 0 && wave1 <= 2) {
+                    grid[row][col] = tierColor;
+                } else if (wave2 >= 0 && wave2 <= 1) {
+                    grid[row][col] = energyColor;
+                }
             }
         }
         
@@ -145,46 +218,49 @@ class BuffAnimator {
         return colors[tier] || 0x6B7280;
     }
 
-    static createWaveAnimationFrame(frame, tier) {
+    static createScanAnimationFrame(frame, tier) {
         const grid = this.createFluidWaveFrame(frame, tier);
-        const color = this.getRainbowColor(frame);
+        const color = this.getTierColorHex(tier);
         
         const embed = new EmbedBuilder()
-            .setTitle('MARINE ENHANCEMENT MATRIX')
+            .setTitle('MARINE ENHANCEMENT SCANNER')
             .setDescription(
-                `**Scanning enhancement possibilities...**\n\n${this.gridToString(grid)}\n\n**Wave analysis in progress...**`
+                `**Detecting enhancement signature...**\n\n${this.gridToString(grid)}`
             )
             .setColor(color)
-            .setFooter({ text: `Matrix scan progress: ${Math.min(100, Math.round((frame / 12) * 100))}%` })
+            .setFooter({ text: `Scan progress: ${Math.min(100, Math.round((frame / 8) * 100))}%` })
+            .setTimestamp();
+        
+        return embed;
+    }
+
+    static createBuildupAnimationFrame(frame, tier) {
+        const grid = this.createEnergyBuildupFrame(frame, tier);
+        const color = this.getTierColorHex(tier);
+        
+        const embed = new EmbedBuilder()
+            .setTitle('ENERGY BUILDUP')
+            .setDescription(
+                `**Enhancement core charging...**\n\n${this.gridToString(grid)}`
+            )
+            .setColor(color)
+            .setFooter({ text: `Energy level: ${Math.min(100, Math.round(((frame + 1) / 8) * 100))}%` })
             .setTimestamp();
         
         return embed;
     }
 
     static createExplosionAnimationFrame(frame, tier) {
-        const grid = this.createAnimeExplosionFrame(frame, tier);
+        const grid = this.createEpicExplosionFrame(frame, tier);
         const color = this.getTierColorHex(tier);
         
-        const explosionTexts = [
-            '💥 ENERGY SURGE!',
-            '⚡ POWER BURST!',
-            '🔥 EXPLOSION!',
-            '✨ TIER REVEAL!',
-            '💫 BREAKTHROUGH!',
-            '🌟 MANIFESTATION!',
-            '⭐ MATERIALIZATION!',
-            '🎆 COMPLETE!'
-        ];
-        
-        const explosionText = explosionTexts[Math.min(frame, explosionTexts.length - 1)];
-        
         const embed = new EmbedBuilder()
-            .setTitle(`${explosionText}`)
+            .setTitle('ENHANCEMENT EXPLOSION')
             .setDescription(
-                `**Enhancement bursting forth!**\n\n${this.gridToString(grid)}\n\n**Anime-style power explosion!**`
+                `**Power burst in progress...**\n\n${this.gridToString(grid)}`
             )
             .setColor(color)
-            .setFooter({ text: `Explosion intensity: ${Math.min(100, Math.round(((frame + 1) / 8) * 100))}%` })
+            .setFooter({ text: `Explosion power: ${Math.min(100, Math.round(((frame + 1) / 12) * 100))}%` })
             .setTimestamp();
         
         return embed;
@@ -262,7 +338,7 @@ module.exports = {
         }
     },
 
-    // Professional fluid animation with anime-style explosion reveal
+    // Epic anime-style buildup and explosion sequence
     async performEnhancedBuffRoll(interaction, userId, guildId, member) {
         const buffTiers = this.getBuffTiers();
         
@@ -270,15 +346,23 @@ module.exports = {
         const finalResult = this.calculateBuffTier();
         const targetColor = this.getTierColorHex(finalResult);
         
-        // Phase 1: Fluid Wave Animation (12 frames)
-        for (let frame = 0; frame <= ANIMATION_CONFIG.WAVE_FRAMES; frame++) {
-            const waveEmbed = BuffAnimator.createWaveAnimationFrame(frame, finalResult);
+        // Phase 1: Initial Scan (8 frames) - detecting the enhancement
+        for (let frame = 0; frame <= ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
+            const scanEmbed = BuffAnimator.createScanAnimationFrame(frame, finalResult);
             
-            await interaction.editReply({ embeds: [waveEmbed] });
+            await interaction.editReply({ embeds: [scanEmbed] });
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
         
-        // Phase 2: Anime-Style Explosion (8 frames) - SEAMLESS TRANSITION
+        // Phase 2: Energy Buildup (8 frames) - power accumulating
+        for (let frame = 0; frame <= ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
+            const buildupEmbed = BuffAnimator.createBuildupAnimationFrame(frame, finalResult);
+            
+            await interaction.editReply({ embeds: [buildupEmbed] });
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
+        }
+        
+        // Phase 3: EPIC EXPLOSION (12 frames) - dramatic burst in tier color
         for (let frame = 0; frame <= ANIMATION_CONFIG.EXPLOSION_FRAMES; frame++) {
             const explosionEmbed = BuffAnimator.createExplosionAnimationFrame(frame, finalResult);
             
@@ -286,7 +370,7 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
 
-        // Phase 3: IMMEDIATE Final Result - NO WHITE FLICKER
+        // Phase 4: Final Result
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
