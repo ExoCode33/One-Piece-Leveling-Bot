@@ -57,68 +57,94 @@ module.exports = {
         }
     },
 
-    // Enhanced buff roll with cleaner, faster animation
+    // One Piece Treasure Chest animation inspired by gacha
     async performEnhancedBuffRoll(interaction, userId, guildId, member) {
         const buffTiers = this.getBuffTiers();
         
         // Determine the final result first
         const finalResult = this.calculateBuffTier();
         const resultSymbol = buffTiers[finalResult].symbol;
-        const tierSymbols = this.getTierSymbols();
         const targetColor = this.getTierColorHex(finalResult);
         
-        // Phase 1: Quick spinning (3 seconds)
+        // Phase 1: Treasure Hunt
         let embed = new EmbedBuilder()
-            .setColor('#FFD700')
-            .setTitle('🎰 DAILY BUFF WHEEL')
-            .setDescription('**Spinning...**');
+            .setColor('#8B4513')
+            .setTitle('🏴‍☠️ TREASURE HUNT')
+            .setDescription('**Searching for treasure...**')
+            .addFields({
+                name: '🗺️ Status',
+                value: '```Sailing the Grand Line...\nSearching for treasure chests...\nFound something!```',
+                inline: false
+            });
 
         await interaction.editReply({ embeds: [embed] });
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
-        // Fast spinning - 6 quick spins
-        for (let i = 0; i < 6; i++) {
-            const currentSymbol = tierSymbols[i % tierSymbols.length];
-            const wheel = `${currentSymbol} ${currentSymbol} ${currentSymbol} ⟨ ${currentSymbol} ⟩ ${currentSymbol} ${currentSymbol} ${currentSymbol}`;
+        // Phase 2: Chest Opening Animation
+        embed.setTitle('📦 TREASURE CHEST DISCOVERED!')
+             .setDescription('**Opening the chest...**')
+             .setColor('#FFD700');
+        
+        const chestFrames = [
+            '📦 ░░░░░░░░░░',
+            '📦 ████░░░░░░',
+            '📦 ████████░░',
+            '📦 ██████████',
+            '✨ ██████████'
+        ];
+        
+        for (let i = 0; i < chestFrames.length; i++) {
+            embed.spliceFields(0, 1, {
+                name: '🔓 Opening Progress',
+                value: `\`\`\`${chestFrames[i]}\`\`\``,
+                inline: false
+            });
             
-            embed.setColor(this.getTierColorHex((i % 6) + 1))
-                 .spliceFields(0, 1, {
-                     name: '🎲 Rolling...',
-                     value: wheel,
-                     inline: false
-                 });
-
             await interaction.editReply({ embeds: [embed] });
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 400));
         }
 
-        // Phase 2: Final result (immediate)
-        const winningWheel = `✨ ✨ ✨ ⟨ ${resultSymbol} ⟩ ✨ ✨ ✨`;
+        // Phase 3: Treasure Reveal
         const buffInfo = buffTiers[finalResult];
+        const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
         
         const finalEmbed = new EmbedBuilder()
             .setColor(targetColor)
-            .setTitle('🎰 DAILY BUFF RESULT')
-            .setDescription(`🎉 **${buffInfo.name}** ${buffInfo.symbol}`)
+            .setTitle('🎉 TREASURE DISCOVERED!')
+            .setDescription(`${rarityEmoji} **${buffInfo.name}** ${buffInfo.symbol}`)
             .addFields(
                 {
-                    name: '🎲 Your Roll',
-                    value: winningWheel,
+                    name: '💎 Your Treasure',
+                    value: `${rarityEmoji} ${buffInfo.name} ${buffInfo.symbol}`,
                     inline: false
                 },
                 {
-                    name: '📊 Details',
-                    value: `**Multiplier:** ${buffInfo.multiplier}x XP\n**Duration:** <t:${nextReset}:R>\n**Rarity:** ${this.getTierRarity(finalResult)}`,
+                    name: '⚡ Power Boost',
+                    value: `**${buffInfo.multiplier}x XP** | **${this.getTierRarity(finalResult)}**\n*Active until <t:${nextReset}:R>*`,
                     inline: false
                 }
             )
-            .setFooter({ text: `⚓ Tier ${finalResult} Buff Active` })
+            .setFooter({ text: `🏴‍☠️ Marine Intelligence • ${buffInfo.name} Active` })
             .setTimestamp();
 
         await interaction.editReply({ embeds: [finalEmbed] });
 
         // Apply the buff role and save to database
         await this.applyBuffRole(userId, guildId, member, finalResult);
+    },
+
+    // Get rarity emoji for treasure theme
+    getRarityEmoji(tier) {
+        const emojis = {
+            1: '⚪', // Common
+            2: '🔵', // Rare
+            3: '🟣', // Epic
+            4: '🟡', // Legendary
+            5: '🟠', // Mythical
+            6: '🔴'  // Divine
+        };
+        return emojis[tier] || '⚪';
     },
 
     // Get tier symbols (circle emojis)
