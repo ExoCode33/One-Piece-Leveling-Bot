@@ -39,6 +39,124 @@ async function initializeConnection() {
                 rejectUnauthorized: false
             }
         });
+
+// Reaction XP handling
+client.on('messageReactionAdd', async (reaction, user) => {
+    if (user.bot || !reaction.message.guild) return;
+    
+    if (xpTracker) {
+        const cooldownKey = `${reaction.message.guild.id}:${user.id}:reaction`;
+        const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
+        
+        if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
+            xpTracker.setCooldown(cooldownKey);
+            await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
+        }
+    }
+});
+
+// Error handling
+client.on('error', error => {
+    console.error('❌ Discord client error:', error);
+});
+
+client.on('warn', warning => {
+    console.warn('⚠️ Discord client warning:', warning);
+});
+
+process.on('unhandledRejection', error => {
+    console.error('❌ Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', error => {
+    console.error('❌ Uncaught exception:', error);
+    process.exit(1);
+});
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+async function gracefulShutdown() {
+    log('🛑 Shutting down bot gracefully...');
+    
+    try {
+        // Clean up XP tracker
+        if (xpTracker) {
+            await xpTracker.cleanup();
+        }
+        
+        // Clean up voice connections
+        log(`🔌 Cleaning up ${activeConnections.size} voice connections...`);
+        activeConnections.forEach((connection, key) => {
+            try {
+                connection.destroy();
+                debugLog(`🔌 Destroyed connection for ${key}`);
+            } catch (error) {
+                // Ignore errors during shutdown
+            }
+        });
+        activeConnections.clear();
+        
+        // Close database connection
+        log('🗄️ Closing database connection...');
+        if (pool) {
+            await pool.end();
+        }
+        
+        // Destroy Discord client
+        client.destroy();
+        
+        log('👋 Bot shutdown complete!');
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
+    }
+    
+    process.exit(0);
+}
+
+// Keep the process alive and log status
+setInterval(() => {
+    if (DEBUG) {
+        const activeSessions = xpTracker ? Object.keys(xpTracker.voiceSessions || {}).length : 0;
+        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, Audio Connections: ${activeConnections.size}, Uptime: ${Math.floor(process.uptime()/60)}m`);
+    }
+}, 300000); // Log every 5 minutes in debug mode
+
+// Start the bot
+async function startBot() {
+    log('🚀 Starting One Piece Dynamic Voice Bot with XP System...');
+    log(`🔑 Discord Token: ${DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
+    log(`🆔 Client ID: ${CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
+    log(`🗄️ Database URL: ${process.env.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
+
+    if (!DISCORD_TOKEN) {
+        console.error('❌ DISCORD_TOKEN is required! Please check your .env file.');
+        process.exit(1);
+    }
+
+    if (!CLIENT_ID) {
+        console.error('❌ CLIENT_ID is required for slash commands! Please check your .env file.');
+        process.exit(1);
+    }
+
+    if (!process.env.DATABASE_URL) {
+        console.error('❌ DATABASE_URL is required! Please check your .env file.');
+        process.exit(1);
+    }
+
+    try {
+        await client.login(DISCORD_TOKEN);
+    } catch (error) {
+        console.error('❌ Failed to login to Discord:', error);
+        process.exit(1);
+    }
+}
+
+// Export for use in other modules
+module.exports = { client, pool };
+
+// Start the bot
+startBot();
     } else {
         // Manual connection (fallback)
         const config = {
@@ -353,6 +471,48 @@ async function syncChannelWithCategory(channel, category, creatorId) {
     }
 }
 
+// Import and setup slash commands
+async function registerSlashCommands(clientId, token) {
+    try {
+        const { REST, Routes } = require('discord.js');
+        
+        // Load all command files
+        const commands = [];
+        const commandsPath = path.join(__dirname, 'src', 'commands');
+        
+        if (!fs.existsSync(commandsPath)) {
+            console.warn('⚠️ Commands directory not found, skipping slash command registration');
+            return;
+        }
+        
+        const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+        
+        for (const file of commandFiles) {
+            const filePath = path.join(commandsPath, file);
+            const command = require(filePath);
+            if ('data' in command && 'execute' in command) {
+                commands.push(command.data.toJSON());
+                console.log(`📋 Loaded command: ${command.data.name}`);
+            } else {
+                console.warn(`⚠️ Command at ${filePath} is missing required "data" or "execute" property.`);
+            }
+        }
+
+        const rest = new REST().setToken(token);
+        
+        console.log(`🔄 Started refreshing ${commands.length} application (/) commands.`);
+        
+        const data = await rest.put(
+            Routes.applicationCommands(clientId),
+            { body: commands },
+        );
+
+        console.log(`✅ Successfully reloaded ${data.length} application (/) commands.`);
+    } catch (error) {
+        console.error('❌ Error registering slash commands:', error);
+    }
+}
+
 // Bot event handlers
 client.once('ready', async () => {
     log(`One Piece Dynamic Voice Bot with XP System is ready to set sail!`);
@@ -613,48 +773,6 @@ client.on('channelUpdate', async (oldChannel, newChannel) => {
     }
 });
 
-// Import and setup slash commands
-async function registerSlashCommands(clientId, token) {
-    try {
-        const { REST, Routes } = require('discord.js');
-        
-        // Load all command files
-        const commands = [];
-        const commandsPath = path.join(__dirname, 'src', 'commands');
-        
-        if (!fs.existsSync(commandsPath)) {
-            console.warn('⚠️ Commands directory not found, skipping slash command registration');
-            return;
-        }
-        
-        const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-        
-        for (const file of commandFiles) {
-            const filePath = path.join(commandsPath, file);
-            const command = require(filePath);
-            if ('data' in command && 'execute' in command) {
-                commands.push(command.data.toJSON());
-                console.log(`📋 Loaded command: ${command.data.name}`);
-            } else {
-                console.warn(`⚠️ Command at ${filePath} is missing required "data" or "execute" property.`);
-            }
-        }
-
-        const rest = new REST().setToken(token);
-        
-        console.log(`🔄 Started refreshing ${commands.length} application (/) commands.`);
-        
-        const data = await rest.put(
-            Routes.applicationCommands(clientId),
-            { body: commands },
-        );
-
-        console.log(`✅ Successfully reloaded ${data.length} application (/) commands.`);
-    } catch (error) {
-        console.error('❌ Error registering slash commands:', error);
-    }
-}
-
 // Enhanced Slash command handler with XP system
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
@@ -711,7 +829,6 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({ embeds: [embed] });
         }
-
         else if (commandName === 'ping') {
             const ping = Date.now() - interaction.createdTimestamp;
             await interaction.reply(`🏴‍☠️ **Pong!** 
@@ -719,7 +836,6 @@ client.on('interactionCreate', async (interaction) => {
 💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
 ⚓ Ready to set sail!`);
         }
-
         else {
             await interaction.reply({
                 content: '❌ Command not found or not implemented yet.',
