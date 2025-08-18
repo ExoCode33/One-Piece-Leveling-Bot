@@ -10,60 +10,123 @@ const ANIMATION_CONFIG = {
 };
 
 class BuffAnimator {
-    static getRainbowPattern(frame, length = 15) {
-        const colors = ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪']; // Removed white
-        const pattern = [];
+    static createGrid(width = 15, height = 5, fillColor = '⬜') {
+        const grid = [];
+        for (let row = 0; row < height; row++) {
+            const rowArray = [];
+            for (let col = 0; col < width; col++) {
+                rowArray.push(fillColor);
+            }
+            grid.push(rowArray);
+        }
+        return grid;
+    }
+
+    static getDistanceFromCenter(x, y, centerX, centerY) {
+        return Math.abs(x - centerX) + Math.abs(y - centerY); // Manhattan distance
+    }
+
+    static getRainbowColors() {
+        return ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪'];
+    }
+
+    static getTierColor(tier) {
+        const tierColors = {
+            1: '🟢', // Common - Green
+            2: '🔵', // Rare - Blue  
+            3: '🟣', // Epic - Purple
+            4: '🟡', // Legendary - Gold
+            5: '🟠', // Mythical - Orange
+            6: '🔴'  // Divine - Red
+        };
+        return tierColors[tier] || '🟢';
+    }
+
+    static createWaveFrame(frame, tier, width = 15, height = 5) {
+        const grid = this.createGrid(width, height, '⬜');
+        const centerX = Math.floor(width / 2);
+        const centerY = Math.floor(height / 2);
+        const rainbowColors = this.getRainbowColors();
+        const maxDistance = Math.max(centerX, centerY, width - centerX, height - centerY);
         
-        for (let i = 0; i < length; i++) {
-            const colorIndex = (i + frame) % colors.length;
-            pattern.push(colors[colorIndex]);
+        // Create wave effect
+        for (let row = 0; row < height; row++) {
+            for (let col = 0; col < width; col++) {
+                const distance = this.getDistanceFromCenter(col, row, centerX, centerY);
+                
+                // Wave propagates outward from center
+                if (distance <= frame) {
+                    const colorIndex = (distance + frame) % rainbowColors.length;
+                    grid[row][col] = rainbowColors[colorIndex];
+                }
+            }
         }
         
-        return pattern.join('');
+        return grid;
+    }
+
+    static createFinalGrid(tier, width = 15, height = 5) {
+        const grid = this.createGrid(width, height, '⬜');
+        const tierColor = this.getTierColor(tier);
+        
+        // Fill entire grid with tier color
+        for (let row = 0; row < height; row++) {
+            for (let col = 0; col < width; col++) {
+                grid[row][col] = tierColor;
+            }
+        }
+        
+        return grid;
+    }
+
+    static gridToString(grid) {
+        return grid.map(row => row.join('')).join('\n');
     }
 
     static getRainbowColor(frame) {
-        const colors = [0xFF0000, 0xFF8000, 0xFFFF00, 0x00FF00, 0x0080FF, 0x8000FF]; // Removed white
+        const colors = [0xFF0000, 0xFF8000, 0xFFFF00, 0x00FF00, 0x0080FF, 0x8000FF];
         return colors[frame % colors.length];
     }
 
-    static createSpinningFrame(frame) {
-        const pattern = this.getRainbowPattern(frame, 15);
-        const color = this.getRainbowColor(frame);
+    static createAnimationFrame(frame, tier, isComplete = false) {
+        const width = 15;
+        const height = 5;
+        let grid;
+        let title;
+        let description;
+        
+        if (isComplete) {
+            grid = this.createFinalGrid(tier, width, height);
+            title = 'ENHANCEMENT ACQUIRED';
+            description = `**Marine enhancement materialized!**\n\n${this.gridToString(grid)}\n\n**Enhancement tier confirmed...**`;
+        } else {
+            grid = this.createWaveFrame(frame, tier, width, height);
+            title = 'MARINE ENHANCEMENT SCANNING';
+            description = `**Scanning enhancement matrix...**\n\n${this.gridToString(grid)}\n\n**Wave propagation active...**`;
+        }
+        
+        const color = isComplete ? this.getTierColorHex(tier) : this.getRainbowColor(frame);
         
         const embed = new EmbedBuilder()
-            .setTitle('🎰 DAILY BUFF WHEEL SPINNING')
-            .setDescription(
-                `**Spinning the Marine enhancement wheel...**\n\n` +
-                `${pattern}\n\n` +
-                `**Status:** Channeling Marine technology...\n` +
-                `**Energy:** Building up power reserves...`
-            )
+            .setTitle(title)
+            .setDescription(description)
             .setColor(color)
-            .setFooter({ text: 'The wheel is spinning... prepare for enhancement!' })
+            .setFooter({ text: isComplete ? 'Enhancement matrix stabilized' : 'Enhancement matrix scanning...' })
             .setTimestamp();
         
         return embed;
     }
 
-    static createRevealFrame(frame, tier) {
-        const pattern = this.getRainbowPattern(frame, 15);
-        const color = this.getRainbowColor(frame);
-        
-        const isHighTier = tier >= 4;
-        
-        const embed = new EmbedBuilder()
-            .setTitle('ENHANCEMENT DISCOVERY')
-            .setDescription(
-                `**${isHighTier ? 'RARE ENHANCEMENT DISCOVERED!' : 'Enhancement materializing...'}**\n\n` +
-                `${pattern}\n\n` +
-                `**Marine enhancement system activating...**`
-            )
-            .setColor(color)
-            .setFooter({ text: 'Marine enhancement materializing...' })
-            .setTimestamp();
-        
-        return embed;
+    static getTierColorHex(tier) {
+        const colors = {
+            1: 0x22C55E, // Green
+            2: 0x3B82F6, // Blue  
+            3: 0x8B5CF6, // Purple
+            4: 0xF59E0B, // Gold
+            5: 0xF97316, // Orange
+            6: 0xEF4444  // Red
+        };
+        return colors[tier] || 0x6B7280;
     }
 }
 
@@ -122,47 +185,40 @@ module.exports = {
         }
     },
 
-    // Enhanced Marine Power Enhancement animation
+    // Professional grid-based wave animation
     async performEnhancedBuffRoll(interaction, userId, guildId, member) {
         const buffTiers = this.getBuffTiers();
         
         // Determine the final result first
         const finalResult = this.calculateBuffTier();
-        const resultSymbol = buffTiers[finalResult].symbol;
         const targetColor = this.getTierColorHex(finalResult);
         
-        // Phase 1: Rainbow Spinning Animation
-        let frame = 0;
-        for (let i = 0; i < 8; i++) {
-            const spinningEmbed = BuffAnimator.createSpinningFrame(frame);
+        // Phase 1: Wave Animation (8 frames)
+        // Wave propagates from center outward with rainbow colors
+        for (let frame = 0; frame <= 8; frame++) {
+            const animationEmbed = BuffAnimator.createAnimationFrame(frame, finalResult, false);
             
-            await interaction.editReply({ embeds: [spinningEmbed] });
+            await interaction.editReply({ embeds: [animationEmbed] });
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
-            frame++;
         }
         
-        // Phase 2: Reveal Animation
-        for (let i = 0; i < 4; i++) {
-            const revealEmbed = BuffAnimator.createRevealFrame(frame, finalResult);
-            
-            await interaction.editReply({ embeds: [revealEmbed] });
-            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
-            frame++;
-        }
+        // Phase 2: Final Grid Fill (tier color)
+        const finalGridEmbed = BuffAnimator.createAnimationFrame(0, finalResult, true);
+        await interaction.editReply({ embeds: [finalGridEmbed] });
+        await new Promise(resolve => setTimeout(resolve, 800));
 
-        // Phase 3: Final Result
+        // Phase 3: Final Result with Details
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
-        const rainbowPattern = BuffAnimator.getRainbowPattern(frame, 15);
+        const finalGrid = BuffAnimator.gridToString(BuffAnimator.createFinalGrid(finalResult));
         
         const finalEmbed = new EmbedBuilder()
             .setColor(targetColor)
-            .setTitle('MARINE ENHANCEMENT ACQUIRED!')
+            .setTitle('MARINE ENHANCEMENT ACQUIRED')
             .setDescription(
-                `${rainbowPattern}\n\n` +
-                `${rarityEmoji} **${buffInfo.name}** ${buffInfo.symbol}\n\n` +
-                `${rainbowPattern}`
+                `${finalGrid}\n\n` +
+                `${rarityEmoji} **${buffInfo.name}** ${buffInfo.symbol}`
             )
             .addFields(
                 {
