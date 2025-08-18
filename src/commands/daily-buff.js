@@ -88,41 +88,35 @@ class BuffAnimator {
         const rainbowColors = this.getRainbowColors();
         
         // Square reveal expanding outward
-        const revealRadius = Math.floor(frame / 2);
+        const revealRadius = frame;
         
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
                 
                 if (distance <= revealRadius) {
-                    // Revealed area shows tier color
+                    // Revealed area shows tier color permanently
                     grid[row][col] = tierColor;
-                } else if (distance <= revealRadius + 2) {
-                    // Border area shows rainbow effect
+                } else if (distance === revealRadius + 1) {
+                    // Active border shows rainbow effect
                     const colorIndex = (distance + frame) % rainbowColors.length;
                     grid[row][col] = rainbowColors[colorIndex];
                 }
-                // Rest remains white
+                // Rest remains white until reached by square
             }
         }
         
         return grid;
     }
 
-    static createPulsingFinalGrid(frame, tier, width = 15, height = 5) {
+    static createFinalStableGrid(tier, width = 15, height = 5) {
         const grid = this.createGrid(width, height, '⬜');
         const tierColor = this.getTierColor(tier);
-        const pulseIntensity = Math.sin(frame * 0.5) > 0 ? tierColor : '⬜';
         
-        // Create pulsing effect with tier color
+        // Fill entire grid with tier color - stays filled permanently
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
-                // Create border pulse effect
-                if (row === 0 || row === height - 1 || col === 0 || col === width - 1) {
-                    grid[row][col] = pulseIntensity;
-                } else {
-                    grid[row][col] = tierColor;
-                }
+                grid[row][col] = tierColor;
             }
         }
         
@@ -173,26 +167,26 @@ class BuffAnimator {
         const embed = new EmbedBuilder()
             .setTitle('ENHANCEMENT MATERIALIZATION')
             .setDescription(
-                `**Enhancement pattern detected...**\n\n${this.gridToString(grid)}\n\n**Square formation materializing...**`
+                `**Square formation expanding...**\n\n${this.gridToString(grid)}\n\n**Enhancement pattern locked in...**`
             )
             .setColor(color)
-            .setFooter({ text: `Materialization progress: ${Math.min(100, Math.round((frame / 8) * 100))}%` })
+            .setFooter({ text: `Square expansion: ${Math.min(100, Math.round((frame / 8) * 100))}%` })
             .setTimestamp();
         
         return embed;
     }
 
-    static createFinalAnimationFrame(frame, tier) {
-        const grid = this.createPulsingFinalGrid(frame, tier);
+    static createFinalAnimationFrame(tier) {
+        const grid = this.createFinalStableGrid(tier);
         const color = this.getTierColorHex(tier);
         
         const embed = new EmbedBuilder()
-            .setTitle('ENHANCEMENT STABILIZED')
+            .setTitle('ENHANCEMENT MATRIX COMPLETE')
             .setDescription(
-                `**Enhancement matrix locked...**\n\n${this.gridToString(grid)}\n\n**Power signature confirmed...**`
+                `**Enhancement fully materialized...**\n\n${this.gridToString(grid)}\n\n**Matrix stabilized and locked...**`
             )
             .setColor(color)
-            .setFooter({ text: 'Enhancement matrix fully stabilized' })
+            .setFooter({ text: 'Enhancement matrix permanently stabilized' })
             .setTimestamp();
         
         return embed;
@@ -270,7 +264,7 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
         
-        // Phase 2: Square Reveal Animation (8 frames)
+        // Phase 2: Square Reveal Animation (8 frames) - explodes outward in square pattern
         for (let frame = 0; frame <= ANIMATION_CONFIG.REVEAL_FRAMES; frame++) {
             const revealEmbed = BuffAnimator.createRevealAnimationFrame(frame, finalResult);
             
@@ -278,22 +272,18 @@ module.exports = {
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
         }
 
-        // Phase 3: Stabilization Effect (4 frames of pulsing)
-        for (let frame = 0; frame < 4; frame++) {
-            const stabilizeEmbed = BuffAnimator.createFinalAnimationFrame(frame, finalResult);
-            
-            await interaction.editReply({ embeds: [stabilizeEmbed] });
-            await new Promise(resolve => setTimeout(resolve, 300));
-        }
-
-        // Pause before final result
+        // Phase 3: Final Stable Grid (tier color fills everything permanently)
+        const finalStableEmbed = BuffAnimator.createFinalAnimationFrame(finalResult);
+        await interaction.editReply({ embeds: [finalStableEmbed] });
+        
+        // Pause to show the complete filled grid
         await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FINAL_PAUSE));
 
         // Phase 4: Final Result with Details
         const buffInfo = buffTiers[finalResult];
         const rarityEmoji = this.getRarityEmoji(finalResult);
         const nextReset = getNextResetUnixTimestamp();
-        const finalGrid = BuffAnimator.gridToString(BuffAnimator.createGrid(15, 5, BuffAnimator.getTierColor(finalResult)));
+        const finalGrid = BuffAnimator.gridToString(BuffAnimator.createFinalStableGrid(finalResult));
         
         const finalEmbed = new EmbedBuilder()
             .setColor(targetColor)
