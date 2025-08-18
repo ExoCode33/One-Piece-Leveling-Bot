@@ -155,12 +155,30 @@ async function registerSlashCommands(clientId, token) {
 // Initialize XP system
 async function initializeXP() {
     try {
+        // Test if files exist first
+        const xpTrackerPath = path.join(__dirname, 'src', 'utils', 'xpTracker.js');
+        const xpBoostPath = path.join(__dirname, 'src', 'utils', 'xpBoost.js');
+        
+        if (!fs.existsSync(xpTrackerPath)) {
+            throw new Error('xpTracker.js file not found');
+        }
+        
+        if (!fs.existsSync(xpBoostPath)) {
+            throw new Error('xpBoost.js file not found');
+        }
+        
+        console.log('📁 XP system files found, attempting to load...');
+        
         const XPTracker = require('./src/utils/xpTracker');
+        console.log('✅ XPTracker class loaded');
+        
         xpTracker = new XPTracker(client, db);
         global.xpTracker = xpTracker;
         console.log(`⏱️ XP Tracker initialized successfully`);
         
         const XPBoostManager = require('./src/utils/xpBoost');
+        console.log('✅ XPBoostManager class loaded');
+        
         xpBoostManager = new XPBoostManager(db);
         global.xpBoostManager = xpBoostManager;
         console.log(`🚀 XP Boost Manager initialized successfully`);
@@ -184,7 +202,8 @@ async function initializeXP() {
         }, 24 * 60 * 60 * 1000);
         
     } catch (error) {
-        console.warn('⚠️ XP System not available:', error.message);
+        console.error('⚠️ XP System initialization error:', error);
+        console.error('Stack trace:', error.stack);
         console.log('🚢 Bot will run without XP tracking');
     }
 }
