@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Enhanced Daily Spin Wheel with Generic Buff Theme
+// src/commands/daily-buff.js - Enhanced Daily Spin Wheel with One Piece Theme
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -11,12 +11,12 @@ const ANIMATION_CONFIG = {
 
 // Tier Colors
 const TIER_COLORS = {
-    1: 0x8B4513,  // Brown - Common Buff
-    2: 0x4169E1,  // Royal Blue - Rare Buff
-    3: 0x9932CC,  // Dark Orchid - Epic Buff
-    4: 0xFF4500,  // Orange Red - Legendary Buff
-    5: 0xFFD700,  // Gold - Mythical Buff
-    6: 0xFF69B4   // Hot Pink - Supreme Buff
+    1: 0x8B4513,  // Brown - Common Devil Fruit
+    2: 0x4169E1,  // Royal Blue - Rare Devil Fruit
+    3: 0x9932CC,  // Dark Orchid - Epic Devil Fruit
+    4: 0xFF4500,  // Orange Red - Legendary Devil Fruit
+    5: 0xFFD700,  // Gold - Mythical Devil Fruit
+    6: 0xFF69B4   // Hot Pink - Ancient Zoan Devil Fruit
 };
 
 // Tier Emojis (Dice faces)
@@ -29,14 +29,14 @@ const TIER_EMOJIS = {
     6: '🔴'
 };
 
-// Generic tier names
+// One Piece themed tier names
 const TIER_NAMES = {
-    1: 'Common Buff',
-    2: 'Rare Buff',
-    3: 'Epic Buff',
-    4: 'Legendary Buff',
-    5: 'Mythical Buff',
-    6: 'Supreme Buff'
+    1: 'Common Devil Fruit',
+    2: 'Rare Devil Fruit',
+    3: 'Epic Devil Fruit',
+    4: 'Legendary Devil Fruit',
+    5: 'Mythical Devil Fruit',
+    6: 'Ancient Zoan Devil Fruit'
 };
 
 class WheelAnimator {
@@ -79,17 +79,17 @@ class WheelAnimator {
         const wheel = this.getSpinningWheel(frame);
         
         const embed = new EmbedBuilder()
-            .setTitle('🎰 DAILY BUFF WHEEL')
+            .setTitle('🎰 DEVIL FRUIT FORTUNE WHEEL')
             .setDescription(
-                `🌊 **Spinning the buff wheel...**\n\n` +
+                `🌊 **Spinning the Devil Fruit wheel...**\n\n` +
                 `${pattern}\n\n` +
                 `🎰 **SPINNING:** ${wheel}\n\n` +
-                `⚓ **The wheel of fortune turns...**\n` +
-                `🏴‍☠️ **Your daily buff awaits...**\n\n` +
+                `⚓ **The Grand Line's fortune wheel turns...**\n` +
+                `🏴‍☠️ **Your Devil Fruit power awaits...**\n\n` +
                 `${pattern}`
             )
             .setColor(color)
-            .setFooter({ text: '🎰 The wheel of fortune spins...' })
+            .setFooter({ text: '🎰 The wheel of the Grand Line spins...' })
             .setTimestamp();
         
         return embed;
@@ -104,15 +104,15 @@ class WheelAnimator {
         const wheelDisplay = `⚀ ⚁ ⚂ [${tierSymbol}] ⚃ ⚄ ⚅`;
         
         const embed = new EmbedBuilder()
-            .setTitle('🎰 DAILY BUFF WHEEL')
+            .setTitle('🎰 DEVIL FRUIT FORTUNE WHEEL')
             .setDescription(
                 `🎰 **THE WHEEL SLOWS DOWN...**\n\n` +
                 `🎯 **WHEEL:** ${wheelDisplay}\n\n` +
                 `**${tierSymbol} ${tierName.toUpperCase()} DISCOVERED! ${tierSymbol}**\n\n` +
-                `🏴‍☠️ **Fortune has chosen your buff...**`
+                `🏴‍☠️ **The Grand Line has chosen your power...**`
             )
             .setColor(color)
-            .setFooter({ text: '🎯 Your daily buff is revealed!' })
+            .setFooter({ text: '🎯 Your Devil Fruit power is revealed!' })
             .setTimestamp();
         
         return embed;
@@ -121,16 +121,16 @@ class WheelAnimator {
     static createResultFrame(tier, tierInfo) {
         const embed = new EmbedBuilder()
             .setColor(tierInfo.color)
-            .setTitle('🎰 DAILY BUFF WHEEL')
-            .setDescription(`**🎉 DAILY BUFF ACTIVATED! 🎉**`)
+            .setTitle('🎰 DEVIL FRUIT FORTUNE WHEEL')
+            .setDescription(`**🎉 DEVIL FRUIT POWER AWAKENED! 🎉**`)
             .addFields(
                 {
                     name: `${tierInfo.emoji} ${tierInfo.name} • Duration: Until <t:${getNextResetUnixTimestamp()}:R>`,
-                    value: `**${tierInfo.multiplier}x** XP Multiplier boost active!\n🏴‍☠️ *Your daily buff power is now active...*`,
+                    value: `**${tierInfo.multiplier}x** XP Multiplier boost active!\n🏴‍☠️ *Your Devil Fruit power courses through you...*`,
                     inline: false
                 }
             )
-            .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
+            .setFooter({ text: '⚓ Marine Intelligence • Devil Fruit Power Active' })
             .setTimestamp();
 
         return embed;
@@ -140,7 +140,7 @@ class WheelAnimator {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎰 Spin the Daily Buff Wheel for daily XP buffs!'),
+        .setDescription('🎰 Spin the Devil Fruit Fortune Wheel for daily XP buffs!'),
 
     async execute(interaction) {
         try {
@@ -167,21 +167,21 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor(0xFF6B6B)
-                    .setTitle('🎰 DAILY BUFF WHEEL')
-                    .setDescription(`**DAILY BUFF ALREADY ACTIVATED**`)
+                    .setTitle('🎰 DEVIL FRUIT FORTUNE WHEEL')
+                    .setDescription(`**DEVIL FRUIT POWER ALREADY AWAKENED**`)
                     .addFields(
                         {
-                            name: 'Current Buff',
+                            name: 'Current Power',
                             value: `**${tierInfo.name}** • Duration: Until <t:${getNextResetUnixTimestamp()}:R>`,
                             inline: false
                         },
                         {
                             name: 'XP Multiplier',
-                            value: `**${tierInfo.multiplier}x** boost active\n🏴‍☠️ *Your daily buff is still active...*`,
+                            value: `**${tierInfo.multiplier}x** boost active\n🏴‍☠️ *Your Devil Fruit power is still active...*`,
                             inline: false
                         }
                     )
-                    .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
+                    .setFooter({ text: '⚓ Marine Intelligence • Devil Fruit Power System' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -190,20 +190,20 @@ module.exports = {
             // Create initial spin wheel embed
             const spinEmbed = new EmbedBuilder()
                 .setColor(0x4A90E2)
-                .setTitle('🎰 DAILY BUFF WHEEL')
+                .setTitle('🎰 DEVIL FRUIT FORTUNE WHEEL')
                 .setDescription(
-                    `**Prepare to activate your daily buff!**\n\n` +
-                    `🎯 **Available Buffs:**\n` +
-                    `⚀ **${TIER_NAMES[1]}** (40%): Basic buff boost\n` +
+                    `**Prepare to awaken your Devil Fruit power!**\n\n` +
+                    `🎯 **Available Devil Fruits:**\n` +
+                    `⚀ **${TIER_NAMES[1]}** (40%): Basic power boost\n` +
                     `⚁ **${TIER_NAMES[2]}** (25%): Enhanced abilities\n` +
-                    `⚂ **${TIER_NAMES[3]}** (15%): Epic enhancement\n` +
-                    `⚃ **${TIER_NAMES[4]}** (10%): Legendary power\n` +
-                    `⚄ **${TIER_NAMES[5]}** (7%): Mythical strength\n` +
-                    `⚅ **${TIER_NAMES[6]}** (3%): Supreme enhancement\n\n` +
+                    `⚂ **${TIER_NAMES[3]}** (15%): Epic transformation\n` +
+                    `⚃ **${TIER_NAMES[4]}** (10%): Legendary might\n` +
+                    `⚄ **${TIER_NAMES[5]}** (7%): Mythical powers\n` +
+                    `⚅ **${TIER_NAMES[6]}** (3%): Ancient Zoan form\n\n` +
                     `⏰ **Reset:** <t:${getNextResetUnixTimestamp()}:F>\n\n` +
-                    `Click **SPIN** to discover your daily buff!`
+                    `Click **SPIN** to discover your Devil Fruit power!`
                 )
-                .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
+                .setFooter({ text: '⚓ Marine Intelligence • Devil Fruit Power System' })
                 .setTimestamp();
 
             const spinButton = new ActionRowBuilder()
@@ -219,7 +219,7 @@ module.exports = {
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
             await interaction.reply({
-                content: '❌ **System Error**\n\nFailed to access daily buff system.',
+                content: '❌ **System Error**\n\nFailed to access Devil Fruit fortune assessment.',
                 ephemeral: true
             });
         }
@@ -233,7 +233,7 @@ module.exports = {
             // Verify this is the correct user
             if (!interaction.customId.includes(userId)) {
                 return await interaction.reply({
-                    content: '❌ This buff wheel is not for you!',
+                    content: '❌ This Devil Fruit wheel is not for you!',
                     ephemeral: true
                 });
             }
@@ -275,7 +275,7 @@ module.exports = {
         } catch (error) {
             console.error('[DAILY BUFF] Error in spin interaction:', error);
             await interaction.followUp({
-                content: '❌ **Spin Failed**\n\nDaily buff wheel malfunction detected.',
+                content: '❌ **Spin Failed**\n\nDevil Fruit wheel malfunction detected.',
                 ephemeral: true
             });
         }
@@ -291,7 +291,7 @@ function calculateTier() {
     if (random < 80) return 3;      // 15% chance - Epic
     if (random < 90) return 4;      // 10% chance - Legendary
     if (random < 97) return 5;      // 7% chance - Mythical
-    return 6;                       // 3% chance - Supreme
+    return 6;                       // 3% chance - Ancient Zoan
 }
 
 async function getTierInfo(tier, guildId) {
