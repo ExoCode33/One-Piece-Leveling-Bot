@@ -848,7 +848,8 @@ class XPTracker {
                 const defaultChannel = guild.channels.cache.find(ch => 
                     (ch.name.toLowerCase().includes('general') || 
                      ch.name.toLowerCase().includes('chat') ||
-                     ch.name.toLowerCase().includes('level')) && ch.isTextBased()
+                     ch.name.toLowerCase().includes('level') ||
+                     ch.name.toLowerCase().includes('bounty')) && ch.isTextBased()
                 );
                 
                 if (defaultChannel) {
@@ -867,8 +868,47 @@ class XPTracker {
                 return;
             }
 
+            // Get member for wanted poster
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (!member) {
+                console.log('[LEVEL UP] Could not fetch member for wanted poster');
+                return;
+            }
+
+            // Create wanted poster data
+            const wantedPosterData = {
+                userId: user.id,
+                level: newLevel,
+                total_xp: totalXP,
+                messages: 0,
+                reactions: 0,
+                voice_time: 0,
+                member: member,
+                isPirateKing: false
+            };
+
+            let canvas = null;
+            let attachment = null;
+            
+            try {
+                // Generate wanted poster using canvas
+                canvas = await this.createWantedPoster(wantedPosterData, guild);
+                const { AttachmentBuilder } = require('discord.js');
+                attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `wanted_${user.id}.png` });
+                console.log('[LEVEL UP] Successfully created wanted poster');
+            } catch (canvasError) {
+                console.error('[LEVEL UP] Error creating wanted poster:', canvasError);
+                // Continue without poster if canvas fails
+            }
+
+            // Create Marine Intelligence embed
             const embed = this.createLevelUpEmbed(user, oldLevel, newLevel, totalXP, roleReward);
             
+            // Add wanted poster image if available
+            if (attachment) {
+                embed.setImage(`attachment://wanted_${user.id}.png`);
+            }
+
             const messageOptions = { embeds: [embed] };
             
             // Ping user if enabled
@@ -877,8 +917,13 @@ class XPTracker {
                 messageOptions.content = `<@${userId}>`;
             }
             
+            // Add wanted poster attachment
+            if (attachment) {
+                messageOptions.files = [attachment];
+            }
+            
             await channel.send(messageOptions);
-            console.log(`[LEVEL UP] Notification sent for ${user.username} in #${channel.name}`);
+            console.log(`[LEVEL UP] Level up notification with wanted poster sent for ${user.username} in #${channel.name}`);
 
         } catch (error) {
             console.error('Error sending level up notification:', error);
