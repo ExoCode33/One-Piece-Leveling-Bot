@@ -1,4 +1,4 @@
-// src/commands/admin.js - Complete admin command with reset wheel functionality
+// src/commands/admin.js - Complete admin command with original functions + nuclear options
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -18,7 +18,6 @@ module.exports = {
                     { name: '🔄 Set User XP Total', value: 'set-xp' },
                     { name: '🗑️ Reset User Completely', value: 'reset-user' },
                     { name: '📊 View User Stats', value: 'user-stats' },
-                    { name: '🎰 Reset Daily Wheel', value: 'reset-wheel' },
                     { name: '📋 Bot Statistics [CLASSIFIED]', value: 'bot-stats' },
                     { name: '🔧 Database Maintenance [CLASSIFIED]', value: 'maintenance' },
                     { name: '☢️ Nuclear Protocol [CLASSIFIED]', value: 'nuclear' }
@@ -27,7 +26,7 @@ module.exports = {
         .addUserOption(option =>
             option
                 .setName('user')
-                .setDescription('Target user (required for XP operations and wheel reset)')
+                .setDescription('Target user (required for XP operations)')
                 .setRequired(false)
         )
         .addIntegerOption(option =>
@@ -107,23 +106,6 @@ module.exports = {
                 }
             }
 
-            // Handle reset wheel that requires a target user
-            if (action === 'reset-wheel') {
-                if (!targetUser) {
-                    return await interaction.reply({
-                        content: '❌ **Missing Target User**\n\nPlease specify a user to reset their daily wheel.',
-                        ephemeral: true
-                    });
-                }
-
-                if (targetUser.bot) {
-                    return await interaction.reply({
-                        content: '❌ **Invalid Target**\n\nCannot reset wheel for bot accounts.',
-                        ephemeral: true
-                    });
-                }
-            }
-
             switch (action) {
                 case 'add-xp':
                     if (!amount || amount < 1 || amount > 10000) {
@@ -161,10 +143,6 @@ module.exports = {
 
                 case 'user-stats':
                     await this.handleUserStats(interaction, targetUser);
-                    break;
-
-                case 'reset-wheel':
-                    await this.handleResetWheel(interaction, targetUser, reason);
                     break;
 
                 case 'bot-stats':
@@ -208,126 +186,10 @@ module.exports = {
         }
     },
 
-    // NEW: Reset daily wheel functionality
-    async handleResetWheel(interaction, targetUser, reason) {
-        try {
-            await interaction.deferReply();
-
-            if (!global.xpTracker || !global.xpTracker.db) {
-                return await interaction.editReply({
-                    content: '❌ **System Error**\n\nDaily wheel system is not available.'
-                });
-            }
-
-            // Get current day key (same format as daily-buff command)
-            const today = getCurrentDayKey();
-
-            // Check if user has a daily buff entry for today
-            const existingBuff = await global.xpTracker.db.query(
-                'SELECT * FROM daily_buffs WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [targetUser.id, interaction.guild.id, today]
-            );
-
-            if (existingBuff.rows.length === 0) {
-                return await interaction.editReply({
-                    content: `❌ **No Daily Wheel Record**\n\n${targetUser.username} has not spun the daily wheel today.`
-                });
-            }
-
-            const buffRecord = existingBuff.rows[0];
-
-            // Remove daily buff roles from the user
-            const member = interaction.guild.members.cache.get(targetUser.id);
-            let removedRoles = [];
-
-            if (member) {
-                const allBuffRoles = [
-                    process.env.DAILY_XP_BUFF_TIER_1_ROLE,
-                    process.env.DAILY_XP_BUFF_TIER_2_ROLE,
-                    process.env.DAILY_XP_BUFF_TIER_3_ROLE
-                ].filter(id => id && !id.includes('ROLE_ID'));
-
-                for (const roleId of allBuffRoles) {
-                    if (member.roles.cache.has(roleId)) {
-                        const role = interaction.guild.roles.cache.get(roleId);
-                        if (role) {
-                            await member.roles.remove(role);
-                            removedRoles.push(role.name);
-                            console.log(`[ADMIN WHEEL RESET] Removed role: ${role.name} from ${targetUser.username}`);
-                        }
-                    }
-                }
-            }
-
-            // Delete the daily buff record from database
-            await global.xpTracker.db.query(
-                'DELETE FROM daily_buffs WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [targetUser.id, interaction.guild.id, today]
-            );
-
-            // Log admin action
-            if (global.xpTracker.logXPActivity) {
-                await global.xpTracker.logXPActivity('admin', targetUser, interaction.guild.id, 0, {
-                    adminUser: interaction.user,
-                    reason: `Daily wheel reset (${reason})`,
-                    totalXP: 0,
-                    currentLevel: 0
-                });
-            }
-
-            // Create response embed
-            const embed = new EmbedBuilder()
-                .setColor('#FF6B6B')
-                .setTitle('🎰 MARINE COMMAND CENTER')
-                .setDescription('**DAILY WHEEL RESET SUCCESSFUL**')
-                .addFields(
-                    {
-                        name: '🎯 Target',
-                        value: `${targetUser.username} (${targetUser.id})`,
-                        inline: true
-                    },
-                    {
-                        name: '🔄 Action',
-                        value: 'Daily Wheel Reset',
-                        inline: true
-                    },
-                    {
-                        name: '📊 Previous Record',
-                        value: `**Tier:** ${buffRecord.tier}\n**Spin Date:** ${buffRecord.date}\n**Spin Time:** ${new Date(buffRecord.created_at).toLocaleString()}`,
-                        inline: false
-                    },
-                    {
-                        name: '🗑️ Roles Removed',
-                        value: removedRoles.length > 0 ? removedRoles.join(', ') : 'No roles to remove',
-                        inline: false
-                    },
-                    {
-                        name: '📝 Reason',
-                        value: reason,
-                        inline: false
-                    },
-                    {
-                        name: '✅ Result',
-                        value: `${targetUser.username} can now spin the daily wheel again.`,
-                        inline: false
-                    }
-                )
-                .setFooter({ text: `⚓ Authorized by ${interaction.user.username} • Marine Intelligence` })
-                .setTimestamp();
-
-            await interaction.editReply({ embeds: [embed] });
-
-            console.log(`[ADMIN WHEEL RESET] Reset daily wheel for ${targetUser.username} by ${interaction.user.username}`);
-
-        } catch (error) {
-            console.error('Reset wheel error:', error);
-            await interaction.editReply({
-                content: '❌ **Operation Failed**\n\nFailed to reset daily wheel. Please try again.'
-            });
-        }
+    async handleXPCommand(interaction) {
+        // This method is no longer needed since we handle everything in execute()
     },
 
-    // Original methods (keeping them as they were)
     async handleAddXP(interaction, targetUser, amount, reason) {
         try {
             await interaction.deferReply();
@@ -698,33 +560,6 @@ module.exports = {
     }
 };
 
-// Helper function for reset wheel functionality
-function getCurrentDayKey() {
-    const now = new Date();
-    
-    // Convert to EST/EDT (UTC-5/UTC-4)
-    const isESTDaylightSaving = (date) => {
-        const year = date.getFullYear();
-        const march = new Date(year, 2, 1);
-        const november = new Date(year, 10, 1);
-        const dstStart = new Date(year, 2, (14 - march.getDay()) % 7 + 8);
-        const dstEnd = new Date(year, 10, (7 - november.getDay()) % 7 + 1);
-        return date >= dstStart && date < dstEnd;
-    };
-    
-    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
-    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
-    
-    // If it's before 3 AM EST, use previous day
-    if (estTime.getHours() < 3) {
-        estTime.setDate(estTime.getDate() - 1);
-    }
-    
-    // Return YYYY-MM-DD format
-    return estTime.toISOString().split('T')[0];
-}
-
-// Original handleStats, handleMaintenance, and handleNuclear functions remain the same
 async function handleStats(interaction, db) {
     // Get comprehensive statistics
     const [userStats, guildStats, xpStats, levelStats] = await Promise.all([
