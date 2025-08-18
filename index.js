@@ -105,13 +105,10 @@ function getRandomCrewName() {
     return CREW_NAMES[Math.floor(Math.random() * CREW_NAMES.length)];
 }
 
-// AUTO-INITIALIZE DATABASE - Complete database setup with error recovery
+// Fixed database functions for guild settings
 async function initializeDatabase() {
     try {
-        log('🔧 Starting auto-initialization of database...');
-        
-        // 1. Create guild_settings table with ALL required columns
-        log('📊 Creating guild_settings table...');
+        // Create guild_settings table with proper columns
         await pool.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
                 guild_id VARCHAR(255) PRIMARY KEY,
@@ -128,152 +125,35 @@ async function initializeDatabase() {
             )
         `);
         
-        // 2. Auto-fix missing columns with robust error handling
-        log('🔧 Checking and adding missing columns...');
-        const columnUpdates = [
-            { column: 'category_id', type: 'VARCHAR(255)', description: 'Voice category tracking' },
-            { column: 'category_name', type: 'VARCHAR(255)', description: 'Voice category name' },
-            { column: 'levelup_channel', type: 'VARCHAR(255)', description: 'Level up announcements' },
-            { column: 'levelup_enabled', type: 'BOOLEAN', default: 'true', description: 'Level up toggle' },
-            { column: 'xp_log_channel', type: 'VARCHAR(255)', description: 'XP activity logs' },
-            { column: 'xp_log_enabled', type: 'BOOLEAN', default: 'false', description: 'XP log toggle' },
-            { column: 'xp_multiplier', type: 'DECIMAL(3,2)', default: '1.0', description: 'Global XP multiplier' },
-            { column: 'excluded_role', type: 'VARCHAR(255)', description: 'Pirate King role exclusion' },
-            { column: 'created_at', type: 'TIMESTAMP', default: 'CURRENT_TIMESTAMP', description: 'Record creation' },
-            { column: 'updated_at', type: 'TIMESTAMP', default: 'CURRENT_TIMESTAMP', description: 'Record updates' }
+        // Check if columns exist and add them if missing
+        const columnChecks = [
+            { column: 'category_id', type: 'VARCHAR(255)' },
+            { column: 'category_name', type: 'VARCHAR(255)' },
+            { column: 'levelup_channel', type: 'VARCHAR(255)' },
+            { column: 'levelup_enabled', type: 'BOOLEAN DEFAULT true' },
+            { column: 'xp_log_channel', type: 'VARCHAR(255)' },
+            { column: 'xp_log_enabled', type: 'BOOLEAN DEFAULT false' },
+            { column: 'xp_multiplier', type: 'DECIMAL(3,2) DEFAULT 1.0' },
+            { column: 'excluded_role', type: 'VARCHAR(255)' }
         ];
         
-        for (const col of columnUpdates) {
+        for (const { column, type } of columnChecks) {
             try {
-                let alterQuery = `ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS ${col.column} ${col.type}`;
-                if (col.default) {
-                    alterQuery += ` DEFAULT ${col.default}`;
-                }
-                
-                await pool.query(alterQuery);
-                debugLog(`✅ Column ${col.column} verified/added (${col.description})`);
+                await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS ${column} ${type}`);
             } catch (error) {
-                if (error.code === '42701') {
-                    debugLog(`ℹ️ Column ${col.column} already exists`);
-                } else {
-                    console.warn(`⚠️ Issue with column ${col.column}:`, error.message);
-                }
+                debugLog(`Column ${column} might already exist: ${error.message}`);
             }
         }
         
-        // 3. Create user_levels table for XP tracking
-        log('👥 Creating user_levels table...');
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS user_levels (
-                user_id VARCHAR(20) NOT NULL,
-                guild_id VARCHAR(20) NOT NULL,
-                total_xp INTEGER DEFAULT 0,
-                level INTEGER DEFAULT 0,
-                messages INTEGER DEFAULT 0,
-                reactions INTEGER DEFAULT 0,
-                voice_time INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, guild_id)
-            )
-        `);
-        
-        // 4. Create daily_voice_xp table for daily caps
-        log('📅 Creating daily_voice_xp table...');
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS daily_voice_xp (
-                user_id VARCHAR(20) NOT NULL,
-                guild_id VARCHAR(20) NOT NULL,
-                date DATE NOT NULL,
-                total_xp INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, guild_id, date)
-            )
-        `);
-        
-        // 5. Create xp_boosts table for role multipliers
-        log('🚀 Creating xp_boosts table...');
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS xp_boosts (
-                id SERIAL PRIMARY KEY,
-                guild_id VARCHAR(20) NOT NULL,
-                role_id VARCHAR(20) NOT NULL,
-                boost_multiplier DECIMAL(4,2) NOT NULL DEFAULT 1.0,
-                boost_name VARCHAR(100),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(guild_id, role_id)
-            )
-        `);
-        
-        // 6. Create performance indexes
-        log('⚡ Creating database indexes for performance...');
-        const indexes = [
-            'CREATE INDEX IF NOT EXISTS idx_user_levels_guild_xp ON user_levels(guild_id, total_xp DESC)',
-            'CREATE INDEX IF NOT EXISTS idx_user_levels_guild_level ON user_levels(guild_id, level DESC)',
-            'CREATE INDEX IF NOT EXISTS idx_daily_voice_xp_date ON daily_voice_xp(date)',
-            'CREATE INDEX IF NOT EXISTS idx_xp_boosts_guild_role ON xp_boosts(guild_id, role_id)'
-        ];
-        
-        for (const indexQuery of indexes) {
-            try {
-                await pool.query(indexQuery);
-                debugLog('✅ Index created/verified');
-            } catch (error) {
-                debugLog(`ℹ️ Index might already exist: ${error.message}`);
-            }
-        }
-        
-        // 7. Verify table structure
-        const tableCheck = await pool.query(`
-            SELECT table_name, column_name, data_type, is_nullable, column_default
-            FROM information_schema.columns 
-            WHERE table_name IN ('guild_settings', 'user_levels', 'daily_voice_xp', 'xp_boosts')
-            ORDER BY table_name, ordinal_position
-        `);
-        
-        log(`📋 Database verification: ${tableCheck.rows.length} columns across 4 tables`);
-        
-        // 8. Clean up old data (maintain performance)
-        try {
-            const cleanupResult = await pool.query(
-                "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '7 days'"
-            );
-            if (cleanupResult.rowCount > 0) {
-                log(`🗑️ Cleaned up ${cleanupResult.rowCount} old daily XP records`);
-            }
-        } catch (cleanupError) {
-            debugLog('ℹ️ No old records to clean up');
-        }
-        
-        log('✅ Database auto-initialization completed successfully!');
-        log('🎯 All tables, columns, and indexes are ready');
-        
+        log('✅ Database tables initialized successfully');
     } catch (error) {
-        console.error('❌ Critical error in database initialization:', error);
-        
-        // Emergency fallback - try to create minimal structure
-        try {
-            log('🆘 Attempting emergency database recovery...');
-            await pool.query(`
-                CREATE TABLE IF NOT EXISTS guild_settings (
-                    guild_id VARCHAR(255) PRIMARY KEY,
-                    category_id VARCHAR(255),
-                    category_name VARCHAR(255)
-                )
-            `);
-            log('✅ Emergency database structure created');
-        } catch (emergencyError) {
-            console.error('💥 Emergency database creation failed:', emergencyError);
-            throw new Error('Database initialization completely failed - please check connection');
-        }
+        console.error('❌ Error initializing database:', error);
     }
 }
 
 async function getCategoryForGuild(guildId) {
     try {
-        // Enhanced error handling for missing columns
+        // Fixed query to handle missing columns gracefully
         const result = await pool.query(`
             SELECT category_id, category_name 
             FROM guild_settings 
@@ -288,23 +168,9 @@ async function getCategoryForGuild(guildId) {
         }
         return null;
     } catch (error) {
-        if (error.code === '42703') { // Column does not exist
-            console.warn('⚠️ Database column missing - auto-fixing...');
-            try {
-                // Auto-fix missing columns
-                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_id VARCHAR(255)');
-                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_name VARCHAR(255)');
-                log('✅ Auto-fixed missing database columns');
-                // Retry the query
-                return await getCategoryForGuild(guildId);
-            } catch (fixError) {
-                console.error('❌ Could not auto-fix database:', fixError);
-                return null;
-            }
-        } else {
-            console.error('❌ Error getting category from database:', error);
-            return null;
-        }
+        console.error('❌ Error getting category from database:', error);
+        // Return null if there's a database error
+        return null;
     }
 }
 
@@ -321,22 +187,7 @@ async function updateCategoryForGuild(guildId, categoryId, categoryName) {
         `, [guildId, categoryId, categoryName]);
         debugLog(`📝 Updated category for guild ${guildId}: ${categoryName} (${categoryId})`);
     } catch (error) {
-        if (error.code === '42703') { // Column does not exist
-            console.warn('⚠️ Database column missing during update - auto-fixing...');
-            try {
-                // Auto-fix and retry
-                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_id VARCHAR(255)');
-                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS category_name VARCHAR(255)');
-                await pool.query('ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
-                log('✅ Auto-fixed missing database columns during update');
-                // Retry the update
-                return await updateCategoryForGuild(guildId, categoryId, categoryName);
-            } catch (fixError) {
-                console.error('❌ Could not auto-fix database during update:', fixError);
-            }
-        } else {
-            console.error('❌ Error updating category in database:', error);
-        }
+        console.error('❌ Error updating category in database:', error);
     }
 }
 
