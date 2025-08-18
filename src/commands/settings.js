@@ -1,4 +1,4 @@
-// src/commands/settings.js - Keep original style + add XP boost options
+// src/commands/settings.js - Fixed version without problematic XPBoostManager creation
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 
@@ -6,7 +6,7 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('settings')
         .setDescription('🔧 Configure server leveling settings (Administrator only)')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator) // Require Admin permission
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addStringOption(option =>
             option
                 .setName('action')
@@ -19,7 +19,7 @@ module.exports = {
                     { name: '🔄 Toggle Level Up Announcements', value: 'toggle-levelup' },
                     { name: '🔄 Toggle XP Logging', value: 'toggle-xp-logs' },
                     { name: '👁️ View Current Settings', value: 'view' },
-                    // NEW XP BOOST OPTIONS
+                    // XP BOOST OPTIONS
                     { name: '⚡ Add/Update Role XP Boost', value: 'add-boost' },
                     { name: '🗑️ Remove Role XP Boost', value: 'remove-boost' },
                     { name: '📋 List All XP Boosts', value: 'list-boosts' },
@@ -32,7 +32,7 @@ module.exports = {
                 .setName('channel')
                 .setDescription('Channel to use (for levelup-channel or xp-log-channel)')
                 .setRequired(false)
-                .addChannelTypes(0) // Text channel only
+                .addChannelTypes(0)
         )
         .addNumberOption(option =>
             option
@@ -48,7 +48,6 @@ module.exports = {
                 .setDescription('Enable or disable (for toggle options)')
                 .setRequired(false)
         )
-        // NEW XP BOOST OPTIONS
         .addRoleOption(option =>
             option
                 .setName('role')
@@ -125,18 +124,15 @@ module.exports = {
                         });
                     }
 
-                    // Validate channel permissions
                     if (!channel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
                         return await interaction.reply({
-                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${channel}. Please ensure I have **Send Messages** and **Embed Links** permissions.`,
+                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${channel}.`,
                             ephemeral: true
                         });
                     }
 
                     guildSettings.levelupChannel = channel.id;
                     global.guildSettings.set(guildId, guildSettings);
-                    
-                    // Save to database
                     await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
@@ -157,19 +153,16 @@ module.exports = {
                         });
                     }
 
-                    // Validate channel permissions
                     if (!channel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
                         return await interaction.reply({
-                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${channel}. Please ensure I have **Send Messages** and **Embed Links** permissions.`,
+                            content: `❌ **Permission Error**\n\nI don't have permission to send messages in ${channel}.`,
                             ephemeral: true
                         });
                     }
 
                     guildSettings.xpLogChannel = channel.id;
-                    guildSettings.xpLogEnabled = true; // Auto-enable when setting channel
+                    guildSettings.xpLogEnabled = true;
                     global.guildSettings.set(guildId, guildSettings);
-                    
-                    // Save to database
                     await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
@@ -192,15 +185,13 @@ module.exports = {
 
                     if (multiplier > 5.0) {
                         return await interaction.reply({
-                            content: '❌ **Invalid Value**\n\nGlobal XP multiplier must be between 0.1 and 5.0. Use role boosts for higher multipliers.',
+                            content: '❌ **Invalid Value**\n\nGlobal XP multiplier must be between 0.1 and 5.0.',
                             ephemeral: true
                         });
                     }
 
                     guildSettings.xpMultiplier = multiplier;
                     global.guildSettings.set(guildId, guildSettings);
-                    
-                    // Save to database
                     await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
@@ -223,8 +214,6 @@ module.exports = {
 
                     guildSettings.levelupEnabled = enabled;
                     global.guildSettings.set(guildId, guildSettings);
-                    
-                    // Save to database
                     await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
@@ -250,15 +239,13 @@ module.exports = {
 
                     if (enabled && !guildSettings.xpLogChannel) {
                         return await interaction.reply({
-                            content: '❌ **Configuration Error**\n\nYou must set an XP log channel first using the `xp-log-channel` action.',
+                            content: '❌ **Configuration Error**\n\nYou must set an XP log channel first.',
                             ephemeral: true
                         });
                     }
                     
                     guildSettings.xpLogEnabled = enabled;
                     global.guildSettings.set(guildId, guildSettings);
-                    
-                    // Save to database
                     await this.saveGuildSettings(guildId, guildSettings);
 
                     return await interaction.reply({
@@ -296,15 +283,21 @@ module.exports = {
         }
     },
 
-    // Handle view settings with XP boost info
+    // Handle view settings - SAFE VERSION
     async handleViewSettings(interaction, guildSettings) {
         try {
-            // Get XP boost info
-            const { db } = require('../../index');
-            const XPBoostManager = require('../utils/xpBoost');
-            const boostManager = new XPBoostManager(db);
-            const boosts = await boostManager.getGuildBoosts(interaction.guild.id);
-            const boostStats = await boostManager.getBoostStats(interaction.guild.id);
+            let boosts = [];
+            let boostStats = { total_boosts: 0, max_multiplier: 1.0, avg_multiplier: 1.0 };
+
+            // SAFELY use global XP boost manager - NO NEW INSTANCES
+            if (global.xpBoostManager) {
+                try {
+                    boosts = await global.xpBoostManager.getGuildBoosts(interaction.guild.id);
+                    boostStats = await global.xpBoostManager.getBoostStats(interaction.guild.id);
+                } catch (error) {
+                    console.error('[SETTINGS] Error getting boost info:', error);
+                }
+            }
 
             const embed = new EmbedBuilder()
                 .setColor('#4A90E2')
@@ -328,13 +321,12 @@ module.exports = {
                     }
                 );
 
-            // Add XP boost info if any boosts exist
+            // Add XP boost info if available
             if (boosts.length > 0) {
                 let boostInfo = `**Total Role Boosts:** ${boosts.length}\n`;
-                boostInfo += `**Highest Boost:** ${parseFloat(boostStats.max_multiplier).toFixed(2)}x\n`;
-                boostInfo += `**Average Boost:** ${parseFloat(boostStats.avg_multiplier).toFixed(2)}x\n\n`;
+                boostInfo += `**Highest Boost:** ${parseFloat(boostStats.max_multiplier || 1.0).toFixed(2)}x\n`;
+                boostInfo += `**Average Boost:** ${parseFloat(boostStats.avg_multiplier || 1.0).toFixed(2)}x\n\n`;
                 
-                // Show top 3 boosts
                 const topBoosts = boosts.slice(0, 3);
                 topBoosts.forEach(boost => {
                     const role = interaction.guild.roles.cache.get(boost.role_id);
@@ -355,7 +347,9 @@ module.exports = {
             } else {
                 embed.addFields({
                     name: '🚀 XP Role Boosts',
-                    value: '**No role boosts configured**\nUse `/settings action:add-boost` to create boosts',
+                    value: global.xpBoostManager ? 
+                        '**No role boosts configured**\nUse `/settings action:add-boost` to create boosts' :
+                        '**XP Boost system not available**\nRestart bot to initialize',
                     inline: false
                 });
             }
@@ -364,10 +358,11 @@ module.exports = {
                  .setTimestamp();
 
             return await interaction.reply({ embeds: [embed] });
+            
         } catch (error) {
             console.error('[SETTINGS] Error in view settings:', error);
             
-            // Fallback to basic view without boost info
+            // Fallback view without boost info
             const embed = new EmbedBuilder()
                 .setColor('#4A90E2')
                 .setTitle('🔧 Server Leveling Settings')
@@ -385,12 +380,12 @@ module.exports = {
                     },
                     {
                         name: '⚡ XP Multiplier',
-                        value: `**Current:** ${guildSettings.xpMultiplier}x\n**Effect:** All XP gains are multiplied by this amount`,
+                        value: `**Current:** ${guildSettings.xpMultiplier || 1.0}x\n**Effect:** All XP gains are multiplied by this amount`,
                         inline: false
                     },
                     {
                         name: '🚀 XP Role Boosts',
-                        value: 'Boost information unavailable\nXP boost system may not be initialized',
+                        value: '⚠️ Boost information unavailable',
                         inline: false
                     }
                 )
@@ -401,14 +396,19 @@ module.exports = {
         }
     },
 
-    // Handle XP boost actions
+    // Handle XP boost actions - SAFE VERSION
     async handleXPBoostActions(interaction, action, role, multiplier, boostName, preset) {
         try {
             await interaction.deferReply();
 
-            const { db } = require('../../index');
-            const XPBoostManager = require('../utils/xpBoost');
-            const boostManager = new XPBoostManager(db);
+            // Check if global XP boost manager exists
+            if (!global.xpBoostManager) {
+                return await interaction.editReply({
+                    content: '❌ **XP Boost System Unavailable**\n\nXP boost manager is not initialized. Please restart the bot.'
+                });
+            }
+
+            const boostManager = global.xpBoostManager;
 
             switch (action) {
                 case 'add-boost':
@@ -447,14 +447,14 @@ module.exports = {
                         const removeEmbed = new EmbedBuilder()
                             .setColor('#FF6B6B')
                             .setTitle('🗑️ XP Boost Removed')
-                            .setDescription(`**Role:** ${role}\n**Status:** Boost removed - now uses standard XP rates`)
+                            .setDescription(`**Role:** ${role}\n**Status:** Boost removed`)
                             .setFooter({ text: '⚓ Marine Intelligence • XP Boost System' })
                             .setTimestamp();
 
                         return await interaction.editReply({ embeds: [removeEmbed] });
                     } else {
                         return await interaction.editReply({
-                            content: `❌ **No boost found** for ${role}\n\nThis role doesn't have an active XP boost.`
+                            content: `❌ **No boost found** for ${role}`
                         });
                     }
 
@@ -471,7 +471,7 @@ module.exports = {
                     boosts.forEach((boost, index) => {
                         const role = interaction.guild.roles.cache.get(boost.role_id);
                         if (role) {
-                            boostList += `**${index + 1}.** ${role.name}: **${boost.boost_multiplier}x** (${boost.boost_name})\n`;
+                            boostList += `**${index + 1}.** ${role.name}: **${boost.boost_multiplier}x**\n`;
                         }
                     });
 
@@ -496,7 +496,7 @@ module.exports = {
                     const presetEmbed = new EmbedBuilder()
                         .setColor('#9B59B6')
                         .setTitle('🎯 Preset XP Boost Applied')
-                        .setDescription(`**Role:** ${role}\n**Preset:** ${preset.toUpperCase()}\n**Multiplier:** ${presetBoost.boost_multiplier}x\n**Name:** ${presetBoost.boost_name}\n**Members Affected:** ${role.members.size}`)
+                        .setDescription(`**Role:** ${role}\n**Preset:** ${preset.toUpperCase()}\n**Multiplier:** ${presetBoost.boost_multiplier}x`)
                         .setFooter({ text: '⚓ Marine Intelligence • Preset System' })
                         .setTimestamp();
 
@@ -508,7 +508,7 @@ module.exports = {
                     const clearEmbed = new EmbedBuilder()
                         .setColor('#FF0000')
                         .setTitle('💥 All XP Boosts Cleared')
-                        .setDescription(`**Boosts Removed:** ${clearedCount}\n**Status:** All roles now use standard XP rates\n\n⚠️ *This action cannot be undone*`)
+                        .setDescription(`**Boosts Removed:** ${clearedCount}\n⚠️ *This action cannot be undone*`)
                         .setFooter({ text: '⚓ Marine Intelligence • XP Boost System' })
                         .setTimestamp();
 
