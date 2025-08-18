@@ -1,6 +1,125 @@
-// src/commands/daily-buff.js - Daily Spin Wheel (XP Buff Only with Settings Integration)
+// src/commands/daily-buff.js - Enhanced Daily Spin Wheel with Summon-Style Animation
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+
+// Animation Configuration
+const ANIMATION_CONFIG = {
+    SPIN_FRAMES: 8,
+    SPIN_DELAY: 400,
+    RAINBOW_DELAY: 300
+};
+
+// Tier Colors
+const TIER_COLORS = {
+    1: 0x28A745,  // Green
+    2: 0x007BFF,  // Blue
+    3: 0xFFD700   // Gold
+};
+
+// Tier Emojis
+const TIER_EMOJIS = {
+    1: '⚡',
+    2: '💎', 
+    3: '👑'
+};
+
+class WheelAnimator {
+    static getRainbowPattern(frame, length = 15) {
+        const colors = ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '⬜'];
+        const pattern = [];
+        
+        for (let i = 0; i < length; i++) {
+            const colorIndex = (i + frame) % colors.length;
+            pattern.push(colors[colorIndex]);
+        }
+        
+        return pattern.join(' ');
+    }
+
+    static getRainbowColor(frame) {
+        const colors = [0xFF0000, 0xFF8000, 0xFFFF00, 0x00FF00, 0x0080FF, 0x8000FF, 0xFFFFFF];
+        return colors[frame % colors.length];
+    }
+
+    static getSpinningWheel(frame) {
+        const wheelSymbols = ['⚡', '💎', '👑', '⚡', '💎', '👑', '⚡', '💎'];
+        const currentPosition = frame % wheelSymbols.length;
+        
+        let wheel = '';
+        for (let i = 0; i < wheelSymbols.length; i++) {
+            if (i === currentPosition) {
+                wheel += `[${wheelSymbols[i]}] `;
+            } else {
+                wheel += `${wheelSymbols[i]} `;
+            }
+        }
+        
+        return wheel.trim();
+    }
+
+    static createSpinFrame(frame) {
+        const pattern = this.getRainbowPattern(frame, 15);
+        const color = this.getRainbowColor(frame);
+        const wheel = this.getSpinningWheel(frame);
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
+            .setDescription(
+                `🌊 **Fortune Assessment in Progress...**\n\n` +
+                `${pattern}\n\n` +
+                `🎰 **SPINNING:** ${wheel}\n\n` +
+                `⚡ **Analyzing your luck patterns...**\n` +
+                `💎 **Calculating fortune probabilities...**\n` +
+                `👑 **Marine Intelligence working...**\n\n` +
+                `${pattern}`
+            )
+            .setColor(color)
+            .setFooter({ text: '🎰 The wheel of fortune spins...' })
+            .setTimestamp();
+        
+        return embed;
+    }
+
+    static createSlowingFrame(finalTier) {
+        const tierSymbol = TIER_EMOJIS[finalTier];
+        const color = TIER_COLORS[finalTier];
+        
+        // Create a slowing wheel effect
+        const wheelDisplay = `⚡ 💎 [${tierSymbol}] 👑 ⚡ 💎`;
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
+            .setDescription(
+                `🎰 **SLOWING DOWN...**\n\n` +
+                `🎯 **WHEEL:** ${wheelDisplay}\n\n` +
+                `**${tierSymbol} TIER ${finalTier} SELECTED! ${tierSymbol}**\n\n` +
+                `⏳ **Finalizing fortune assessment...**`
+            )
+            .setColor(color)
+            .setFooter({ text: '🎯 Fortune determined!' })
+            .setTimestamp();
+        
+        return embed;
+    }
+
+    static createResultFrame(tier, tierInfo) {
+        const embed = new EmbedBuilder()
+            .setColor(tierInfo.color)
+            .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
+            .setDescription(`**🎉 FORTUNE ASSESSMENT COMPLETE! 🎉**`)
+            .addFields(
+                {
+                    name: `${tierInfo.emoji} Tier ${tier} • Duration: Until <t:${getNextResetUnixTimestamp()}:R>`,
+                    value: `**${tierInfo.multiplier}x** XP Multiplier boost active!`,
+                    inline: false
+                }
+            )
+            .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff Active' })
+            .setTimestamp();
+
+        return embed;
+    }
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -52,7 +171,7 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], ephemeral: true });
             }
 
-            // Create spin wheel embed
+            // Create initial spin wheel embed
             const spinEmbed = new EmbedBuilder()
                 .setColor(0x4A90E2)
                 .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
@@ -94,12 +213,25 @@ module.exports = {
 
             await interaction.deferUpdate();
 
+            // Run spinning animation
+            for (let frame = 0; frame < ANIMATION_CONFIG.SPIN_FRAMES; frame++) {
+                const spinEmbed = WheelAnimator.createSpinFrame(frame);
+                await interaction.editReply({ embeds: [spinEmbed], components: [] });
+                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.SPIN_DELAY));
+            }
+
             // Determine tier based on weighted random
             const tier = calculateTier();
             const tierInfo = await getTierInfo(tier, guildId);
 
-            // Create spinning animation
-            await showWheelOfFortuneAnimation(interaction, tier, tierInfo);
+            // Show slowing down animation
+            const slowingEmbed = WheelAnimator.createSlowingFrame(tier);
+            await interaction.editReply({ embeds: [slowingEmbed], components: [] });
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            // Show final result
+            const resultEmbed = WheelAnimator.createResultFrame(tier, tierInfo);
+            await interaction.editReply({ embeds: [resultEmbed], components: [] });
 
             // Save to database
             const today = getCurrentDayKey();
@@ -173,61 +305,6 @@ async function getTierInfo(tier, guildId) {
     }
 
     return { ...info, multiplier };
-}
-
-async function showWheelOfFortuneAnimation(interaction, finalTier, tierInfo) {
-    // Wheel of Fortune style animation frames
-    const wheelFrames = [
-        '🎰 **SPINNING...**\n```\n    ⚡💎👑\n  ⚡💎👑⚡💎\n👑⚡💎👑⚡💎👑\n  ⚡💎👑⚡💎\n    👑⚡💎\n```',
-        '🎰 **SPINNING...**\n```\n    💎👑⚡\n  💎👑⚡💎👑\n⚡💎👑⚡💎👑⚡\n  👑⚡💎👑⚡\n    ⚡💎👑\n```',
-        '🎰 **SPINNING...**\n```\n    👑⚡💎\n  👑⚡💎👑⚡\n💎👑⚡💎👑⚡💎\n  ⚡💎👑⚡💎\n    💎👑⚡\n```',
-        '🎰 **SPINNING...**\n```\n    ⚡💎👑\n  ⚡💎👑⚡💎\n👑⚡💎👑⚡💎👑\n  ⚡💎👑⚡💎\n    👑⚡💎\n```',
-        '🎰 **SPINNING...**\n```\n    💎👑⚡\n  💎👑⚡💎👑\n⚡💎👑⚡💎👑⚡\n  👑⚡💎👑⚡\n    ⚡💎👑\n```'
-    ];
-
-    // Show spinning animation
-    for (let i = 0; i < 8; i++) {
-        const frameIndex = i % wheelFrames.length;
-        const spinEmbed = new EmbedBuilder()
-            .setColor(0xFFD700)
-            .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-            .setDescription(wheelFrames[frameIndex] + '\n\n**Marine Intelligence analyzing your fortune...**')
-            .setFooter({ text: '⚓ Marine Intelligence • Luck Assessment In Progress' });
-
-        await interaction.editReply({ embeds: [spinEmbed], components: [] });
-        await new Promise(resolve => setTimeout(resolve, 600));
-    }
-
-    // Slow down animation for final result
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Show stopping animation with winner highlighted
-    const winningSymbol = finalTier === 1 ? '⚡' : finalTier === 2 ? '💎' : '👑';
-    const stoppingEmbed = new EmbedBuilder()
-        .setColor(tierInfo.color)
-        .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-        .setDescription(`🎰 **SLOWING DOWN...**\n\`\`\`\n    ⚡💎👑\n  ⚡💎👑⚡💎\n👑⚡[${winningSymbol}]👑⚡💎👑\n  ⚡💎👑⚡💎\n    👑⚡💎\n\`\`\`\n\n**${winningSymbol} TIER ${finalTier} SELECTED! ${winningSymbol}**`)
-        .setFooter({ text: '⚓ Marine Intelligence • Fortune Determined' });
-
-    await interaction.editReply({ embeds: [stoppingEmbed], components: [] });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    // Show final result
-    const resultEmbed = new EmbedBuilder()
-        .setColor(tierInfo.color)
-        .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-        .setDescription(`**🎉 FORTUNE ASSESSMENT COMPLETE! 🎉**`)
-        .addFields(
-            {
-                name: `${tierInfo.emoji} Tier ${finalTier} • Duration: Until <t:${getNextResetUnixTimestamp()}:R>`,
-                value: `**${tierInfo.multiplier}x** XP Multiplier boost active!`,
-                inline: false
-            }
-        )
-        .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff Active' })
-        .setTimestamp();
-
-    await interaction.editReply({ embeds: [resultEmbed], components: [] });
 }
 
 async function awardDailyBuffRole(interaction, tier, tierInfo) {
