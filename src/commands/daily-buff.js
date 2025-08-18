@@ -21,12 +21,12 @@ const TIER_COLORS = {
 
 // Tier Emojis (Dice faces)
 const TIER_EMOJIS = {
-    1: '⚀',
-    2: '⚁', 
-    3: '⚂',
-    4: '⚃',
-    5: '⚄',
-    6: '⚅'
+    1: '🟢',
+    2: '🔵', 
+    3: '🟣',
+    4: '🟡',
+    5: '🟠',
+    6: '🔴'
 };
 
 // One Piece themed tier names
