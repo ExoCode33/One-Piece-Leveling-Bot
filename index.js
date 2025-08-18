@@ -1,756 +1,592 @@
-// index.js - Complete enhanced version with XP Boost System, Level 0 roles, and robust database handling
-
-const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-const XPTracker = require('./src/utils/xpTracker');
-const XPBoostManager = require('./src/utils/xpBoost');
+const VoiceTimeTracker = require('./voiceTimeTracker');
+const { registerSlashCommands } = require('./slashCommands');
 
-// Environment validation
-const requiredEnvVars = ['DISCORD_TOKEN', 'DATABASE_URL'];
-for (const envVar of requiredEnvVars) {
-    if (!process.env[envVar]) {
-        console.error(`[ERROR] Missing required environment variable: ${envVar}`);
-        process.exit(1);
-    }
-}
+// Load environment variables
+require('dotenv').config();
 
-console.log('[INFO] Starting Discord Leveling Bot...');
-console.log('[INFO] Environment validation passed');
+// Configuration
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const CREATE_CHANNEL_NAME = process.env.CREATE_CHANNEL_NAME || '🏴〢Set Sail Together';
+const DEFAULT_CATEGORY_NAME = process.env.CATEGORY_NAME || '✘ SOCIAL ✘';
+const CATEGORY_ID = process.env.CATEGORY_ID; // Direct category ID override
+const DELETE_DELAY = parseInt(process.env.DELETE_DELAY) || 1000;
+const DEBUG = process.env.DEBUG === 'true';
 
-// Enhanced database connection with better error handling and reconnection
-const db = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    // Enhanced connection pool settings for Railway
-    max: 20,                    // Maximum number of clients in the pool
-    idleTimeoutMillis: 30000,   // Close idle clients after 30 seconds
-    connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
-    maxUses: 7500,              // Close (and replace) a connection after it has been used 7500 times
-    allowExitOnIdle: false,     // Don't exit when no connections
-    keepAlive: true,            // Enable TCP keep-alive
-    keepAliveInitialDelayMillis: 10000, // Initial delay before starting keep-alive probes
-});
+// Audio Configuration
+const AUDIO_VOLUME = parseFloat(process.env.AUDIO_VOLUME) || 0.4;
 
-// Enhanced error handling for database connections
-db.on('error', (err, client) => {
-    console.error('[DATABASE] Unexpected error on idle client:', err.message);
-    // Don't exit the process, just log the error
-});
+// PostgreSQL connection with Railway support
+let pool;
+let voiceTimeTracker;
 
-db.on('connect', (client) => {
-    console.log('[DATABASE] New client connected');
-});
-
-db.on('acquire', (client) => {
-    console.log('[DATABASE] Client acquired from pool');
-});
-
-db.on('remove', (client) => {
-    console.log('[DATABASE] Client removed from pool');
-});
-
-// XP Boost Manager
-let xpBoostManager;
-
-// Enhanced helper function with connection recovery
-async function executeQuery(query, params = []) {
-    let retries = 3;
-    
-    while (retries > 0) {
-        try {
-            const result = await db.query(query, params);
-            return result;
-        } catch (error) {
-            retries--;
-            console.error(`[DATABASE] Query failed (${retries} retries left):`, error.message);
-            
-            if (retries === 0) {
-                throw error;
+async function initializeConnection() {
+    // Railway PostgreSQL connection
+    if (process.env.DATABASE_URL) {
+        // Direct connection with DATABASE_URL (Railway style)
+        log('🚂 Connecting to Railway PostgreSQL...');
+        pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: {
+                rejectUnauthorized: false
             }
-            
-            // Short delay before retry
-            await new Promise(resolve => setTimeout(resolve, 1000));
+        });
+    } else {
+        // Manual connection (fallback)
+        const config = {
+            user: process.env.PGUSER,
+            password: process.env.PGPASSWORD,
+            host: process.env.PGHOST,
+            port: process.env.PGPORT || 5432,
+            database: process.env.PGDATABASE,
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        };
+        
+        if (!config.user || !config.password || !config.host || !config.database) {
+            throw new Error('DATABASE_URL or individual PostgreSQL environment variables are required');
         }
+        
+        log('🗄️ Connecting to PostgreSQL with manual config...');
+        pool = new Pool(config);
     }
-}
-
-// Enhanced database initialization with retry logic
-async function initializeDatabase() {
-    let retries = 5;
     
-    while (retries > 0) {
-        try {
-            console.log(`[DATABASE] Attempting connection (${6 - retries}/5)...`);
-            
-            // Test connection with timeout
-            const testClient = await db.connect();
-            const result = await testClient.query('SELECT NOW()');
-            testClient.release();
-            
-            console.log('[INFO] Database connection established successfully');
-            console.log(`[DATABASE] Current time: ${result.rows[0].now}`);
-
-            // Create tables if they don't exist
-            await db.query(`
-                CREATE TABLE IF NOT EXISTS user_levels (
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    total_xp INTEGER DEFAULT 0,
-                    level INTEGER DEFAULT 0,
-                    messages INTEGER DEFAULT 0,
-                    reactions INTEGER DEFAULT 0,
-                    voice_time INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, guild_id)
-                )
-            `);
-
-            await db.query(`
-                CREATE TABLE IF NOT EXISTS guild_settings (
-                    guild_id VARCHAR(20) PRIMARY KEY,
-                    levelup_channel VARCHAR(20),
-                    levelup_enabled BOOLEAN DEFAULT true,
-                    xp_log_channel VARCHAR(20),
-                    xp_log_enabled BOOLEAN DEFAULT false,
-                    excluded_role VARCHAR(20),
-                    xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
-            // Create XP boosts table
-            await db.query(`
-                CREATE TABLE IF NOT EXISTS xp_boosts (
-                    id SERIAL PRIMARY KEY,
-                    guild_id VARCHAR(20) NOT NULL,
-                    role_id VARCHAR(20) NOT NULL,
-                    boost_multiplier DECIMAL(4,2) NOT NULL DEFAULT 1.0,
-                    boost_name VARCHAR(100),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(guild_id, role_id)
-                )
-            `);
-
-            // Create indexes for better performance
-            await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_guild ON user_levels(guild_id)');
-            await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_xp ON user_levels(guild_id, total_xp DESC)');
-            await db.query('CREATE INDEX IF NOT EXISTS idx_xp_boosts_guild_role ON xp_boosts(guild_id, role_id)');
-
-            console.log('[INFO] Database tables and indexes initialized');
-            return; // Success, exit retry loop
-            
-        } catch (error) {
-            retries--;
-            console.error(`[ERROR] Database connection attempt failed (${retries} retries left):`, error.message);
-            
-            if (retries === 0) {
-                console.error('[FATAL] Could not establish database connection after 5 attempts');
-                process.exit(1);
-            }
-            
-            // Wait before retry (exponential backoff)
-            const delay = (6 - retries) * 2000; // 2s, 4s, 6s, 8s, 10s
-            console.log(`[DATABASE] Retrying in ${delay/1000} seconds...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-}
-
-// Initialize XP Boost System
-async function initializeXPBoostSystem() {
+    // Test the connection
     try {
-        xpBoostManager = new XPBoostManager(db);
-        global.xpBoostManager = xpBoostManager;
-        console.log('[INFO] XP Boost system initialized successfully');
+        const client = await pool.connect();
+        const result = await client.query('SELECT NOW()');
+        log(`✅ PostgreSQL connected successfully at ${result.rows[0].now}`);
+        client.release();
     } catch (error) {
-        console.error('[ERROR] Failed to initialize XP Boost system:', error);
+        log(`❌ PostgreSQL connection failed: ${error.message}`);
+        throw error;
     }
 }
 
-// Create client with required intents
+// One Piece themed channel names
+const CREW_NAMES = [
+    '🐠 Fish-Man Island',
+    '🏝️ Skypiea Adventure',
+    '🌸 Sakura Kingdom',
+    '🏜️ Alabasta Palace',
+    '🌋 Punk Hazard Lab',
+    '🍭 Whole Cake Island',
+    '🌺 Wano Country',
+    '⚡ Thriller Bark',
+    '🗿 Jaya Island',
+    '🌊 Water 7 Docks',
+    '🔥 Marineford War',
+    '🏴‍☠️ Thousand Sunny',
+    '⚓ Going Merry',
+    '🦈 Arlong Park',
+    '🎪 Buggy\'s Circus',
+    '🍖 Baratie Restaurant',
+    '📚 Ohara Library',
+    '🌙 Zou Elephant',
+    '⚔️ Dressrosa Colosseum',
+    '🎭 Sabaody Archipelago',
+    '🌟 Reverse Mountain',
+    '🐉 Kaido\'s Lair',
+    '🍃 Amazon Lily',
+    '❄️ Drum Island',
+    '🔱 Fishman District',
+    '🌈 Long Ring Island',
+    '🏰 Enies Lobby',
+    '🌺 Rusukaina Island',
+    '🔥 Ace\'s Adventure',
+    '⚡ Enel\'s Ark'
+];
+
+// Create Discord client
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
     ]
 });
 
-// Initialize collections
-client.commands = new Collection();
+// Track audio connections
+const activeConnections = new Map(); // channelId -> voice connection
 
-// Set global client reference IMMEDIATELY
-global.client = client;
+// Audio file paths
+const SOUNDS_DIR = path.join(__dirname, '..', 'sounds');
+const WELCOME_SOUND = path.join(SOUNDS_DIR, 'The Going Merry One Piece.ogg');
 
-// Initialize guild settings cache
-global.guildSettings = new Map();
+// Helper functions
+function log(message) {
+    console.log(`🏴‍☠️ ${message}`);
+}
 
-// Initialize XP Tracker with database
-const xpTracker = new XPTracker(client, db);
-global.xpTracker = xpTracker;
-
-// Load commands
-const commandsPath = path.join(__dirname, 'src', 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = require(filePath);
-    
-    if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-        console.log(`[DEBUG] ✅ Loaded command: ${command.data.name}`);
-    } else {
-        console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+function debugLog(message) {
+    if (DEBUG) {
+        console.log(`🔍 DEBUG: ${message}`);
     }
 }
 
-// Enhanced guild settings function with better error handling
-async function getGuildSettings(guildId) {
-    // Check cache first
-    if (global.guildSettings.has(guildId)) {
-        return global.guildSettings.get(guildId);
-    }
+function getRandomCrewName() {
+    return CREW_NAMES[Math.floor(Math.random() * CREW_NAMES.length)];
+}
 
+// Database functions for guild settings
+async function initializeDatabase() {
     try {
-        // Get from database with retry logic
-        const result = await executeQuery(
-            'SELECT * FROM guild_settings WHERE guild_id = $1',
+        // Create guild_settings table (keep this for category management)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id VARCHAR(255) PRIMARY KEY,
+                category_id VARCHAR(255) NOT NULL,
+                category_name VARCHAR(255) NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        log('✅ Database tables initialized successfully');
+    } catch (error) {
+        console.error('❌ Error initializing database:', error);
+    }
+}
+
+async function getCategoryForGuild(guildId) {
+    try {
+        const result = await pool.query(
+            'SELECT category_id, category_name FROM guild_settings WHERE guild_id = $1',
             [guildId]
         );
-
-        let settings;
+        
         if (result.rows.length > 0) {
-            settings = {
-                levelupChannel: result.rows[0].levelup_channel,
-                levelupEnabled: result.rows[0].levelup_enabled,
-                xpLogChannel: result.rows[0].xp_log_channel,
-                xpLogEnabled: result.rows[0].xp_log_enabled,
-                excludedRole: result.rows[0].excluded_role,
-                xpMultiplier: parseFloat(result.rows[0].xp_multiplier) || 1.0
+            return {
+                categoryId: result.rows[0].category_id,
+                categoryName: result.rows[0].category_name
             };
-        } else {
-            // Create default settings
-            settings = {
-                levelupChannel: null,
-                levelupEnabled: true,
-                xpLogChannel: null,
-                xpLogEnabled: false,
-                excludedRole: null,
-                xpMultiplier: 1.0
-            };
-            
-            // Insert default settings into database
-            await executeQuery(
-                'INSERT INTO guild_settings (guild_id, xp_multiplier) VALUES ($1, $2) ON CONFLICT (guild_id) DO NOTHING',
-                [guildId, 1.0]
-            );
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('❌ Error getting category from database:', error);
+        return null;
+    }
+}
+
+async function updateCategoryForGuild(guildId, categoryId, categoryName) {
+    try {
+        await pool.query(`
+            INSERT INTO guild_settings (guild_id, category_id, category_name, updated_at)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+            ON CONFLICT (guild_id) 
+            DO UPDATE SET 
+                category_id = EXCLUDED.category_id,
+                category_name = EXCLUDED.category_name,
+                updated_at = CURRENT_TIMESTAMP
+        `, [guildId, categoryId, categoryName]);
+        
+        debugLog(`📝 Updated category for guild ${guildId}: ${categoryName} (${categoryId})`);
+    } catch (error) {
+        console.error('❌ Error updating category in database:', error);
+    }
+}
+
+// Function to play welcome sound in a voice channel
+async function playWelcomeSound(channel) {
+    try {
+        if (!fs.existsSync(WELCOME_SOUND)) {
+            debugLog(`❌ Welcome sound file not found: ${WELCOME_SOUND}`);
+            log(`⚠️ Create a 'sounds' folder and add 'The Going Merry One Piece.ogg' file`);
+            return;
         }
 
-        // Cache the settings
-        global.guildSettings.set(guildId, settings);
-        return settings;
-    } catch (error) {
-        console.error('[ERROR] Error getting guild settings:', error);
-        return {
-            levelupChannel: null,
-            levelupEnabled: true,
-            xpLogChannel: null,
-            xpLogEnabled: false,
-            excludedRole: null,
-            xpMultiplier: 1.0
+        log(`🎵 Joining ${channel.name} for welcome sound...`);
+
+        const connection = joinVoiceChannel({
+            channelId: channel.id,
+            guildId: channel.guild.id,
+            adapterCreator: channel.guild.voiceAdapterCreator,
+        });
+
+        activeConnections.set(channel.id, connection);
+
+        const playAudio = () => {
+            try {
+                const player = createAudioPlayer();
+                
+                let resource;
+                try {
+                    resource = createAudioResource(WELCOME_SOUND, { 
+                        inlineVolume: true,
+                        inputType: 'arbitrary'
+                    });
+                } catch (ffmpegError) {
+                    console.warn(`⚠️ FFmpeg issue, trying alternative:`, ffmpegError.message);
+                    try {
+                        resource = createAudioResource(WELCOME_SOUND);
+                    } catch (fallbackError) {
+                        console.error(`❌ Audio creation failed:`, fallbackError);
+                        connection.destroy();
+                        activeConnections.delete(channel.id);
+                        return;
+                    }
+                }
+                
+                if (resource.volume) {
+                    resource.volume.setVolume(AUDIO_VOLUME);
+                }
+
+                player.play(resource);
+                connection.subscribe(player);
+                
+                log(`🎵 ✅ Playing welcome sound in ${channel.name}!`);
+
+                player.on(AudioPlayerStatus.Idle, () => {
+                    log(`🎵 Welcome sound finished, leaving ${channel.name}`);
+                    // Leave immediately when sound finishes
+                    if (activeConnections.has(channel.id)) {
+                        const conn = activeConnections.get(channel.id);
+                        conn.destroy();
+                        activeConnections.delete(channel.id);
+                    }
+                });
+
+                player.on('error', error => {
+                    console.error(`❌ Audio error in ${channel.name}:`, error);
+                    if (activeConnections.has(channel.id)) {
+                        const conn = activeConnections.get(channel.id);
+                        conn.destroy();
+                        activeConnections.delete(channel.id);
+                    }
+                });
+                
+            } catch (audioError) {
+                console.error(`❌ Audio setup error:`, audioError);
+                connection.destroy();
+                activeConnections.delete(channel.id);
+            }
         };
+
+        connection.on(VoiceConnectionStatus.Ready, () => {
+            log(`✅ Connected to ${channel.name}, starting audio...`);
+            playAudio();
+        });
+
+        connection.on(VoiceConnectionStatus.Disconnected, () => {
+            activeConnections.delete(channel.id);
+            debugLog(`🔌 Disconnected from ${channel.name}`);
+        });
+
+        connection.on('error', error => {
+            console.error(`❌ Connection error in ${channel.name}:`, error);
+            activeConnections.delete(channel.id);
+        });
+
+        // Faster timeout for connection issues
+        setTimeout(() => {
+            if (activeConnections.has(channel.id)) {
+                const conn = activeConnections.get(channel.id);
+                if (conn.state.status !== VoiceConnectionStatus.Ready) {
+                    log(`⚠️ Connection timeout for ${channel.name}`);
+                    conn.destroy();
+                    activeConnections.delete(channel.id);
+                }
+            }
+        }, 5000);
+
+    } catch (error) {
+        console.error(`❌ Error joining ${channel.name}:`, error);
+        if (activeConnections.has(channel.id)) {
+            const conn = activeConnections.get(channel.id);
+            conn.destroy();
+            activeConnections.delete(channel.id);
+        }
     }
 }
 
-// Auto-assign Level 0 role to new members
-client.on('guildMemberAdd', async member => {
+// Function to sync channel permissions with category
+async function syncChannelWithCategory(channel, category, creatorId) {
     try {
-        // Skip bots
-        if (member.user.bot) return;
+        // Get category permission overwrites
+        const categoryPermissions = category.permissionOverwrites.cache;
         
-        console.log(`[NEW MEMBER] ${member.user.username} joined ${member.guild.name}`);
+        // Create permission overwrites array for the new channel
+        const channelPermissions = [];
         
-        // Get Level 0 role ID from environment
-        const level0RoleId = process.env.LEVEL_0_ROLE || '1382198693545115658';
+        // Copy all category permissions
+        categoryPermissions.forEach((overwrite) => {
+            channelPermissions.push({
+                id: overwrite.id,
+                allow: overwrite.allow,
+                deny: overwrite.deny,
+                type: overwrite.type
+            });
+        });
         
-        if (!level0RoleId || level0RoleId === 'role_id_0') {
-            console.log('[NEW MEMBER] No Level 0 role configured');
-            return;
-        }
-        
-        // Find the role
-        const level0Role = member.guild.roles.cache.get(level0RoleId);
-        if (!level0Role) {
-            console.error(`[NEW MEMBER] Level 0 role ${level0RoleId} not found in ${member.guild.name}`);
-            return;
-        }
-        
-        // Check if member already has the role
-        if (member.roles.cache.has(level0RoleId)) {
-            console.log(`[NEW MEMBER] ${member.user.username} already has Level 0 role`);
-            return;
-        }
-        
-        // Add the Level 0 role
-        await member.roles.add(level0Role);
-        console.log(`[NEW MEMBER] ✅ Added Level 0 role "${level0Role.name}" to ${member.user.username}`);
-        
-        // Initialize user in database with enhanced error handling
-        if (global.xpTracker && global.xpTracker.db) {
-            try {
-                await executeQuery(`
-                    INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time)
-                    VALUES ($1, $2, 0, 0, 0, 0, 0)
-                    ON CONFLICT (user_id, guild_id) DO NOTHING
-                `, [member.user.id, member.guild.id]);
-                
-                console.log(`[NEW MEMBER] ✅ Initialized database entry for ${member.user.username}`);
-            } catch (dbError) {
-                console.error(`[NEW MEMBER] Database error for ${member.user.username}:`, dbError.message);
-            }
-        }
-        
-        // Optional: Send welcome message with Marine theme
-        const welcomeChannelId = process.env.WELCOME_CHANNEL;
-        if (welcomeChannelId) {
-            const welcomeChannel = member.guild.channels.cache.get(welcomeChannelId);
-            if (welcomeChannel && welcomeChannel.isTextBased()) {
-                const welcomeEmbed = new EmbedBuilder()
-                    .setColor('#FF0000')
-                    .setTitle('🚨 NEW PIRATE DETECTED 🚨')
-                    .setDescription(`**${member.user.username}** has entered Marine surveillance!\n\n*Initial bounty: ฿0 - Classification: Civilian*`)
-                    .setThumbnail(member.user.displayAvatarURL({ size: 128 }))
-                    .addFields({
-                        name: '📋 Marine Intelligence Report',
-                        value: `\`\`\`diff\n- SUBJECT: ${member.user.username}\n- STATUS: Under Observation\n- INITIAL LEVEL: 0\n- BOUNTY: ฿0\n- THREAT LEVEL: Minimal\n\`\`\``,
-                        inline: false
-                    })
-                    .setFooter({ text: '⚓ Marine Intelligence Division • New Recruit Processing' })
-                    .setTimestamp();
-                
-                await welcomeChannel.send({ embeds: [welcomeEmbed] });
-                console.log(`[NEW MEMBER] ✅ Sent welcome message for ${member.user.username}`);
-            }
-        }
-        
-    } catch (error) {
-        console.error(`[NEW MEMBER] Error processing new member ${member.user.username}:`, error.message);
-    }
-});
-
-// Enhanced Level 0 audit with better error handling and batching
-async function assignMissingLevel0Roles() {
-    try {
-        console.log('[LEVEL 0 AUDIT] Starting enhanced audit with connection recovery...');
-        
-        const level0RoleId = process.env.LEVEL_0_ROLE || '1382198693545115658';
-        if (!level0RoleId || level0RoleId === 'role_id_0') {
-            console.log('[LEVEL 0 AUDIT] No Level 0 role configured, skipping audit');
-            return;
-        }
-        
-        let totalProcessed = 0;
-        let totalAssigned = 0;
-        
-        // Check each guild
-        for (const [guildId, guild] of client.guilds.cache) {
-            try {
-                const level0Role = guild.roles.cache.get(level0RoleId);
-                if (!level0Role) {
-                    console.log(`[LEVEL 0 AUDIT] Level 0 role not found in ${guild.name}, skipping`);
-                    continue;
-                }
-                
-                // Get all members
-                await guild.members.fetch();
-                console.log(`[LEVEL 0 AUDIT] Processing ${guild.memberCount} members in ${guild.name}...`);
-                
-                // Process members in batches to avoid overwhelming the database
-                const members = Array.from(guild.members.cache.values());
-                const batchSize = 10;
-                
-                for (let i = 0; i < members.length; i += batchSize) {
-                    const batch = members.slice(i, i + batchSize);
-                    
-                    for (const member of batch) {
-                        totalProcessed++;
-                        
-                        // Skip bots
-                        if (member.user.bot) continue;
-                        
-                        // Skip if already has Level 0 role
-                        if (member.roles.cache.has(level0RoleId)) continue;
-                        
-                        // Skip if has any higher level roles
-                        const hasHigherRole = [
-                            process.env.LEVEL_5_ROLE,
-                            process.env.LEVEL_10_ROLE,
-                            process.env.LEVEL_15_ROLE,
-                            process.env.LEVEL_20_ROLE,
-                            process.env.LEVEL_25_ROLE,
-                            process.env.LEVEL_30_ROLE,
-                            process.env.LEVEL_35_ROLE,
-                            process.env.LEVEL_40_ROLE,
-                            process.env.LEVEL_45_ROLE,
-                            process.env.LEVEL_50_ROLE
-                        ].some(roleId => roleId && member.roles.cache.has(roleId));
-                        
-                        if (hasHigherRole) continue;
-                        
-                        // Check database level with enhanced error handling
-                        try {
-                            const userStats = await executeQuery(
-                                'SELECT level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                                [member.user.id, guild.id]
-                            );
-                            
-                            if (userStats.rows.length > 0 && userStats.rows[0].level > 0) {
-                                continue;
-                            }
-                        } catch (dbError) {
-                            console.error(`[LEVEL 0 AUDIT] Database check error for ${member.user.username}:`, dbError.message);
-                            continue;
-                        }
-                        
-                        // Assign Level 0 role with retry logic
-                        try {
-                            await member.roles.add(level0Role);
-                            totalAssigned++;
-                            console.log(`[LEVEL 0 AUDIT] ✅ Added Level 0 role to ${member.user.username}`);
-                        } catch (roleError) {
-                            console.error(`[LEVEL 0 AUDIT] Failed to add Level 0 role to ${member.user.username}:`, roleError.message);
-                        }
-                    }
-                    
-                    // Delay between batches to avoid rate limits and reduce database load
-                    if (i + batchSize < members.length) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                }
-                
-            } catch (guildError) {
-                console.error(`[LEVEL 0 AUDIT] Error processing guild ${guild.name}:`, guildError.message);
-            }
-        }
-        
-        console.log(`[LEVEL 0 AUDIT] ✅ Enhanced audit complete: Processed ${totalProcessed} members, assigned ${totalAssigned} Level 0 roles`);
-        
-    } catch (error) {
-        console.error('[LEVEL 0 AUDIT] Enhanced audit failed:', error.message);
-    }
-}
-
-// Event handlers
-client.once('ready', async () => {
-    console.log(`[INFO] Bot logged in as ${client.user.tag}`);
-    
-    try {
-        // Initialize database first
-        await initializeDatabase();
-        
-        // Initialize XP Boost system
-        await initializeXPBoostSystem();
-        
-        // Register slash commands
-        const commands = Array.from(client.commands.values()).map(command => command.data.toJSON());
-        console.log(`[DEBUG] Registering ${commands.length} slash commands: ${commands.map(c => c.name).join(', ')}`);
-        console.log(`[DEBUG] Using bot application ID: ${client.application.id}`);
-        
-        await client.application.commands.set(commands);
-        console.log('[INFO] Successfully registered slash commands');
-        
-        // Start periodic tasks ONLY after client is ready
-        console.log('[INFO] Starting periodic tasks...');
-        
-        // Process voice XP every minute
-        setInterval(() => {
-            if (client.isReady()) {
-                xpTracker.processVoiceXP().catch(error => {
-                    console.error('[ERROR] Error in voice XP processing:', error.message);
-                });
-            }
-        }, 60000);
-        
-        // Cleanup daily voice XP (run every 24 hours)
-        setInterval(() => {
-            if (client.isReady()) {
-                xpTracker.cleanupDailyVoiceXP().catch(error => {
-                    console.error('[ERROR] Error in daily cleanup:', error.message);
-                });
-            }
-        }, 24 * 60 * 60 * 1000);
-        
-        // Run initial cleanup
-        await xpTracker.cleanupDailyVoiceXP();
-        
-        // Check for existing members without Level 0 role (run once on startup)
-        setTimeout(async () => {
-            await assignMissingLevel0Roles();
-        }, 10000); // Wait 10 seconds after bot startup
-        
-        console.log('[INFO] Discord Leveling Bot is fully operational!');
-        console.log(`[INFO] Bot is in ${client.guilds.cache.size} servers`);
-        console.log(`[INFO] Monitoring ${client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)} total members`);
-        console.log(`[INFO] Daily voice XP cap: ${process.env.DAILY_VOICE_XP_CAP || 6000} XP per user`);
-        console.log(`[INFO] Level 0 role: ${process.env.LEVEL_0_ROLE || '1382198693545115658'}`);
-        
-    } catch (error) {
-        console.error('[ERROR] Error during bot initialization:', error.message);
-    }
-});
-
-// Handle button interactions for leaderboard first
-client.on('interactionCreate', async interaction => {
-    if (interaction.isButton() && interaction.customId.startsWith('leaderboard_')) {
-        const leaderboardCommand = client.commands.get('leaderboard');
-        if (leaderboardCommand && leaderboardCommand.handleButtonInteraction) {
-            try {
-                await leaderboardCommand.handleButtonInteraction(interaction, xpTracker);
-            } catch (error) {
-                console.error('[ERROR] Button interaction error:', error.message);
-            }
-        }
-        return;
-    }
-    
-    // Handle admin nuclear buttons
-    if (interaction.isButton() && ['cleanup_inactive', 'optimize_db', 'backup_stats', 'nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
-        
-        // Security check
-        if (!interaction.member.permissions.has('Administrator')) {
-            return interaction.reply({
-                content: '```diff\n- ACCESS DENIED - NUCLEAR AUTHORIZATION REQUIRED\n- ADMINISTRATOR PERMISSIONS MANDATORY```',
-                ephemeral: true
+        // Add creator permissions (captain of the crew)
+        const creatorPermissionExists = channelPermissions.find(perm => perm.id === creatorId);
+        if (creatorPermissionExists) {
+            // Merge with existing permissions
+            creatorPermissionExists.allow = creatorPermissionExists.allow.add([
+                PermissionFlagsBits.ManageChannels,
+                PermissionFlagsBits.MoveMembers,
+                PermissionFlagsBits.MuteMembers,
+                PermissionFlagsBits.DeafenMembers
+            ]);
+        } else {
+            // Add new creator permissions
+            channelPermissions.push({
+                id: creatorId,
+                allow: [
+                    PermissionFlagsBits.ViewChannel,
+                    PermissionFlagsBits.Connect,
+                    PermissionFlagsBits.ManageChannels,
+                    PermissionFlagsBits.MoveMembers,
+                    PermissionFlagsBits.MuteMembers,
+                    PermissionFlagsBits.DeafenMembers
+                ],
+                type: 1 // Member type
             });
         }
         
-        try {
-            const adminCommand = client.commands.get('admin');
-            
-            // Handle maintenance buttons
-            if (['cleanup_inactive', 'optimize_db', 'backup_stats'].includes(interaction.customId)) {
-                await adminCommand.handleMaintenanceButtons(interaction, db);
-            }
-            
-            // Handle nuclear buttons  
-            if (['nuclear_confirm', 'nuclear_abort', 'nuclear_execute'].includes(interaction.customId)) {
-                await adminCommand.handleNuclearButtons(interaction, db);
-            }
-        } catch (error) {
-            console.error('[ERROR] Admin button error:', error.message);
-            
-            const errorMessage = {
-                content: '```diff\n- MARINE INTELLIGENCE SYSTEM ERROR\n- Button interaction failed. Please try again.```',
-                ephemeral: true
-            };
-            
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp(errorMessage);
+        // Apply permissions to the channel
+        await channel.permissionOverwrites.set(channelPermissions);
+        
+        debugLog(`🔐 Synced permissions for ${channel.name} with category ${category.name}`);
+        debugLog(`👑 Granted captain permissions to creator ${creatorId}`);
+        
+    } catch (error) {
+        console.error('❌ Error syncing channel permissions:', error);
+    }
+}
+
+// Bot event handlers
+client.once('ready', async () => {
+    log(`One Piece Dynamic Voice Bot with XP System is ready to set sail!`);
+    log(`⚓ Logged in as ${client.user.tag}`);
+    log(`🏴‍☠️ Serving ${client.guilds.cache.size} server(s)`);
+    log(`🔊 Audio Volume: ${Math.round(AUDIO_VOLUME * 100)}%`);
+    
+    // Check if welcome sound exists
+    if (fs.existsSync(WELCOME_SOUND)) {
+        const stats = fs.statSync(WELCOME_SOUND);
+        log(`🎵 Welcome sound ready: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+    } else {
+        console.warn(`⚠️ Welcome sound not found at: ${WELCOME_SOUND}`);
+        console.warn(`📁 Make sure the file exists in the sounds folder`);
+    }
+    
+    if (CATEGORY_ID) {
+        log(`🎯 Using direct category ID: ${CATEGORY_ID}`);
+    } else {
+        log(`📁 Using dynamic category management`);
+    }
+    
+    try {
+        // Initialize database connection and create database if needed
+        await initializeConnection();
+        
+        // Initialize database tables
+        await initializeDatabase();
+        
+        // Initialize voice time tracker with XP system (this will wipe old tables)
+        voiceTimeTracker = new VoiceTimeTracker(client, pool);
+        log(`⏱️ Voice Time Tracker with XP System initialized (database wiped and recreated)`);
+        
+        // Register slash commands
+        if (CLIENT_ID) {
+            await registerSlashCommands(CLIENT_ID, DISCORD_TOKEN);
+        }
+        
+        // Test database connection
+        const result = await pool.query('SELECT NOW()');
+        log(`⏰ Database time: ${result.rows[0].now}`);
+        log('🗄️ Database connection test successful!');
+        
+        // Set up voice tracking for existing voice channel users
+        log('🔍 Checking for existing voice channel users...');
+        client.guilds.cache.forEach(guild => {
+            guild.channels.cache
+                .filter(channel => 
+                    channel.type === ChannelType.GuildVoice && 
+                    channel.members.size > 0 &&
+                    channel.name !== CREATE_CHANNEL_NAME // Skip trigger channel
+                )
+                .forEach(channel => {
+                    channel.members.forEach(member => {
+                        if (!member.user.bot) {
+                            const userId = member.id;
+                            const username = member.displayName;
+                            const guildId = guild.id;
+                            const channelId = channel.id;
+                            const channelName = channel.name;
+                            
+                            // Start tracking existing users
+                            voiceTimeTracker.startSession(userId, username, guildId, channelId, channelName);
+                            
+                            log(`🔄 Now tracking existing user: ${username} in ${channelName}`);
+                        }
+                    });
+                });
+        });
+
+        // Add debug logging for voice logging status
+        if (process.env.ENABLE_VOICE_LOGGING === 'true') {
+            log(`🔍 Voice channel logging is ENABLED`);
+            if (process.env.VOICE_LOG_CHANNEL_ID) {
+                log(`📝 Target log channel ID: ${process.env.VOICE_LOG_CHANNEL_ID}`);
             } else {
-                await interaction.reply(errorMessage);
+                log(`📝 Target log channel name: ${process.env.VOICE_LOG_CHANNEL || 'voice-activity-log'}`);
             }
-        }
-        return;
-    }
-});
-
-// Interaction handler for slash commands
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-
-    const command = client.commands.get(interaction.commandName);
-
-    if (!command) {
-        console.error(`[ERROR] No command matching ${interaction.commandName} was found.`);
-        return;
-    }
-
-    try {
-        await command.execute(interaction);
-    } catch (error) {
-        console.error(`[ERROR] Error executing command ${interaction.commandName}:`, error.message);
-        
-        const errorMessage = {
-            content: 'There was an error while executing this command!',
-            ephemeral: true
-        };
-
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp(errorMessage);
         } else {
-            await interaction.reply(errorMessage);
-        }
-    }
-});
-
-// Message handler with proper XP boost integration
-client.on('messageCreate', async message => {
-    // Ignore bots and system messages
-    if (message.author.bot || !message.guild) return;
-    
-    try {
-        // Check cooldown
-        const cooldownKey = `${message.author.id}_${message.guild.id}_message`;
-        const now = Date.now();
-        
-        if (!xpTracker.cooldowns) xpTracker.cooldowns = new Map();
-        
-        const lastUse = xpTracker.cooldowns.get(cooldownKey);
-        const cooldownTime = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
-        
-        if (lastUse && (now - lastUse) < cooldownTime) {
-            return;
+            log(`⚠️ Voice channel logging is DISABLED`);
         }
         
-        // Get guild settings
-        const guildSettings = await getGuildSettings(message.guild.id);
-        
-        // Check if user has excluded role
-        const member = message.member;
-        if (guildSettings.excludedRole && member && member.roles.cache.has(guildSettings.excludedRole)) {
-            return; // Skip XP for excluded role (Pirate King)
-        }
-        
-        // Award XP with boost integration
-        await xpTracker.awardXP(message.author.id, message.guild.id, null, 'message', message.author);
-        
-        // Set cooldown
-        xpTracker.cooldowns.set(cooldownKey, now);
+        // Log XP system configuration
+        log(`⚡ XP System Configuration:`);
+        log(`   - XP per minute: ${process.env.XP_PER_MINUTE || 5}`);
+        log(`   - Daily XP cap: ${process.env.DAILY_XP_CAP || 500}`);
+        log(`   - Weekly XP cap: ${process.env.WEEKLY_XP_CAP || 2500}`);
+        log(`   - Monthly XP cap: ${process.env.MONTHLY_XP_CAP || 10000}`);
         
     } catch (error) {
-        console.error('[ERROR] Error processing message XP:', error.message);
-    }
-});
-
-// Reaction handler with proper XP boost integration
-client.on('messageReactionAdd', async (reaction, user) => {
-    // Ignore bots
-    if (user.bot || !reaction.message.guild) return;
-    
-    try {
-        // Check cooldown
-        const cooldownKey = `${user.id}_${reaction.message.guild.id}_reaction`;
-        const now = Date.now();
-        
-        if (!xpTracker.cooldowns) xpTracker.cooldowns = new Map();
-        
-        const lastUse = xpTracker.cooldowns.get(cooldownKey);
-        const cooldownTime = parseInt(process.env.REACTION_COOLDOWN) || 300000;
-        
-        if (lastUse && (now - lastUse) < cooldownTime) {
-            return;
-        }
-        
-        // Get guild settings
-        const guildSettings = await getGuildSettings(reaction.message.guild.id);
-        
-        // Check if user has excluded role
-        const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
-        if (guildSettings.excludedRole && member && member.roles.cache.has(guildSettings.excludedRole)) {
-            return; // Skip XP for excluded role (Pirate King)
-        }
-        
-        // Award XP with boost integration
-        await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
-        
-        // Set cooldown
-        xpTracker.cooldowns.set(cooldownKey, now);
-        
-    } catch (error) {
-        console.error('[ERROR] Error processing reaction XP:', error.message);
+        console.error('❌ Database initialization failed:', error);
+        console.error('❌ Bot will shut down due to database error');
+        process.exit(1);
     }
 });
 
 // Voice state update handler
 client.on('voiceStateUpdate', async (oldState, newState) => {
+    const userId = newState.id;
+    const member = newState.member;
+    const guildId = newState.guild.id;
+
     try {
-        await xpTracker.handleVoiceStateUpdate(oldState, newState);
-    } catch (error) {
-        console.error('[ERROR] Error processing voice state update:', error.message);
-    }
-});
-
-// Enhanced error handlers
-client.on('error', error => {
-    console.error('[ERROR] Discord client error:', error.message);
-});
-
-process.on('unhandledRejection', error => {
-    console.error('[ERROR] Unhandled promise rejection:', error.message);
-    // Don't exit the process for database connection errors
-});
-
-process.on('uncaughtException', error => {
-    console.error('[ERROR] Uncaught Exception:', error.message);
-    // Don't exit the process for database connection errors, just log
-    if (error.message.includes('Connection terminated unexpectedly')) {
-        console.log('[INFO] Database connection will be automatically restored');
-        return;
-    }
-    // For other critical errors, still exit
-    process.exit(1);
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-    console.log('[INFO] Received SIGINT, shutting down gracefully...');
-    
-    try {
-        if (xpTracker && xpTracker.cleanup) {
-            await xpTracker.cleanup();
+        // Handle voice time tracking with XP system
+        if (voiceTimeTracker) {
+            await voiceTimeTracker.handleVoiceStateUpdate(oldState, newState);
         }
-        
-        if (db) {
-            await db.end();
-        }
-        
-        if (client) {
-            client.destroy();
-        }
-        
-        console.log('[INFO] Shutdown complete');
-        process.exit(0);
-    } catch (error) {
-        console.error('[ERROR] Error during shutdown:', error.message);
-        process.exit(1);
-    }
-});
 
-process.on('SIGTERM', async () => {
-    console.log('[INFO] Received SIGTERM, shutting down gracefully...');
-    
-    try {
-        if (xpTracker && xpTracker.cleanup) {
-            await xpTracker.cleanup();
-        }
-        
-        if (db) {
-            await db.end();
-        }
-        
-        if (client) {
-            client.destroy();
-        }
-        
-        console.log('[INFO] Shutdown complete');
-        process.exit(0);
-    } catch (error) {
-        console.error('[ERROR] Error during shutdown:', error.message);
-        process.exit(1);
-    }
-});
+        // Dynamic Voice Channel Creation
+        if (newState.channelId && newState.channel?.name === CREATE_CHANNEL_NAME) {
+            const guild = newState.guild;
+            
+            if (!member.voice.channelId) {
+                debugLog(`User ${member.displayName} no longer in voice, skipping channel creation`);
+                return;
+            }
+            
+            let category;
+            
+            // If CATEGORY_ID is provided, use it directly
+            if (CATEGORY_ID) {
+                category = guild.channels.cache.get(CATEGORY_ID);
+                if (category) {
+                    debugLog(`✅ Using direct category ID: ${CATEGORY_ID} (${category.name})`);
+                    // Save/update this category in database
+                    await updateCategoryForGuild(guildId, category.id, category.name);
+                } else {
+                    console.error(`❌ Category with ID ${CATEGORY_ID} not found! Creating fallback category.`);
+                }
+            }
+            
+            // If no direct category ID or category not found, use saved/default logic
+            if (!category) {
+                // Get saved category or use default
+                let savedCategory = await getCategoryForGuild(guildId);
+                
+                if (savedCategory) {
+                    // Try to find the saved category by ID first
+                    category = guild.channels.cache.get(savedCategory.categoryId);
+                    if (!category) {
+                        // Saved category doesn't exist anymore, find by name
+                        category = guild.channels.cache.find(c => 
+                            c.name === savedCategory.categoryName && c.type === ChannelType.GuildCategory
+                        );
+                        
+                        if (category) {
+                            // Update the database with the new category ID
+                            await updateCategoryForGuild(guildId, category.id, category.name);
+                            log(`🔄 Category ID updated: ${savedCategory.categoryName}`);
+                        }
+                    }
+                }
+                
+                if (!category) {
+                    // Create new category with default name
+                    debugLog(`Category not found, creating new one: ${DEFAULT_CATEGORY_NAME}`);
+                    category = await guild.channels.create({
+                        name: DEFAULT_CATEGORY_NAME,
+                        type: ChannelType.GuildCategory,
+                    });
+                    
+                    // Save the new category to database
+                    await updateCategoryForGuild(guildId, category.id, category.name);
+                    log(`📁 Created and saved new category: ${DEFAULT_CATEGORY_NAME}`);
+                }
+            }
 
-// Export database and XP boost manager for use in commands
-module.exports = { db, xpBoostManager, executeQuery };
+            const crewName = getRandomCrewName();
+            
+            // Create the new voice channel with basic setup first
+            const newChannel = await guild.channels.create({
+                name: crewName,
+                type: ChannelType.GuildVoice,
+                parent: category.id,
+            });
 
-// Login to Discord
-client.login(process.env.DISCORD_TOKEN);
+            // Sync permissions with category and add creator permissions
+            await syncChannelWithCategory(newChannel, category, member.id);
+
+            // Ensure channel is in the correct category
+            if (newChannel.parentId !== category.id) {
+                try {
+                    await newChannel.setParent(category.id);
+                    debugLog(`🔧 Manually moved ${crewName} to category ${category.name}`);
+                } catch (moveError) {
+                    console.error(`❌ Error moving channel to category:`, moveError);
+                }
+            }
+
+            log(`🚢 Created new crew: ${crewName} for ${member.displayName}`);
+            log(`👑 ${member.displayName} is now captain of ${crewName}`);
+
+            try {
+                if (member.voice.channelId) {
+                    await member.voice.setChannel(newChannel);
+                    debugLog(`✅ Successfully moved ${member.displayName} to ${crewName}`);
+                    
+                    // Play welcome sound immediately after moving user
+                    log(`🎵 Playing welcome sound in ${crewName}...`);
+                    setTimeout(() => {
+                        playWelcomeSound(newChannel);
+                    }, 1500);
+                    
+                } else {
+                    debugLog(`User ${member.displayName} disconnected before move, cleaning up channel`);
+                    setTimeout(async () => {
+                        try {
+                            if (newChannel.members.size === 0) {
+                                await newChannel.delete();
+                                debugLog(`🗑️ Cleaned up unused crew: ${crewName}`);
+                            }
+                        } catch (cleanupError) {
+                            console.error(`❌ Error cleaning up channel:`, cleanupError);
+                        }
+                    }, 1000);
+                }
+            } catch (moveError) {
+                console.error(`❌ Error moving user to new channel:`, moveError);
+                setTimeout(async () => {
+                    try {
+                        if (newChannel.members.size === 0) {
+                            await newChannel.delete();
+                            debugLog(`🗑️ Cleaned up failed crew: ${crewName}`);
+                        }
+                    } catch (cleanupError) {
+                        console.error(`❌ Error cleaning up channel:`, cleanupError);
+                    }
+                }, 1000);
+            }
+        }
