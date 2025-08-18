@@ -18,6 +18,34 @@ class XPTracker {
         this.scheduleDailyReset();
     }
 
+    // Get next reset time for display
+    getNextResetTime() {
+        const now = new Date();
+        const estOffset = this.isESTDaylightSaving(now) ? -4 : -5;
+        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        
+        // Calculate next 3 AM EST
+        const nextReset = new Date(estTime);
+        nextReset.setHours(3, 0, 0, 0);
+        
+        // If it's already past 3 AM today, set to 3 AM tomorrow
+        if (estTime.getHours() >= 3) {
+            nextReset.setDate(nextReset.getDate() + 1);
+        }
+        
+        // Convert back to local time for display
+        const localReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+        
+        return localReset.toLocaleString('en-US', {
+            weekday: 'short',
+            month: 'short', 
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+        });
+    }
+
     // Load daily voice XP from database on startup with 3 AM EST reset
     async loadDailyVoiceXPFromDatabase() {
         try {
