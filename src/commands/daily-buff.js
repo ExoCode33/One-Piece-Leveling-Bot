@@ -1,11 +1,11 @@
-// src/commands/daily-buff.js - Daily XP Buff System with Spinning Wheel
+// src/commands/daily-buff.js - Enhanced Daily XP Buff System with Smooth Slot Machine Animation
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎰 Roll your daily XP buff! Resets at 3 AM EST'),
+        .setDescription('🎰 Spin the daily XP buff wheel! Resets at 3:00 AM EST'),
 
     async execute(interaction) {
         try {
@@ -25,20 +25,21 @@ module.exports = {
             const hasRolledToday = await this.checkDailyRoll(userId, guildId);
             if (hasRolledToday) {
                 const currentBuff = await this.getCurrentBuff(userId, guildId, member);
+                const nextReset = getNextResetUnixTimestamp();
                 
                 const embed = new EmbedBuilder()
                     .setColor('#FF6B6B')
                     .setTitle('🎰 DAILY BUFF ALREADY CLAIMED')
-                    .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name} ${currentBuff.symbol}\n**Multiplier:** ${currentBuff.multiplier}x XP\n\n*Resets at 3:00 AM EST*`)
+                    .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name} ${currentBuff.symbol}\n**Multiplier:** ${currentBuff.multiplier}x XP\n\n*Next reset: <t:${nextReset}:R>*`)
                     .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], ephemeral: true });
             }
 
-            // Start the spinning animation
+            // Start the enhanced spinning animation
             await interaction.deferReply();
-            await this.performBuffRoll(interaction, userId, guildId, member);
+            await this.performEnhancedBuffRoll(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
@@ -56,10 +57,242 @@ module.exports = {
         }
     },
 
+    // Enhanced buff roll with smooth slot machine animation using tier circle emojis
+    async performEnhancedBuffRoll(interaction, userId, guildId, member) {
+        const buffTiers = this.getBuffTiers();
+        
+        // Determine the final result first
+        const finalResult = this.calculateBuffTier();
+        const resultSymbol = buffTiers[finalResult].symbol;
+        const tierSymbols = this.getTierSymbols();
+        
+        // Create initial spinning embed with dynamic color
+        let embed = new EmbedBuilder()
+            .setColor('#2B2D31') // Discord dark theme color for initial
+            .setTitle('🎰 DAILY BUFF WHEEL')
+            .setDescription('**Preparing the wheel...**')
+            .addFields({
+                name: '🎲 Status',
+                value: '```⚡ Initializing wheel systems...\n⚡ Calibrating probability algorithms...\n⚡ Ready to spin!```',
+                inline: false
+            })
+            .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        // Phase 1: Fast spinning (building anticipation) - Cycling through tier symbols
+        const fastColors = ['#FFD700', '#FF6B35', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
+        
+        for (let i = 0; i < 8; i++) {
+            // Cycle through tier symbols in the center position
+            const centerSymbol = tierSymbols[i % tierSymbols.length];
+            const randomSymbols = Array(6).fill().map(() => tierSymbols[Math.floor(Math.random() * tierSymbols.length)]);
+            const wheel = `${randomSymbols.slice(0, 3).join('  ')} ⟨ ${centerSymbol} ⟩ ${randomSymbols.slice(3).join('  ')}`;
+            
+            embed.setColor(fastColors[i % fastColors.length])
+                 .setDescription('**🌪️ SPINNING AT MAXIMUM VELOCITY! 🌪️**')
+                 .spliceFields(0, 1, {
+                     name: '🎲 Spinning...',
+                     value: `${wheel}\n\n**Speed: MAXIMUM** ⚡⚡⚡`,
+                     inline: false
+                 });
+
+            await interaction.editReply({ embeds: [embed] });
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        // Phase 2: Medium speed (creating tension) - Slower cycling through symbols
+        embed.setDescription('**⚡ Slowing down... building suspense! ⚡**');
+        const targetColor = this.getTierColorHex(finalResult);
+        
+        for (let i = 0; i < 6; i++) {
+            // Continue cycling through tier symbols but slower
+            const centerSymbol = tierSymbols[(8 + i) % tierSymbols.length]; // Continue from where fast phase ended
+            const randomSymbols = Array(6).fill().map(() => tierSymbols[Math.floor(Math.random() * tierSymbols.length)]);
+            const wheel = `${randomSymbols.slice(0, 3).join('  ')} ⟨ ${centerSymbol} ⟩ ${randomSymbols.slice(3).join('  ')}`;
+            
+            // Gradually shift color towards the result
+            const progressColor = i > 3 ? targetColor : fastColors[Math.floor(Math.random() * fastColors.length)];
+            
+            embed.setColor(progressColor)
+                 .spliceFields(0, 1, {
+                     name: '🎲 Spinning...',
+                     value: `${wheel}\n\n**Speed: MEDIUM** ⚡⚡`,
+                     inline: false
+                 });
+
+            await interaction.editReply({ embeds: [embed] });
+            await new Promise(resolve => setTimeout(resolve, 350));
+        }
+
+        // Phase 3: Slow final spins (maximum tension) - Strategic approach to result
+        embed.setDescription('**🔥 Almost there... the wheel is deciding your fate! 🔥**')
+             .setColor(targetColor);
+        
+        // Create a strategic sequence that naturally cycles to the result
+        const finalSequence = this.createStrategicSequence(tierSymbols, resultSymbol);
+        
+        for (let i = 0; i < finalSequence.length; i++) {
+            const currentSymbol = finalSequence[i];
+            const isLastSpin = i === finalSequence.length - 1;
+            
+            // Create surrounding symbols that make sense
+            const surroundingSymbols = this.createRealisticSurrounding(tierSymbols, currentSymbol, isLastSpin);
+            const wheel = `${surroundingSymbols.slice(0, 3).join('  ')} ⟨ ${currentSymbol} ⟩ ${surroundingSymbols.slice(3).join('  ')}`;
+            
+            embed.spliceFields(0, 1, {
+                name: isLastSpin ? '🎯 FINAL RESULT!' : '🎲 Final Spins...',
+                value: `${wheel}\n\n**Speed: ${isLastSpin ? 'STOPPED!' : 'SLOW'}** ${isLastSpin ? '🎯' : '⚡'}`,
+                inline: false
+            });
+
+            await interaction.editReply({ embeds: [embed] });
+            await new Promise(resolve => setTimeout(resolve, isLastSpin ? 1500 : 600));
+        }
+
+        // Phase 4: Dramatic reveal with exact tier color
+        const buffInfo = buffTiers[finalResult];
+        
+        // Create winning wheel display with emphasis on the exact result
+        const winningWheel = `✨ ✨ ✨ ⟨ ${resultSymbol} ⟩ ✨ ✨ ✨`;
+        
+        embed.setColor(targetColor)
+             .setDescription(`**🎉 CONGRATULATIONS! THE WHEEL HAS DECIDED! 🎉**`)
+             .spliceFields(0, 1, {
+                 name: '🏆 WINNING RESULT',
+                 value: `${winningWheel}\n\n**${buffInfo.name}** ${resultSymbol}\n**Multiplier: ${buffInfo.multiplier}x XP**`,
+                 inline: false
+             });
+
+        await interaction.editReply({ embeds: [embed] });
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Phase 5: Final result with full details in tier color
+        const nextReset = getNextResetUnixTimestamp();
+        
+        const finalEmbed = new EmbedBuilder()
+            .setColor(targetColor)
+            .setTitle('🎰 DAILY BUFF RESULT')
+            .setDescription(`🎉 **${buffInfo.name}** ${buffInfo.symbol}\n\n**XP Multiplier:** ${buffInfo.multiplier}x\n**Duration:** Until <t:${nextReset}:t> (<t:${nextReset}:R>)`)
+            .addFields(
+                {
+                    name: '🎲 Your Roll',
+                    value: `${winningWheel}`,
+                    inline: false
+                },
+                {
+                    name: '📊 Buff Details',
+                    value: `This buff applies to **all XP sources**:\n• Message XP\n• Voice XP\n• Reaction XP\n\n*Stacks with other role boosts!*`,
+                    inline: false
+                },
+                {
+                    name: '⚙️ System Info',
+                    value: `**Rarity:** ${this.getTierRarity(finalResult)}\n**Next Reset:** <t:${nextReset}:F>\n**Timezone:** Eastern Time (EST/EDT)`,
+                    inline: false
+                }
+            )
+            .setFooter({ text: `⚓ Marine Intelligence • Tier ${finalResult} Buff Active` })
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [finalEmbed] });
+
+        // Apply the buff role and save to database
+        await this.applyBuffRole(userId, guildId, member, finalResult);
+    },
+
+    // Get tier symbols (circle emojis)
+    getTierSymbols() {
+        return ['🟢', '🔵', '🟣', '🟡', '🟠', '🔴'];
+    },
+
+    // Create a strategic sequence that cycles through symbols to reach the result
+    createStrategicSequence(allSymbols, resultSymbol) {
+        const sequence = [];
+        const resultIndex = allSymbols.indexOf(resultSymbol);
+        
+        // Continue cycling from where medium phase ended (14 total spins so far: 8 fast + 6 medium)
+        const startIndex = 14 % allSymbols.length;
+        
+        // Calculate how many steps to get to result symbol naturally
+        let currentIndex = startIndex;
+        for (let i = 0; i < 3; i++) {
+            currentIndex = (currentIndex + 1) % allSymbols.length;
+            sequence.push(allSymbols[currentIndex]);
+            
+            // If we've reached the result in a natural cycle, stop here
+            if (allSymbols[currentIndex] === resultSymbol) {
+                break;
+            }
+        }
+        
+        // If we haven't reached the result naturally, make the last one the result
+        if (sequence[sequence.length - 1] !== resultSymbol) {
+            sequence[sequence.length - 1] = resultSymbol;
+        }
+        
+        return sequence;
+    },
+
+    // Create realistic surrounding symbols for the wheel
+    createRealisticSurrounding(allSymbols, centerSymbol, isWinning) {
+        if (isWinning) {
+            // For winning spin, create a balanced wheel
+            const otherSymbols = allSymbols.filter(s => s !== centerSymbol);
+            return Array(6).fill().map((_, index) => {
+                // Mix in some variety but avoid too much repetition
+                return otherSymbols[index % otherSymbols.length];
+            });
+        } else {
+            // For regular spins, completely random
+            return Array(6).fill().map(() => allSymbols[Math.floor(Math.random() * allSymbols.length)]);
+        }
+    },
+
+    // Get tier color as hex string for embed colors
+    getTierColorHex(tier) {
+        const colors = {
+            1: '#22C55E', // Green
+            2: '#3B82F6', // Blue  
+            3: '#8B5CF6', // Purple
+            4: '#F59E0B', // Yellow/Gold
+            5: '#F97316', // Orange
+            6: '#EF4444'  // Red
+        };
+        return colors[tier] || '#6B7280';
+    },
+
+    // Get rarity text for each tier
+    getTierRarity(tier) {
+        const rarities = {
+            1: 'Common (45%)',
+            2: 'Rare (25%)',
+            3: 'Epic (15%)',
+            4: 'Legendary (9%)',
+            5: 'Mythical (5%)',
+            6: 'Divine (1%)'
+        };
+        return rarities[tier] || 'Unknown';
+    },
+
+    // Calculate which tier to roll (weighted probabilities)
+    calculateBuffTier() {
+        const random = Math.random() * 100;
+        
+        // Weighted probabilities with slight improvement for higher tiers
+        if (random < 45) return 1;        // 45% - Common
+        else if (random < 70) return 2;   // 25% - Rare  
+        else if (random < 85) return 3;   // 15% - Epic
+        else if (random < 94) return 4;   // 9% - Legendary
+        else if (random < 99) return 5;   // 5% - Mythical
+        else return 6;                    // 1% - Divine
+    },
+
     // Check if user has already rolled today (EST-based)
     async checkDailyRoll(userId, guildId) {
         try {
-            const currentDay = this.getCurrentDay();
+            const currentDay = getCurrentDayKey();
             
             const result = await global.xpTracker.db.query(
                 'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
@@ -71,32 +304,6 @@ module.exports = {
             console.error('[DAILY BUFF] Error checking daily roll:', error);
             return false;
         }
-    },
-
-    // Get current day based on 3 AM EST reset (same logic as voice XP)
-    getCurrentDay() {
-        const now = new Date();
-        
-        // Convert to EST (UTC-5) or EDT (UTC-4) depending on daylight saving
-        const estOffset = this.isEDT(now) ? -4 : -5;
-        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
-        
-        // If it's before 3 AM EST, consider it the previous day
-        if (estTime.getHours() < 3) {
-            estTime.setDate(estTime.getDate() - 1);
-        }
-        
-        return estTime.toISOString().split('T')[0]; // YYYY-MM-DD format
-    },
-
-    // Check if date is in Eastern Daylight Time (EDT)
-    isEDT(date) {
-        const year = date.getFullYear();
-        const marchSecondSunday = new Date(year, 2, 8);
-        marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
-        const novemberFirstSunday = new Date(year, 10, 1);
-        novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
-        return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
     // Get current buff for a user
@@ -118,95 +325,6 @@ module.exports = {
         return { tier: 0, name: 'No Buff', symbol: '⚪', multiplier: 1.0 };
     },
 
-    // Perform the buff roll with spinning animation
-    async performBuffRoll(interaction, userId, guildId, member) {
-        const buffTiers = this.getBuffTiers();
-        
-        // Create spinning animation
-        const spinFrames = [
-            '🟢 🔵 🟣 [🎰] 🟡 🟠 🔴',
-            '🔴 🟢 🔵 [🎰] 🟣 🟡 🟠',
-            '🟠 🔴 🟢 [🎰] 🔵 🟣 🟡',
-            '🟡 🟠 🔴 [🎰] 🟢 🔵 🟣',
-            '🟣 🟡 🟠 [🎰] 🔴 🟢 🔵',
-            '🔵 🟣 🟡 [🎰] 🟠 🔴 🟢'
-        ];
-
-        const embed = new EmbedBuilder()
-            .setColor('#FFD700')
-            .setTitle('🎰 DAILY BUFF WHEEL')
-            .setDescription('Rolling your daily XP buff...')
-            .addFields({
-                name: '🎲 Spinning...',
-                value: spinFrames[0],
-                inline: false
-            })
-            .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
-            .setTimestamp();
-
-        await interaction.editReply({ embeds: [embed] });
-
-        // Animate the spinning wheel
-        for (let i = 0; i < 15; i++) {
-            await new Promise(resolve => setTimeout(resolve, 300 + (i * 50))); // Slow down progressively
-            
-            const frameIndex = i % spinFrames.length;
-            embed.spliceFields(0, 1, {
-                name: '🎲 Spinning...',
-                value: spinFrames[frameIndex],
-                inline: false
-            });
-
-            await interaction.editReply({ embeds: [embed] });
-        }
-
-        // Calculate the result
-        const rolledTier = this.calculateBuffTier();
-        const buffInfo = buffTiers[rolledTier];
-        const tierSymbol = buffInfo.symbol;
-
-        // Final wheel display with result
-        const finalWheel = `🟢 🔵 🟣 [${tierSymbol}] 🟡 🟠 🔴`;
-
-        // Create final result embed
-        const resultEmbed = new EmbedBuilder()
-            .setColor(this.getTierColor(rolledTier))
-            .setTitle('🎰 DAILY BUFF RESULT')
-            .setDescription(`🎉 **${buffInfo.name}** ${tierSymbol}\n\n**XP Multiplier:** ${buffInfo.multiplier}x\n**Duration:** Until 3:00 AM EST`)
-            .addFields(
-                {
-                    name: '🎲 Final Roll',
-                    value: finalWheel,
-                    inline: false
-                },
-                {
-                    name: '📊 Buff Details',
-                    value: `This buff applies to **all XP sources**:\n• Message XP\n• Voice XP\n• Reaction XP\n\n*Stacks with other role boosts!*`,
-                    inline: false
-                }
-            )
-            .setFooter({ text: `⚓ Marine Intelligence • Tier ${rolledTier} Buff Active` })
-            .setTimestamp();
-
-        await interaction.editReply({ embeds: [resultEmbed] });
-
-        // Apply the buff role and save to database
-        await this.applyBuffRole(userId, guildId, member, rolledTier);
-    },
-
-    // Calculate which tier to roll (weighted probabilities)
-    calculateBuffTier() {
-        const random = Math.random() * 100;
-        
-        // Weighted probabilities (adjust these as needed)
-        if (random < 45) return 1;        // 45% - Common
-        else if (random < 70) return 2;   // 25% - Rare  
-        else if (random < 85) return 3;   // 15% - Epic
-        else if (random < 94) return 4;   // 9% - Legendary
-        else if (random < 99) return 5;   // 5% - Mythical
-        else return 6;                    // 1% - Divine
-    },
-
     // Get buff tier information
     getBuffTiers() {
         return {
@@ -219,17 +337,9 @@ module.exports = {
         };
     },
 
-    // Get tier color for embeds
+    // Get tier color for embeds (keeping original function for compatibility)
     getTierColor(tier) {
-        const colors = {
-            1: '#22C55E', // Green
-            2: '#3B82F6', // Blue  
-            3: '#8B5CF6', // Purple
-            4: '#F59E0B', // Yellow
-            5: '#F97316', // Orange
-            6: '#EF4444'  // Red
-        };
-        return colors[tier] || '#6B7280';
+        return this.getTierColorHex(tier);
     },
 
     // Apply the buff role to the user
@@ -244,17 +354,19 @@ module.exports = {
                 const role = member.guild.roles.cache.get(roleId);
                 if (role) {
                     await member.roles.add(role);
-                    console.log(`[DAILY BUFF] Added ${role.name} to ${member.user.username}`);
+                    console.log(`[DAILY BUFF] ✅ Awarded ${role.name} to ${member.user.username}`);
                 } else {
-                    console.error(`[DAILY BUFF] Role not found: ${roleId}`);
+                    console.error(`[DAILY BUFF] ❌ Role not found: ${roleId}`);
                 }
+            } else {
+                console.warn(`[DAILY BUFF] ⚠️ No role ID configured for tier ${tier}`);
             }
 
             // Save to database
             await this.saveBuffRoll(userId, guildId, tier);
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error applying buff role:', error);
+            console.error('[DAILY BUFF] ❌ Error applying buff role:', error);
         }
     },
 
@@ -287,7 +399,7 @@ module.exports = {
                 )
             `);
 
-            const currentDay = this.getCurrentDay();
+            const currentDay = getCurrentDayKey();
             
             await global.xpTracker.db.query(`
                 INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier)
@@ -296,10 +408,54 @@ module.exports = {
                 DO UPDATE SET tier = $4
             `, [userId, guildId, currentDay, tier]);
 
-            console.log(`[DAILY BUFF] Saved tier ${tier} roll for ${userId} on ${currentDay}`);
+            console.log(`[DAILY BUFF] ✅ Saved tier ${tier} roll for ${userId} on ${currentDay}`);
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error saving buff roll:', error);
+            console.error('[DAILY BUFF] ❌ Error saving buff roll:', error);
         }
     }
 };
+
+// Helper functions with proper timezone handling
+function getCurrentDayKey() {
+    const now = new Date();
+    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
+    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+    
+    // If it's before 3 AM EST, consider it the previous day
+    if (estTime.getHours() < 3) {
+        estTime.setDate(estTime.getDate() - 1);
+    }
+    
+    return estTime.toISOString().split('T')[0];
+}
+
+function isESTDaylightSaving(date) {
+    const year = date.getFullYear();
+    const march = new Date(year, 2, 1);
+    const november = new Date(year, 10, 1);
+    
+    // DST starts second Sunday in March, ends first Sunday in November
+    const dstStart = new Date(year, 2, (14 - march.getDay()) % 7 + 8);
+    const dstEnd = new Date(year, 10, (7 - november.getDay()) % 7 + 1);
+    
+    return date >= dstStart && date < dstEnd;
+}
+
+function getNextResetUnixTimestamp() {
+    const now = new Date();
+    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
+    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+    
+    const nextReset = new Date(estTime);
+    nextReset.setHours(3, 0, 0, 0);
+    
+    // If it's already past 3 AM today, schedule for tomorrow
+    if (estTime.getHours() >= 3) {
+        nextReset.setDate(nextReset.getDate() + 1);
+    }
+    
+    // Convert back to UTC for Discord timestamp
+    const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+    return Math.floor(utcReset.getTime() / 1000);
+}
