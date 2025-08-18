@@ -1,11 +1,11 @@
-// src/commands/daily-buff.js - Daily Spin Wheel (XP Buff Only, No Cap Roles)
+// src/commands/daily-buff.js - Daily Spin Wheel (Separate Buff and Cap Roles)
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎰 Spin the Marine Intelligence Luck Wheel for daily XP buffs!'),
+        .setDescription('🎰 Spin the Marine Intelligence Luck Wheel for daily XP buffs and caps!'),
 
     async execute(interaction) {
         try {
@@ -29,12 +29,13 @@ module.exports = {
             if (existingBuff.rows.length > 0) {
                 const buff = existingBuff.rows[0];
                 const tierInfo = getTierInfo(buff.tier);
+                const resetTime = getNextResetTime();
                 
                 const embed = new EmbedBuilder()
                     .setColor(0xFF6B6B)
                     .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-                    .setDescription(`\`\`\`diff\n- DAILY XP BUFF ALREADY CLAIMED\n- Current Tier: ${buff.tier}\n- XP Buff Role: ${tierInfo.buffRoleName}\n- Reset Time: <t:${getNextResetUnixTimestamp()}:F>\n\`\`\``)
-                    .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff System' })
+                    .setDescription(`\`\`\`diff\n- DAILY ROLES ALREADY CLAIMED\n- Current Tier: ${buff.tier}\n- XP Buff Role: ${tierInfo.buffRoleName}\n- XP Cap Role: ${tierInfo.capRoleName}\n- Next Reset: ${resetTime}\n\`\`\``)
+                    .setFooter({ text: '⚓ Marine Intelligence • Daily Reset: 3 AM EST' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -44,8 +45,8 @@ module.exports = {
             const spinEmbed = new EmbedBuilder()
                 .setColor(0x4A90E2)
                 .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-                .setDescription(`\`\`\`yaml\nPrepare for Fortune Assessment!\n\nTier 1 (60%): Standard XP Boost\nTier 2 (30%): Enhanced XP Boost  \nTier 3 (10%): Elite XP Boost\n\nEach tier gives you an XP multiplier role!\nConfigure XP multipliers in /settings!\n\nReset Time: \`\`\`<t:${getNextResetUnixTimestamp()}:F>\n\nClick SPIN to test your luck!`)
-                .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff System' })
+                .setDescription(`\`\`\`yaml\nPrepare for Fortune Assessment!\n\nTier 1 (60%): Tier-1 XP Buff + Tier-1 XP Cap (${process.env.DAILY_VOICE_XP_CAP_TIER_1})\nTier 2 (30%): Tier-2 XP Buff + Tier-2 XP Cap (${process.env.DAILY_VOICE_XP_CAP_TIER_2})\nTier 3 (10%): Tier-3 XP Buff + Tier-3 XP Cap (${process.env.DAILY_VOICE_XP_CAP_TIER_3})\n\nEach tier gives you BOTH roles!\nConfigure XP multipliers for buff roles in /settings!\n\nClick SPIN to test your luck!\n\`\`\``)
+                .setFooter({ text: '⚓ Marine Intelligence • Daily Role Assignment' })
                 .setTimestamp();
 
             const spinButton = new ActionRowBuilder()
@@ -98,8 +99,8 @@ module.exports = {
                 DO NOTHING
             `, [userId, guildId, today, tier]);
 
-            // Award ONLY the buff role (no cap role)
-            await awardDailyBuffRole(interaction, tier, tierInfo);
+            // Award BOTH the buff and cap roles
+            await awardDailyRoles(interaction, tier, tierInfo);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in spin interaction:', error);
@@ -125,25 +126,34 @@ function getTierInfo(tier) {
         1: {
             name: 'Standard Operations',
             buffRoleName: 'Tier-1 XP Buff',
+            capRoleName: 'Tier-1 XP Cap',
             color: 0x28A745,
-            description: 'Standard XP boost for daily operations',
+            description: 'Tier 1 XP buff role + Tier 1 XP cap role',
             buffRoleEnv: 'DAILY_XP_BUFF_TIER_1_ROLE',
+            capRoleEnv: 'DAILY_XP_CAP_TIER_1_ROLE',
+            cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_1) || 2000,
             emoji: '⚡'
         },
         2: {
             name: 'Enhanced Operations', 
             buffRoleName: 'Tier-2 XP Buff',
+            capRoleName: 'Tier-2 XP Cap',
             color: 0x007BFF,
-            description: 'Enhanced XP boost for advanced operations',
+            description: 'Tier 2 XP buff role + Tier 2 XP cap role',
             buffRoleEnv: 'DAILY_XP_BUFF_TIER_2_ROLE',
+            capRoleEnv: 'DAILY_XP_CAP_TIER_2_ROLE',
+            cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_2) || 3000,
             emoji: '💎'
         },
         3: {
             name: 'Elite Operations',
             buffRoleName: 'Tier-3 XP Buff',
+            capRoleName: 'Tier-3 XP Cap',
             color: 0xFFD700,
-            description: 'Elite XP boost for top-tier operations',
+            description: 'Tier 3 XP buff role + Tier 3 XP cap role',
             buffRoleEnv: 'DAILY_XP_BUFF_TIER_3_ROLE',
+            capRoleEnv: 'DAILY_XP_CAP_TIER_3_ROLE',
+            cap: parseInt(process.env.DAILY_VOICE_XP_CAP_TIER_3) || 5000,
             emoji: '👑'
         }
     };
@@ -176,65 +186,75 @@ async function showSpinAnimation(interaction, finalTier, tierInfo) {
     const resultEmbed = new EmbedBuilder()
         .setColor(tierInfo.color)
         .setTitle('🎰 MARINE INTELLIGENCE LUCK WHEEL')
-        .setDescription(`\`\`\`diff\n+ FORTUNE ASSESSMENT COMPLETE!\n+ ${tierInfo.emoji} TIER ${finalTier}: ${tierInfo.name.toUpperCase()}\n+ XP Buff Role: ${tierInfo.buffRoleName}\n+ Duration: Until reset\n+ Next Reset: \`\`\`<t:${getNextResetUnixTimestamp()}:F>`)
+        .setDescription(`\`\`\`diff\n+ FORTUNE ASSESSMENT COMPLETE!\n+ ${tierInfo.emoji} TIER ${finalTier}: ${tierInfo.name.toUpperCase()}\n+ Buff Role: ${tierInfo.buffRoleName}\n+ Cap Role: ${tierInfo.capRoleName}\n+ Daily XP Cap: ${tierInfo.cap.toLocaleString()}\n+ Valid Until: ${getNextResetTime()}\n\`\`\``)
         .addFields({
-            name: `${tierInfo.emoji} XP BUFF ASSIGNMENT`,
-            value: `\`\`\`yaml\nXP Buff Role: ${tierInfo.buffRoleName}\nMultiplier: Configure in /settings\nStatus: BUFF ROLE ACTIVE\nType: XP Multiplier Only\n\`\`\``,
+            name: `${tierInfo.emoji} DUAL ROLE ASSIGNMENT`,
+            value: `\`\`\`yaml\nXP Buff Role: ${tierInfo.buffRoleName}\nXP Cap Role: ${tierInfo.capRoleName}\nDuration: Until 3:00 AM EST\nXP Multiplier: Configure in /settings\nStatus: BOTH ROLES ACTIVE\n\`\`\``,
             inline: false
         })
-        .setFooter({ text: '⚓ Marine Intelligence • Daily XP Buff Active' })
+        .setFooter({ text: '⚓ Marine Intelligence • Daily Roles Active' })
         .setTimestamp();
 
     await interaction.editReply({ embeds: [resultEmbed], components: [] });
 }
 
-async function awardDailyBuffRole(interaction, tier, tierInfo) {
+async function awardDailyRoles(interaction, tier, tierInfo) {
     try {
         const buffRoleId = process.env[tierInfo.buffRoleEnv];
+        const capRoleId = process.env[tierInfo.capRoleEnv];
         
-        if (!buffRoleId || buffRoleId.includes('ROLE_ID')) {
-            console.log(`[DAILY BUFF] Buff role not configured for tier ${tier}`);
+        if ((!buffRoleId || buffRoleId.includes('ROLE_ID')) || (!capRoleId || capRoleId.includes('ROLE_ID'))) {
+            console.log(`[DAILY BUFF] Roles not configured for tier ${tier}`);
             return;
         }
 
         const buffRole = interaction.guild.roles.cache.get(buffRoleId);
+        const capRole = interaction.guild.roles.cache.get(capRoleId);
         
-        if (!buffRole) {
-            console.log(`[DAILY BUFF] Buff role not found for tier ${tier}`);
+        if (!buffRole || !capRole) {
+            console.log(`[DAILY BUFF] Roles not found for tier ${tier}`);
             return;
         }
 
         const member = interaction.guild.members.cache.get(interaction.user.id);
         if (!member) return;
 
-        // Remove any existing daily buff roles first
-        const allBuffRoles = [
+        // Remove any existing daily roles first
+        const allDailyRoles = [
+            // All buff roles
             process.env.DAILY_XP_BUFF_TIER_1_ROLE,
             process.env.DAILY_XP_BUFF_TIER_2_ROLE,
-            process.env.DAILY_XP_BUFF_TIER_3_ROLE
+            process.env.DAILY_XP_BUFF_TIER_3_ROLE,
+            // All cap roles
+            process.env.DAILY_XP_CAP_TIER_1_ROLE,
+            process.env.DAILY_XP_CAP_TIER_2_ROLE,
+            process.env.DAILY_XP_CAP_TIER_3_ROLE,
+            // Quest completion role
+            process.env.DAILY_QUEST_COMPLETION_ROLE
         ].filter(id => id && !id.includes('ROLE_ID'));
 
-        for (const roleId of allBuffRoles) {
+        for (const roleId of allDailyRoles) {
             if (member.roles.cache.has(roleId)) {
                 const oldRole = interaction.guild.roles.cache.get(roleId);
                 if (oldRole) {
                     await member.roles.remove(oldRole);
-                    console.log(`[DAILY BUFF] Removed old daily buff role: ${oldRole.name}`);
+                    console.log(`[DAILY BUFF] Removed old daily role: ${oldRole.name}`);
                 }
             }
         }
 
-        // Add new buff role
+        // Add BOTH new roles
         await member.roles.add(buffRole);
+        await member.roles.add(capRole);
         
-        console.log(`[DAILY BUFF] Awarded ${buffRole.name} to ${member.user.username}`);
+        console.log(`[DAILY BUFF] Awarded ${buffRole.name} + ${capRole.name} to ${member.user.username}`);
 
     } catch (error) {
-        console.error('[DAILY BUFF] Error awarding buff role:', error);
+        console.error('[DAILY BUFF] Error awarding roles:', error);
     }
 }
 
-// Helper functions with proper timezone handling
+// Helper functions
 function getCurrentDayKey() {
     const now = new Date();
     const estOffset = isESTDaylightSaving(now) ? -4 : -5;
@@ -256,7 +276,7 @@ function isESTDaylightSaving(date) {
     return date >= dstStart && date < dstEnd;
 }
 
-function getNextResetUnixTimestamp() {
+function getNextResetTime() {
     const now = new Date();
     const estOffset = isESTDaylightSaving(now) ? -4 : -5;
     const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
@@ -268,7 +288,14 @@ function getNextResetUnixTimestamp() {
         nextReset.setDate(nextReset.getDate() + 1);
     }
     
-    // Convert back to UTC for Discord timestamp
-    const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
-    return Math.floor(utcReset.getTime() / 1000);
+    const localReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+    
+    return localReset.toLocaleString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short'
+    });
 }
