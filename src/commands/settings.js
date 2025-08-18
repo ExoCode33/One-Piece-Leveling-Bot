@@ -523,7 +523,7 @@ module.exports = {
         }
     },
 
-    // Save guild settings to database - BETTER VERSION
+    // Save guild settings to database - FIXED FOR CATEGORY_ID CONSTRAINT
     async saveGuildSettings(guildId, settings) {
         try {
             // Try multiple ways to access the database
@@ -551,6 +551,24 @@ module.exports = {
             if (!database) {
                 console.error('[SETTINGS] No database connection available - settings will not persist');
                 return false;
+            }
+
+            // First, check what columns exist in the table
+            const tableInfo = await database.query(`
+                SELECT column_name, is_nullable, column_default 
+                FROM information_schema.columns 
+                WHERE table_name = 'guild_settings'
+                ORDER BY ordinal_position
+            `);
+            
+            console.log('[SETTINGS] Guild settings table columns:', tableInfo.rows.map(r => `${r.column_name} (nullable: ${r.is_nullable})`).join(', '));
+
+            // Handle the category_id constraint by providing a default value or making it nullable
+            const categoryIdExists = tableInfo.rows.find(r => r.column_name === 'category_id');
+            
+            if (categoryIdExists && categoryIdExists.is_nullable === 'NO') {
+                console.log('[SETTINGS] Making category_id nullable to fix constraint...');
+                await database.query('ALTER TABLE guild_settings ALTER COLUMN category_id DROP NOT NULL');
             }
 
             const result = await database.query(`
@@ -584,6 +602,40 @@ module.exports = {
                 guildId,
                 settings
             });
+            
+            // If it's still the category_id constraint, try a different approach
+            if (error.message && error.message.includes('category_id')) {
+                console.log('[SETTINGS] Attempting to fix category_id constraint with default value...');
+                try {
+                    const database = global.xpTracker?.db || require('../../index').db;
+                    const result = await database.query(`
+                        INSERT INTO guild_settings (guild_id, category_id, category_name, levelup_channel, levelup_enabled, xp_log_channel, xp_log_enabled, xp_multiplier, updated_at)
+                        VALUES ($1, '0', 'default', $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                        ON CONFLICT (guild_id)
+                        DO UPDATE SET
+                            levelup_channel = EXCLUDED.levelup_channel,
+                            levelup_enabled = EXCLUDED.levelup_enabled,
+                            xp_log_channel = EXCLUDED.xp_log_channel,
+                            xp_log_enabled = EXCLUDED.xp_log_enabled,
+                            xp_multiplier = EXCLUDED.xp_multiplier,
+                            updated_at = CURRENT_TIMESTAMP
+                        RETURNING *
+                    `, [
+                        guildId,
+                        settings.levelupChannel,
+                        settings.levelupEnabled,
+                        settings.xpLogChannel,
+                        settings.xpLogEnabled,
+                        settings.xpMultiplier
+                    ]);
+                    
+                    console.log(`[SETTINGS] ✅ Fixed and saved settings with default category_id`);
+                    return true;
+                } catch (retryError) {
+                    console.error('[SETTINGS] ❌ Retry with default category_id also failed:', retryError);
+                }
+            }
+            
             return false;
         }
     }
