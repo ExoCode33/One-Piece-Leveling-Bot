@@ -57,7 +57,7 @@ module.exports = {
         }
     },
 
-    // Enhanced buff roll with smooth slot machine animation using tier circle emojis
+    // Enhanced buff roll with cleaner, faster animation
     async performEnhancedBuffRoll(interaction, userId, guildId, member) {
         const buffTiers = this.getBuffTiers();
         
@@ -65,135 +65,54 @@ module.exports = {
         const finalResult = this.calculateBuffTier();
         const resultSymbol = buffTiers[finalResult].symbol;
         const tierSymbols = this.getTierSymbols();
-        
-        // Create initial spinning embed with dynamic color
-        let embed = new EmbedBuilder()
-            .setColor('#2B2D31') // Discord dark theme color for initial
-            .setTitle('🎰 DAILY BUFF WHEEL')
-            .setDescription('**Preparing the wheel...**')
-            .addFields({
-                name: '🎲 Status',
-                value: '```⚡ Initializing wheel systems...\n⚡ Calibrating probability algorithms...\n⚡ Ready to spin!```',
-                inline: false
-            })
-            .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
-            .setTimestamp();
-
-        await interaction.editReply({ embeds: [embed] });
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // Phase 1: Fast spinning (building anticipation) - Cycling through tier symbols
-        const fastColors = ['#FFD700', '#FF6B35', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
-        
-        for (let i = 0; i < 8; i++) {
-            // Cycle through tier symbols in the center position
-            const centerSymbol = tierSymbols[i % tierSymbols.length];
-            const randomSymbols = Array(6).fill().map(() => tierSymbols[Math.floor(Math.random() * tierSymbols.length)]);
-            const wheel = `${randomSymbols.slice(0, 3).join('  ')} ⟨ ${centerSymbol} ⟩ ${randomSymbols.slice(3).join('  ')}`;
-            
-            embed.setColor(fastColors[i % fastColors.length])
-                 .setDescription('**🌪️ SPINNING AT MAXIMUM VELOCITY! 🌪️**')
-                 .spliceFields(0, 1, {
-                     name: '🎲 Spinning...',
-                     value: `${wheel}\n\n**Speed: MAXIMUM** ⚡⚡⚡`,
-                     inline: false
-                 });
-
-            await interaction.editReply({ embeds: [embed] });
-            await new Promise(resolve => setTimeout(resolve, 200));
-        }
-
-        // Phase 2: Medium speed (creating tension) - Slower cycling through symbols
-        embed.setDescription('**⚡ Slowing down... building suspense! ⚡**');
         const targetColor = this.getTierColorHex(finalResult);
         
+        // Phase 1: Quick spinning (3 seconds)
+        let embed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🎰 DAILY BUFF WHEEL')
+            .setDescription('**Spinning...**');
+
+        await interaction.editReply({ embeds: [embed] });
+        
+        // Fast spinning - 6 quick spins
         for (let i = 0; i < 6; i++) {
-            // Continue cycling through tier symbols but slower
-            const centerSymbol = tierSymbols[(8 + i) % tierSymbols.length]; // Continue from where fast phase ended
-            const randomSymbols = Array(6).fill().map(() => tierSymbols[Math.floor(Math.random() * tierSymbols.length)]);
-            const wheel = `${randomSymbols.slice(0, 3).join('  ')} ⟨ ${centerSymbol} ⟩ ${randomSymbols.slice(3).join('  ')}`;
+            const currentSymbol = tierSymbols[i % tierSymbols.length];
+            const wheel = `${currentSymbol} ${currentSymbol} ${currentSymbol} ⟨ ${currentSymbol} ⟩ ${currentSymbol} ${currentSymbol} ${currentSymbol}`;
             
-            // Gradually shift color towards the result
-            const progressColor = i > 3 ? targetColor : fastColors[Math.floor(Math.random() * fastColors.length)];
-            
-            embed.setColor(progressColor)
+            embed.setColor(this.getTierColorHex((i % 6) + 1))
                  .spliceFields(0, 1, {
-                     name: '🎲 Spinning...',
-                     value: `${wheel}\n\n**Speed: MEDIUM** ⚡⚡`,
+                     name: '🎲 Rolling...',
+                     value: wheel,
                      inline: false
                  });
 
             await interaction.editReply({ embeds: [embed] });
-            await new Promise(resolve => setTimeout(resolve, 350));
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
 
-        // Phase 3: Slow final spins (maximum tension) - Strategic approach to result
-        embed.setDescription('**🔥 Almost there... the wheel is deciding your fate! 🔥**')
-             .setColor(targetColor);
-        
-        // Create a strategic sequence that naturally cycles to the result
-        const finalSequence = this.createStrategicSequence(tierSymbols, resultSymbol);
-        
-        for (let i = 0; i < finalSequence.length; i++) {
-            const currentSymbol = finalSequence[i];
-            const isLastSpin = i === finalSequence.length - 1;
-            
-            // Create surrounding symbols that make sense
-            const surroundingSymbols = this.createRealisticSurrounding(tierSymbols, currentSymbol, isLastSpin);
-            const wheel = `${surroundingSymbols.slice(0, 3).join('  ')} ⟨ ${currentSymbol} ⟩ ${surroundingSymbols.slice(3).join('  ')}`;
-            
-            embed.spliceFields(0, 1, {
-                name: isLastSpin ? '🎯 FINAL RESULT!' : '🎲 Final Spins...',
-                value: `${wheel}\n\n**Speed: ${isLastSpin ? 'STOPPED!' : 'SLOW'}** ${isLastSpin ? '🎯' : '⚡'}`,
-                inline: false
-            });
-
-            await interaction.editReply({ embeds: [embed] });
-            await new Promise(resolve => setTimeout(resolve, isLastSpin ? 1500 : 600));
-        }
-
-        // Phase 4: Dramatic reveal with exact tier color
-        const buffInfo = buffTiers[finalResult];
-        
-        // Create winning wheel display with emphasis on the exact result
+        // Phase 2: Final result (immediate)
         const winningWheel = `✨ ✨ ✨ ⟨ ${resultSymbol} ⟩ ✨ ✨ ✨`;
-        
-        embed.setColor(targetColor)
-             .setDescription(`**🎉 CONGRATULATIONS! THE WHEEL HAS DECIDED! 🎉**`)
-             .spliceFields(0, 1, {
-                 name: '🏆 WINNING RESULT',
-                 value: `${winningWheel}\n\n**${buffInfo.name}** ${resultSymbol}\n**Multiplier: ${buffInfo.multiplier}x XP**`,
-                 inline: false
-             });
-
-        await interaction.editReply({ embeds: [embed] });
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Phase 5: Final result with full details in tier color
+        const buffInfo = buffTiers[finalResult];
         const nextReset = getNextResetUnixTimestamp();
         
         const finalEmbed = new EmbedBuilder()
             .setColor(targetColor)
             .setTitle('🎰 DAILY BUFF RESULT')
-            .setDescription(`🎉 **${buffInfo.name}** ${buffInfo.symbol}\n\n**XP Multiplier:** ${buffInfo.multiplier}x\n**Duration:** Until <t:${nextReset}:t> (<t:${nextReset}:R>)`)
+            .setDescription(`🎉 **${buffInfo.name}** ${buffInfo.symbol}`)
             .addFields(
                 {
                     name: '🎲 Your Roll',
-                    value: `${winningWheel}`,
+                    value: winningWheel,
                     inline: false
                 },
                 {
-                    name: '📊 Buff Details',
-                    value: `This buff applies to **all XP sources**:\n• Message XP\n• Voice XP\n• Reaction XP\n\n*Stacks with other role boosts!*`,
-                    inline: false
-                },
-                {
-                    name: '⚙️ System Info',
-                    value: `**Rarity:** ${this.getTierRarity(finalResult)}\n**Next Reset:** <t:${nextReset}:F>\n**Timezone:** Eastern Time (EST/EDT)`,
+                    name: '📊 Details',
+                    value: `**Multiplier:** ${buffInfo.multiplier}x XP\n**Duration:** <t:${nextReset}:R>\n**Rarity:** ${this.getTierRarity(finalResult)}`,
                     inline: false
                 }
             )
-            .setFooter({ text: `⚓ Marine Intelligence • Tier ${finalResult} Buff Active` })
+            .setFooter({ text: `⚓ Tier ${finalResult} Buff Active` })
             .setTimestamp();
 
         await interaction.editReply({ embeds: [finalEmbed] });
