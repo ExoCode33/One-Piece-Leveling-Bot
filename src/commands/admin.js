@@ -1,4 +1,4 @@
-// src/commands/admin.js - Complete admin command with original functions + nuclear options
+// src/commands/admin.js - Updated with Daily Buff Removal for Testing
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -20,13 +20,14 @@ module.exports = {
                     { name: '📊 View User Stats', value: 'user-stats' },
                     { name: '📋 Bot Statistics [CLASSIFIED]', value: 'bot-stats' },
                     { name: '🔧 Database Maintenance [CLASSIFIED]', value: 'maintenance' },
-                    { name: '☢️ Nuclear Protocol [CLASSIFIED]', value: 'nuclear' }
+                    { name: '☢️ Nuclear Protocol [CLASSIFIED]', value: 'nuclear' },
+                    { name: '🎰 Remove Daily Buff [TEST]', value: 'remove-daily-buff' }
                 )
         )
         .addUserOption(option =>
             option
                 .setName('user')
-                .setDescription('Target user (required for XP operations)')
+                .setDescription('Target user (required for XP operations and daily buff removal)')
                 .setRequired(false)
         )
         .addIntegerOption(option =>
@@ -89,7 +90,7 @@ module.exports = {
             }
 
             // Handle XP operations that require a target user
-            if (['add-xp', 'remove-xp', 'set-xp', 'reset-user', 'user-stats'].includes(action)) {
+            if (['add-xp', 'remove-xp', 'set-xp', 'reset-user', 'user-stats', 'remove-daily-buff'].includes(action)) {
                 if (!targetUser) {
                     return await interaction.reply({
                         content: '❌ **Missing Target User**\n\nPlease specify a user for this operation.',
@@ -100,7 +101,7 @@ module.exports = {
                 // Prevent targeting bots
                 if (targetUser.bot) {
                     return await interaction.reply({
-                        content: '❌ **Invalid Target**\n\nCannot modify XP for bot accounts.',
+                        content: '❌ **Invalid Target**\n\nCannot modify XP or buffs for bot accounts.',
                         ephemeral: true
                     });
                 }
@@ -145,6 +146,10 @@ module.exports = {
                     await this.handleUserStats(interaction, targetUser);
                     break;
 
+                case 'remove-daily-buff':
+                    await this.handleRemoveDailyBuff(interaction, targetUser, reason);
+                    break;
+
                 case 'bot-stats':
                     await handleStats(interaction, db);
                     break;
@@ -184,6 +189,125 @@ module.exports = {
                 await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
             }
         }
+    },
+
+    // NEW: Handle daily buff removal for testing
+    async handleRemoveDailyBuff(interaction, targetUser, reason) {
+        try {
+            await interaction.deferReply();
+
+            const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+            if (!member) {
+                return await interaction.editReply({
+                    content: '❌ **User Not Found**\n\nCould not find this user in the server.'
+                });
+            }
+
+            // Get buff role IDs from environment
+            const buffRoles = [];
+            const buffTiers = {};
+            
+            for (let i = 1; i <= 6; i++) {
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                if (roleId) {
+                    buffRoles.push({ tier: i, roleId });
+                    
+                    const role = interaction.guild.roles.cache.get(roleId);
+                    if (role && member.roles.cache.has(roleId)) {
+                        buffTiers[i] = role.name;
+                    }
+                }
+            }
+
+            if (Object.keys(buffTiers).length === 0) {
+                return await interaction.editReply({
+                    content: `❌ **No Daily Buff Found**\n\n${targetUser.username} does not have any daily buff roles.`
+                });
+            }
+
+            // Remove all buff roles
+            const removedRoles = [];
+            for (const { tier, roleId } of buffRoles) {
+                if (member.roles.cache.has(roleId)) {
+                    const role = interaction.guild.roles.cache.get(roleId);
+                    if (role) {
+                        await member.roles.remove(role);
+                        removedRoles.push(`${role.name} (Tier ${tier})`);
+                        console.log(`[ADMIN] Removed daily buff role ${role.name} from ${targetUser.username}`);
+                    }
+                }
+            }
+
+            // Remove from database
+            const currentDay = this.getCurrentDay();
+            const deleteResult = await global.xpTracker.db.query(
+                'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                [targetUser.id, interaction.guild.id, currentDay]
+            );
+
+            console.log(`[ADMIN] Removed daily buff database record for ${targetUser.username} (${deleteResult.rowCount} rows affected)`);
+
+            // Create response embed
+            const embed = new EmbedBuilder()
+                .setColor('#FF6B6B')
+                .setTitle('🎰 DAILY BUFF REMOVED - TESTING MODE')
+                .setDescription(`Successfully removed daily buff from **${targetUser.username}**`)
+                .addFields(
+                    {
+                        name: '🎯 Target',
+                        value: `${targetUser.username} (${targetUser.id})`,
+                        inline: true
+                    },
+                    {
+                        name: '🗑️ Removed Roles',
+                        value: removedRoles.length > 0 ? removedRoles.join('\n') : 'No roles to remove',
+                        inline: true
+                    },
+                    {
+                        name: '📝 Details',
+                        value: `**Reason:** ${reason}\n**Database Records:** ${deleteResult.rowCount} removed\n**Status:** User can now roll again`,
+                        inline: false
+                    },
+                    {
+                        name: '⚠️ Testing Notice',
+                        value: '```diff\n+ This action is for testing purposes\n+ User can immediately use /daily-buff again\n+ Normal users must wait until 3 AM EST reset\n```',
+                        inline: false
+                    }
+                )
+                .setFooter({ text: `⚓ Authorized by ${interaction.user.username} • Marine Intelligence` })
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('[ADMIN] Remove daily buff error:', error);
+            await interaction.editReply({
+                content: '❌ **Operation Failed**\n\nFailed to remove daily buff. Please try again.'
+            });
+        }
+    },
+
+    // Helper function to get current day (same as daily-buff command)
+    getCurrentDay() {
+        const now = new Date();
+        const estOffset = this.isEDT(now) ? -4 : -5;
+        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        
+        if (estTime.getHours() < 3) {
+            estTime.setDate(estTime.getDate() - 1);
+        }
+        
+        return estTime.toISOString().split('T')[0];
+    },
+
+    // Helper function to check EDT
+    isEDT(date) {
+        const year = date.getFullYear();
+        const marchSecondSunday = new Date(year, 2, 8);
+        marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
+        const novemberFirstSunday = new Date(year, 10, 1);
+        novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
+        return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
     async handleXPCommand(interaction) {
@@ -566,6 +690,12 @@ async function handleStats(interaction, db) {
         db.query('SELECT COUNT(*) as total_users FROM user_levels'),
         db.query('SELECT COUNT(*) as total_guilds FROM guild_settings'),
         db.query('SELECT SUM(total_xp) as total_xp, AVG(total_xp) as avg_xp FROM user_levels WHERE total_xp > 0'),
+async function handleStats(interaction, db) {
+    // Get comprehensive statistics
+    const [userStats, guildStats, xpStats, levelStats] = await Promise.all([
+        db.query('SELECT COUNT(*) as total_users FROM user_levels'),
+        db.query('SELECT COUNT(*) as total_guilds FROM guild_settings'),
+        db.query('SELECT SUM(total_xp) as total_xp, AVG(total_xp) as avg_xp FROM user_levels WHERE total_xp > 0'),
         db.query('SELECT level, COUNT(*) as count FROM user_levels WHERE level > 0 GROUP BY level ORDER BY level DESC LIMIT 10')
     ]);
 
@@ -801,6 +931,7 @@ module.exports.handleNuclearButtons = async (interaction, db) => {
             await db.query('TRUNCATE TABLE user_levels CASCADE');
             await db.query('TRUNCATE TABLE guild_settings CASCADE');
             await db.query('DROP TABLE IF EXISTS daily_voice_xp CASCADE');
+            await db.query('DROP TABLE IF EXISTS daily_buff_rolls CASCADE');
             
             console.log('[NUCLEAR] ☢️ NUCLEAR PROTOCOL EXECUTED - ALL DATA DESTROYED');
 
@@ -811,7 +942,7 @@ module.exports.handleNuclearButtons = async (interaction, db) => {
                 .addFields(
                     {
                         name: '💀 DESTRUCTION REPORT',
-                        value: '```diff\n- User Levels: OBLITERATED\n- Guild Settings: ANNIHILATED\n- Voice Data: VAPORIZED\n- XP Logs: ELIMINATED\n- All Progress: EXTINCT```',
+                        value: '```diff\n- User Levels: OBLITERATED\n- Guild Settings: ANNIHILATED\n- Voice Data: VAPORIZED\n- XP Logs: ELIMINATED\n- Daily Buffs: EXTINCT\n- All Progress: EXTINCT```',
                         inline: false
                     },
                     {
