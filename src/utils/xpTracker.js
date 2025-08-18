@@ -13,15 +13,12 @@ class XPTracker {
         this.loadGuildSettingsFromDatabase();
         this.initializeExistingVoiceSessions();
         this.loadDailyVoiceXPFromDatabase();
-        
-        // Schedule daily cleanup at 3 AM EST
-        this.scheduleDailyReset();
     }
 
-    // Load daily voice XP from database on startup with 3 AM EST reset
+    // Load daily voice XP from database on startup
     async loadDailyVoiceXPFromDatabase() {
         try {
-            console.log('[DAILY CAP] Loading daily voice XP data from database (3 AM EST reset)...');
+            console.log('[DAILY CAP] Loading daily voice XP data from database...');
             
             // Create daily_voice_xp table if it doesn't exist
             await this.db.query(`
@@ -39,8 +36,8 @@ class XPTracker {
             // Create index for better performance
             await this.db.query('CREATE INDEX IF NOT EXISTS idx_daily_voice_xp_date ON daily_voice_xp(date)');
 
-            // Load today's data using 3 AM EST reset
-            const today = this.getCurrentDayKey(); // Use 3 AM EST reset
+            // Load today's data
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
             const result = await this.db.query(
                 'SELECT user_id, guild_id, total_xp FROM daily_voice_xp WHERE date = $1',
                 [today]
@@ -53,8 +50,7 @@ class XPTracker {
                 loadedCount++;
             }
 
-            console.log(`[DAILY CAP] Loaded ${loadedCount} daily voice XP records for current day (${today})`);
-            console.log(`[DAILY CAP] Next reset: ${this.getNextResetTime()}`);
+            console.log(`[DAILY CAP] Loaded ${loadedCount} daily voice XP records for today`);
 
             // Clean up old records (older than 7 days)
             await this.db.query(
@@ -83,53 +79,19 @@ class XPTracker {
         }
     }
 
-    // Get current "day" based on 3 AM EST reset time
-    getCurrentDayKey() {
-        const now = new Date();
-        
-        // Convert to EST/EDT (UTC-5/UTC-4)
-        const estOffset = this.isESTDaylightSaving(now) ? -4 : -5; // EDT vs EST
-        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
-        
-        // If it's before 3 AM EST, use previous day
-        if (estTime.getHours() < 3) {
-            estTime.setDate(estTime.getDate() - 1);
-        }
-        
-        // Return YYYY-MM-DD format
-        return estTime.toISOString().split('T')[0];
-    }
-
-    // Check if daylight saving time is active (approximate)
-    isESTDaylightSaving(date) {
-        const year = date.getFullYear();
-        
-        // DST typically runs from 2nd Sunday in March to 1st Sunday in November
-        const march = new Date(year, 2, 1); // March 1st
-        const november = new Date(year, 10, 1); // November 1st
-        
-        // Find 2nd Sunday in March
-        const dstStart = new Date(year, 2, (14 - march.getDay()) % 7 + 8);
-        
-        // Find 1st Sunday in November  
-        const dstEnd = new Date(year, 10, (7 - november.getDay()) % 7 + 1);
-        
-        return date >= dstStart && date < dstEnd;
-    }
-
-    // Get daily voice XP with 3 AM EST reset
+    // Get daily voice XP with proper key format
     getDailyVoiceXP(userId, guildId, date = null) {
         if (!date) {
-            date = this.getCurrentDayKey(); // Use 3 AM EST reset
+            date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         }
         const dailyKey = `${userId}_${guildId}_${date}`;
         return this.dailyVoiceXP.get(dailyKey) || 0;
     }
 
-    // Set daily voice XP with 3 AM EST reset and database persistence
+    // Set daily voice XP with proper key format and database persistence
     async setDailyVoiceXP(userId, guildId, xp, date = null) {
         if (!date) {
-            date = this.getCurrentDayKey(); // Use 3 AM EST reset
+            date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         }
         const dailyKey = `${userId}_${guildId}_${date}`;
         this.dailyVoiceXP.set(dailyKey, xp);
@@ -321,9 +283,9 @@ class XPTracker {
         const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
         const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500; // Default 1500 XP per day
         const antiAFK = process.env.VOICE_ANTI_AFK === 'true';
-        const today = this.getCurrentDayKey(); // Use 3 AM EST reset
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 
-        console.log(`[VOICE XP] Processing voice XP for ${this.voiceSessions.size} active sessions (Daily cap: ${dailyCap} XP, Reset: 3 AM EST)`);
+        console.log(`[VOICE XP] Processing voice XP for ${this.voiceSessions.size} active sessions (Daily cap: ${dailyCap} XP)`);
 
         const voiceActivities = [];
         const processedUsers = new Set(); // Track users we've already processed this cycle
@@ -626,17 +588,17 @@ class XPTracker {
         }
     }
 
-    // Clean up daily voice XP with database persistence and 3 AM EST reset
+    // Clean up daily voice XP with database persistence
     async cleanupDailyVoiceXP() {
         try {
-            console.log('[DAILY CAP] Starting daily voice XP cleanup (3 AM EST reset)...');
+            console.log('[DAILY CAP] Starting daily voice XP cleanup...');
             
-            const today = this.getCurrentDayKey(); // Use 3 AM EST reset
+            const today = new Date().toISOString().split('T')[0];
 
             // Clean up memory cache
             let memoryDeleted = 0;
             for (const [key] of this.dailyVoiceXP.entries()) {
-                // Remove entries that are not from current day (based on 3 AM EST reset)
+                // Remove entries that are not from today
                 if (!key.includes(today)) {
                     this.dailyVoiceXP.delete(key);
                     memoryDeleted++;
@@ -652,111 +614,9 @@ class XPTracker {
 
             console.log(`[DAILY CAP] Cleaned up ${dbResult.rowCount || 0} old entries from database`);
             console.log(`[DAILY CAP] Cleanup complete - Current memory entries: ${this.dailyVoiceXP.size}`);
-            console.log(`[DAILY CAP] Current day: ${today} (3 AM EST reset)`);
-            console.log(`[DAILY CAP] Next reset: ${this.getNextResetTime()}`);
 
         } catch (error) {
             console.error('[DAILY CAP] Error during cleanup:', error);
-        }
-    }
-
-    // Schedule automatic daily reset at 3 AM EST
-    scheduleDailyReset() {
-        const scheduleNextReset = () => {
-            const now = new Date();
-            const estOffset = this.isESTDaylightSaving(now) ? -4 : -5;
-            const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
-            
-            // Calculate next 3 AM EST
-            const nextReset = new Date(estTime);
-            nextReset.setHours(3, 0, 0, 0);
-            
-            // If it's already past 3 AM today, set to 3 AM tomorrow
-            if (estTime.getHours() >= 3) {
-                nextReset.setDate(nextReset.getDate() + 1);
-            }
-            
-            // Convert back to UTC for setTimeout
-            const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
-            const msUntilReset = utcReset.getTime() - now.getTime();
-            
-            console.log(`[DAILY CAP] Scheduled automatic reset in ${Math.round(msUntilReset / 1000 / 60 / 60)} hours (at 3 AM EST)`);
-            console.log(`[DAILY CAP] Next reset: ${this.getNextResetTime()}`);
-            
-            setTimeout(async () => {
-                console.log('[DAILY CAP] 🕒 3 AM EST - Performing automatic daily reset...');
-                await this.performDailyReset();
-                scheduleNextReset(); // Schedule the next reset
-            }, msUntilReset);
-        };
-        
-        scheduleNextReset();
-    }
-
-    // Perform the actual daily reset
-    async performDailyReset() {
-        try {
-            console.log('[DAILY CAP] 🔄 Performing daily XP cap reset at 3 AM EST...');
-            
-            const oldDayKey = this.getCurrentDayKey();
-            
-            // Clear memory cache for old day
-            let resetCount = 0;
-            for (const [key] of this.dailyVoiceXP.entries()) {
-                if (!key.includes(oldDayKey)) {
-                    this.dailyVoiceXP.delete(key);
-                    resetCount++;
-                }
-            }
-            
-            console.log(`[DAILY CAP] ✅ Daily reset complete!`);
-            console.log(`[DAILY CAP] - Reset ${resetCount} user daily caps`);
-            console.log(`[DAILY CAP] - New day: ${this.getCurrentDayKey()}`);
-            console.log(`[DAILY CAP] - Next reset: ${this.getNextResetTime()}`);
-            
-            // Send reset notification to all guilds (optional)
-            await this.broadcastResetNotification();
-            
-        } catch (error) {
-            console.error('[DAILY CAP] Error during daily reset:', error);
-        }
-    }
-
-    // Optional: Broadcast reset notification to configured channels
-    async broadcastResetNotification() {
-        try {
-            if (!global.guildSettings) return;
-            
-            let notificationsSent = 0;
-            
-            for (const [guildId, settings] of global.guildSettings.entries()) {
-                if (settings.xpLogEnabled && settings.xpLogChannel) {
-                    try {
-                        const channel = await this.client.channels.fetch(settings.xpLogChannel).catch(() => null);
-                        if (channel && channel.isTextBased()) {
-                            const embed = new EmbedBuilder()
-                                .setColor(0xFF0000)
-                                .setAuthor({ name: '🔴 MARINE INTELLIGENCE BUREAU' })
-                                .setTitle('🔴 🕒 DAILY XP CAP RESET')
-                                .setDescription(`\`\`\`diff\n- DAILY VOICE XP CAPS RESET AT 3:00 AM EST\n- ALL PIRATES CAN NOW EARN VOICE XP AGAIN\n- DAILY CAP: ${process.env.DAILY_VOICE_XP_CAP || 1500} XP\n- NEXT RESET: ${this.getNextResetTime()}\n- STATUS: SURVEILLANCE CONTINUES\n\`\`\``)
-                                .setFooter({ text: '⚓ Marine Intelligence Division • Daily Reset System' })
-                                .setTimestamp();
-                            
-                            await channel.send({ embeds: [embed] });
-                            notificationsSent++;
-                        }
-                    } catch (error) {
-                        console.error(`[DAILY CAP] Failed to send reset notification to guild ${guildId}:`, error);
-                    }
-                }
-            }
-            
-            if (notificationsSent > 0) {
-                console.log(`[DAILY CAP] Sent reset notifications to ${notificationsSent} guilds`);
-            }
-            
-        } catch (error) {
-            console.error('[DAILY CAP] Error broadcasting reset notifications:', error);
         }
     }
 
@@ -1162,10 +1022,10 @@ class XPTracker {
                 .setTimestamp()
                 .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
 
-            // Get daily cap info for voice activities with 3 AM EST reset
+            // Get daily cap info for voice activities
             let dailyCapInfo = '';
             if (type === 'voice' || type === 'voice_silent') {
-                const today = this.getCurrentDayKey(); // Use 3 AM EST reset
+                const today = new Date().toISOString().split('T')[0];
                 const dailyXP = this.getDailyVoiceXP(user.id, guildId, today);
                 const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
                 dailyCapInfo = `\n- DAILY VOICE XP: ${dailyXP}/${dailyCap}`;
@@ -1173,10 +1033,6 @@ class XPTracker {
                 if (dailyXP >= dailyCap) {
                     dailyCapInfo += ' [CAP REACHED]';
                 }
-                
-                // Add reset time info
-                const nextReset = this.getNextResetTime();
-                dailyCapInfo += `\n- NEXT RESET: ${nextReset}`;
             }
 
             switch (type) {
