@@ -4,10 +4,6 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-// FIXED: Import from correct location
-const XPTracker = require('./src/utils/xpTracker');
-const XPBoostManager = require('./src/utils/xpBoost');
-
 // Load environment variables
 require('dotenv').config();
 
@@ -16,149 +12,25 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const CREATE_CHANNEL_NAME = process.env.CREATE_CHANNEL_NAME || '🏴〢Set Sail Together';
 const DEFAULT_CATEGORY_NAME = process.env.CATEGORY_NAME || '✘ SOCIAL ✘';
-const CATEGORY_ID = process.env.CATEGORY_ID; // Direct category ID override
+const CATEGORY_ID = process.env.CATEGORY_ID;
 const DELETE_DELAY = parseInt(process.env.DELETE_DELAY) || 1000;
 const DEBUG = process.env.DEBUG === 'true';
-
-// Audio Configuration
 const AUDIO_VOLUME = parseFloat(process.env.AUDIO_VOLUME) || 0.4;
 
-// PostgreSQL connection with Railway support
+// Global variables
 let pool;
 let xpTracker;
 let xpBoostManager;
 
+// Initialize database connection
 async function initializeConnection() {
-    // Railway PostgreSQL connection
     if (process.env.DATABASE_URL) {
-        // Direct connection with DATABASE_URL (Railway style)
         log('🚂 Connecting to Railway PostgreSQL...');
         pool = new Pool({
             connectionString: process.env.DATABASE_URL,
-            ssl: {
-                rejectUnauthorized: false
-            }
+            ssl: { rejectUnauthorized: false }
         });
-
-// Reaction XP handling
-client.on('messageReactionAdd', async (reaction, user) => {
-    if (user.bot || !reaction.message.guild) return;
-    
-    if (xpTracker) {
-        const cooldownKey = `${reaction.message.guild.id}:${user.id}:reaction`;
-        const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
-        
-        if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
-            xpTracker.setCooldown(cooldownKey);
-            await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
-        }
-    }
-});
-
-// Error handling
-client.on('error', error => {
-    console.error('❌ Discord client error:', error);
-});
-
-client.on('warn', warning => {
-    console.warn('⚠️ Discord client warning:', warning);
-});
-
-process.on('unhandledRejection', error => {
-    console.error('❌ Unhandled promise rejection:', error);
-});
-
-process.on('uncaughtException', error => {
-    console.error('❌ Uncaught exception:', error);
-    process.exit(1);
-});
-
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
-
-async function gracefulShutdown() {
-    log('🛑 Shutting down bot gracefully...');
-    
-    try {
-        // Clean up XP tracker
-        if (xpTracker) {
-            await xpTracker.cleanup();
-        }
-        
-        // Clean up voice connections
-        log(`🔌 Cleaning up ${activeConnections.size} voice connections...`);
-        activeConnections.forEach((connection, key) => {
-            try {
-                connection.destroy();
-                debugLog(`🔌 Destroyed connection for ${key}`);
-            } catch (error) {
-                // Ignore errors during shutdown
-            }
-        });
-        activeConnections.clear();
-        
-        // Close database connection
-        log('🗄️ Closing database connection...');
-        if (pool) {
-            await pool.end();
-        }
-        
-        // Destroy Discord client
-        client.destroy();
-        
-        log('👋 Bot shutdown complete!');
-    } catch (error) {
-        console.error('❌ Error during shutdown:', error);
-    }
-    
-    process.exit(0);
-}
-
-// Keep the process alive and log status
-setInterval(() => {
-    if (DEBUG) {
-        const activeSessions = xpTracker ? Object.keys(xpTracker.voiceSessions || {}).length : 0;
-        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, Audio Connections: ${activeConnections.size}, Uptime: ${Math.floor(process.uptime()/60)}m`);
-    }
-}, 300000); // Log every 5 minutes in debug mode
-
-// Start the bot
-async function startBot() {
-    log('🚀 Starting One Piece Dynamic Voice Bot with XP System...');
-    log(`🔑 Discord Token: ${DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
-    log(`🆔 Client ID: ${CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
-    log(`🗄️ Database URL: ${process.env.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
-
-    if (!DISCORD_TOKEN) {
-        console.error('❌ DISCORD_TOKEN is required! Please check your .env file.');
-        process.exit(1);
-    }
-
-    if (!CLIENT_ID) {
-        console.error('❌ CLIENT_ID is required for slash commands! Please check your .env file.');
-        process.exit(1);
-    }
-
-    if (!process.env.DATABASE_URL) {
-        console.error('❌ DATABASE_URL is required! Please check your .env file.');
-        process.exit(1);
-    }
-
-    try {
-        await client.login(DISCORD_TOKEN);
-    } catch (error) {
-        console.error('❌ Failed to login to Discord:', error);
-        process.exit(1);
-    }
-}
-
-// Export for use in other modules
-module.exports = { client, pool };
-
-// Start the bot
-startBot();
     } else {
-        // Manual connection (fallback)
         const config = {
             user: process.env.PGUSER,
             password: process.env.PGPASSWORD,
@@ -176,7 +48,6 @@ startBot();
         pool = new Pool(config);
     }
     
-    // Test the connection
     try {
         const client = await pool.connect();
         const result = await client.query('SELECT NOW()');
@@ -190,36 +61,14 @@ startBot();
 
 // One Piece themed channel names
 const CREW_NAMES = [
-    '🐠 Fish-Man Island',
-    '🏝️ Skypiea Adventure',
-    '🌸 Sakura Kingdom',
-    '🏜️ Alabasta Palace',
-    '🌋 Punk Hazard Lab',
-    '🍭 Whole Cake Island',
-    '🌺 Wano Country',
-    '⚡ Thriller Bark',
-    '🗿 Jaya Island',
-    '🌊 Water 7 Docks',
-    '🔥 Marineford War',
-    '🏴‍☠️ Thousand Sunny',
-    '⚓ Going Merry',
-    '🦈 Arlong Park',
-    '🎪 Buggy\'s Circus',
-    '🍖 Baratie Restaurant',
-    '📚 Ohara Library',
-    '🌙 Zou Elephant',
-    '⚔️ Dressrosa Colosseum',
-    '🎭 Sabaody Archipelago',
-    '🌟 Reverse Mountain',
-    '🐉 Kaido\'s Lair',
-    '🍃 Amazon Lily',
-    '❄️ Drum Island',
-    '🔱 Fishman District',
-    '🌈 Long Ring Island',
-    '🏰 Enies Lobby',
-    '🌺 Rusukaina Island',
-    '🔥 Ace\'s Adventure',
-    '⚡ Enel\'s Ark'
+    '🐠 Fish-Man Island', '🏝️ Skypiea Adventure', '🌸 Sakura Kingdom', '🏜️ Alabasta Palace',
+    '🌋 Punk Hazard Lab', '🍭 Whole Cake Island', '🌺 Wano Country', '⚡ Thriller Bark',
+    '🗿 Jaya Island', '🌊 Water 7 Docks', '🔥 Marineford War', '🏴‍☠️ Thousand Sunny',
+    '⚓ Going Merry', '🦈 Arlong Park', '🎪 Buggy\'s Circus', '🍖 Baratie Restaurant',
+    '📚 Ohara Library', '🌙 Zou Elephant', '⚔️ Dressrosa Colosseum', '🎭 Sabaody Archipelago',
+    '🌟 Reverse Mountain', '🐉 Kaido\'s Lair', '🍃 Amazon Lily', '❄️ Drum Island',
+    '🔱 Fishman District', '🌈 Long Ring Island', '🏰 Enies Lobby', '🌺 Rusukaina Island',
+    '🔥 Ace\'s Adventure', '⚡ Enel\'s Ark'
 ];
 
 // Create Discord client
@@ -235,7 +84,7 @@ const client = new Client({
 });
 
 // Track audio connections
-const activeConnections = new Map(); // channelId -> voice connection
+const activeConnections = new Map();
 
 // Audio file paths
 const SOUNDS_DIR = path.join(__dirname, 'sounds');
@@ -259,7 +108,6 @@ function getRandomCrewName() {
 // Database functions for guild settings
 async function initializeDatabase() {
     try {
-        // Create guild_settings table (keep this for category management)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
                 guild_id VARCHAR(255) PRIMARY KEY,
@@ -268,7 +116,6 @@ async function initializeDatabase() {
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-
         log('✅ Database tables initialized successfully');
     } catch (error) {
         console.error('❌ Error initializing database:', error);
@@ -288,7 +135,6 @@ async function getCategoryForGuild(guildId) {
                 categoryName: result.rows[0].category_name
             };
         }
-        
         return null;
     } catch (error) {
         console.error('❌ Error getting category from database:', error);
@@ -307,24 +153,21 @@ async function updateCategoryForGuild(guildId, categoryId, categoryName) {
                 category_name = EXCLUDED.category_name,
                 updated_at = CURRENT_TIMESTAMP
         `, [guildId, categoryId, categoryName]);
-        
         debugLog(`📝 Updated category for guild ${guildId}: ${categoryName} (${categoryId})`);
     } catch (error) {
         console.error('❌ Error updating category in database:', error);
     }
 }
 
-// Function to play welcome sound in a voice channel (with error handling)
+// Function to play welcome sound with error handling
 async function playWelcomeSound(channel) {
     try {
         if (!fs.existsSync(WELCOME_SOUND)) {
             debugLog(`❌ Welcome sound file not found: ${WELCOME_SOUND}`);
-            log(`⚠️ Create a 'sounds' folder and add 'The Going Merry One Piece.ogg' file`);
             return;
         }
 
         log(`🎵 Joining ${channel.name} for welcome sound...`);
-
         const connection = joinVoiceChannel({
             channelId: channel.id,
             guildId: channel.guild.id,
@@ -336,8 +179,8 @@ async function playWelcomeSound(channel) {
         const playAudio = () => {
             try {
                 const player = createAudioPlayer();
-                
                 let resource;
+                
                 try {
                     resource = createAudioResource(WELCOME_SOUND, { 
                         inlineVolume: true,
@@ -361,7 +204,6 @@ async function playWelcomeSound(channel) {
 
                 player.play(resource);
                 connection.subscribe(player);
-                
                 log(`🎵 ✅ Playing welcome sound in ${channel.name}!`);
 
                 player.on(AudioPlayerStatus.Idle, () => {
@@ -381,7 +223,6 @@ async function playWelcomeSound(channel) {
                         activeConnections.delete(channel.id);
                     }
                 });
-                
             } catch (audioError) {
                 console.error(`❌ Audio setup error:`, audioError);
                 connection.destroy();
@@ -459,24 +300,21 @@ async function syncChannelWithCategory(channel, category, creatorId) {
                     PermissionFlagsBits.MuteMembers,
                     PermissionFlagsBits.DeafenMembers
                 ],
-                type: 1 // Member type
+                type: 1
             });
         }
         
         await channel.permissionOverwrites.set(channelPermissions);
         debugLog(`🔐 Synced permissions for ${channel.name} with category ${category.name}`);
-        
     } catch (error) {
         console.error('❌ Error syncing channel permissions:', error);
     }
 }
 
-// Import and setup slash commands
+// Register slash commands
 async function registerSlashCommands(clientId, token) {
     try {
         const { REST, Routes } = require('discord.js');
-        
-        // Load all command files
         const commands = [];
         const commandsPath = path.join(__dirname, 'src', 'commands');
         
@@ -489,17 +327,25 @@ async function registerSlashCommands(clientId, token) {
         
         for (const file of commandFiles) {
             const filePath = path.join(commandsPath, file);
-            const command = require(filePath);
-            if ('data' in command && 'execute' in command) {
-                commands.push(command.data.toJSON());
-                console.log(`📋 Loaded command: ${command.data.name}`);
-            } else {
-                console.warn(`⚠️ Command at ${filePath} is missing required "data" or "execute" property.`);
+            try {
+                const command = require(filePath);
+                if ('data' in command && 'execute' in command) {
+                    commands.push(command.data.toJSON());
+                    console.log(`📋 Loaded command: ${command.data.name}`);
+                } else {
+                    console.warn(`⚠️ Command at ${filePath} is missing required "data" or "execute" property.`);
+                }
+            } catch (error) {
+                console.warn(`⚠️ Could not load command ${file}:`, error.message);
             }
         }
 
+        if (commands.length === 0) {
+            console.warn('⚠️ No valid commands found to register');
+            return;
+        }
+
         const rest = new REST().setToken(token);
-        
         console.log(`🔄 Started refreshing ${commands.length} application (/) commands.`);
         
         const data = await rest.put(
@@ -513,20 +359,55 @@ async function registerSlashCommands(clientId, token) {
     }
 }
 
-// Bot event handlers
+// Initialize XP system
+async function initializeXP() {
+    try {
+        const XPTracker = require('./src/utils/xpTracker');
+        xpTracker = new XPTracker(client, pool);
+        global.xpTracker = xpTracker;
+        log(`⏱️ XP Tracker initialized successfully`);
+        
+        const XPBoostManager = require('./src/utils/xpBoost');
+        xpBoostManager = new XPBoostManager(pool);
+        global.xpBoostManager = xpBoostManager;
+        log(`🚀 XP Boost Manager initialized successfully`);
+        
+        // Start voice XP processing
+        setInterval(() => {
+            if (xpTracker && xpTracker.processVoiceXP) {
+                xpTracker.processVoiceXP().catch(error => {
+                    console.error('[VOICE XP] Error in processing:', error);
+                });
+            }
+        }, 60000);
+        
+        // Daily cleanup
+        setInterval(() => {
+            if (xpTracker && xpTracker.cleanupDailyVoiceXP) {
+                xpTracker.cleanupDailyVoiceXP().catch(error => {
+                    console.error('[DAILY CLEANUP] Error:', error);
+                });
+            }
+        }, 24 * 60 * 60 * 1000);
+        
+    } catch (error) {
+        console.warn('⚠️ XP System not available:', error.message);
+        log('🚢 Bot will run without XP tracking');
+    }
+}
+
+// Bot ready event
 client.once('ready', async () => {
     log(`One Piece Dynamic Voice Bot with XP System is ready to set sail!`);
     log(`⚓ Logged in as ${client.user.tag}`);
     log(`🏴‍☠️ Serving ${client.guilds.cache.size} server(s)`);
     log(`🔊 Audio Volume: ${Math.round(AUDIO_VOLUME * 100)}%`);
     
-    // Check if welcome sound exists
     if (fs.existsSync(WELCOME_SOUND)) {
         const stats = fs.statSync(WELCOME_SOUND);
         log(`🎵 Welcome sound ready: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
     } else {
         console.warn(`⚠️ Welcome sound not found at: ${WELCOME_SOUND}`);
-        console.warn(`📁 Make sure the file exists in the sounds folder`);
     }
     
     if (CATEGORY_ID) {
@@ -536,55 +417,22 @@ client.once('ready', async () => {
     }
     
     try {
-        // Initialize database connection and create database if needed
         await initializeConnection();
-        
-        // Initialize database tables
         await initializeDatabase();
+        await initializeXP();
         
-        // FIXED: Initialize XP tracker with correct class
-        xpTracker = new XPTracker(client, pool);
-        global.xpTracker = xpTracker; // Make globally available
-        log(`⏱️ XP Tracker initialized successfully`);
-        
-        // Initialize XP Boost Manager
-        xpBoostManager = new XPBoostManager(pool);
-        global.xpBoostManager = xpBoostManager; // Make globally available
-        log(`🚀 XP Boost Manager initialized successfully`);
-        
-        // Register slash commands
         if (CLIENT_ID) {
             await registerSlashCommands(CLIENT_ID, DISCORD_TOKEN);
         }
         
-        // Test database connection
         const result = await pool.query('SELECT NOW()');
         log(`⏰ Database time: ${result.rows[0].now}`);
         log('🗄️ Database connection test successful!');
-        
-        // Start voice XP processing
-        setInterval(() => {
-            if (xpTracker) {
-                xpTracker.processVoiceXP().catch(error => {
-                    console.error('[VOICE XP] Error in processing:', error);
-                });
-            }
-        }, 60000); // Process every minute
-        
-        // Daily cleanup
-        setInterval(() => {
-            if (xpTracker) {
-                xpTracker.cleanupDailyVoiceXP().catch(error => {
-                    console.error('[DAILY CLEANUP] Error:', error);
-                });
-            }
-        }, 24 * 60 * 60 * 1000); // Once per day
-        
         log('🎯 All systems initialized and ready!');
         
     } catch (error) {
-        console.error('❌ Database initialization failed:', error);
-        console.error('❌ Bot will shut down due to database error');
+        console.error('❌ Initialization failed:', error);
+        console.error('❌ Bot will shut down due to error');
         process.exit(1);
     }
 });
@@ -597,7 +445,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
     try {
         // Handle voice time tracking with XP system
-        if (xpTracker) {
+        if (xpTracker && xpTracker.handleVoiceStateUpdate) {
             await xpTracker.handleVoiceStateUpdate(oldState, newState);
         }
 
@@ -652,7 +500,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             }
 
             const crewName = getRandomCrewName();
-            
             const newChannel = await guild.channels.create({
                 name: crewName,
                 type: ChannelType.GuildVoice,
@@ -678,7 +525,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                     await member.voice.setChannel(newChannel);
                     debugLog(`✅ Successfully moved ${member.displayName} to ${crewName}`);
                     
-                    // Try to play welcome sound (with error handling)
                     setTimeout(() => {
                         playWelcomeSound(newChannel).catch(error => {
                             console.log(`⚠️ Could not play welcome sound: ${error.message}`);
@@ -754,7 +600,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// Handle category moves - sync to database when category is moved/renamed
+// Handle category moves
 client.on('channelUpdate', async (oldChannel, newChannel) => {
     try {
         if (newChannel.type === ChannelType.GuildCategory) {
@@ -773,27 +619,45 @@ client.on('channelUpdate', async (oldChannel, newChannel) => {
     }
 });
 
-// Enhanced Slash command handler with XP system
+// Slash command handler
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
 
     try {
-        // Load command dynamically
+        // Try to load command from file
         const commandsPath = path.join(__dirname, 'src', 'commands');
         const commandFile = path.join(commandsPath, `${commandName}.js`);
         
         if (fs.existsSync(commandFile)) {
-            const command = require(commandFile);
-            if (command.execute) {
-                await command.execute(interaction);
+            try {
+                const command = require(commandFile);
+                if (command.execute) {
+                    await command.execute(interaction);
+                    return;
+                }
+            } catch (error) {
+                console.error(`Error executing command ${commandName}:`, error);
+                if (!interaction.replied) {
+                    await interaction.reply({
+                        content: `❌ Error executing command: ${error.message}`,
+                        ephemeral: true
+                    });
+                }
                 return;
             }
         }
 
-        // Fallback for commands not in files
-        if (commandName === 'check-voice-time') {
+        // Fallback commands
+        if (commandName === 'ping') {
+            const ping = Date.now() - interaction.createdTimestamp;
+            await interaction.reply(`🏴‍☠️ **Pong!** 
+📡 Bot Latency: \`${ping}ms\`
+💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
+⚓ Ready to set sail!`);
+        }
+        else if (commandName === 'check-voice-time') {
             const targetUser = interaction.options.getUser('user') || interaction.user;
             
             if (!xpTracker) {
@@ -829,13 +693,6 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({ embeds: [embed] });
         }
-        else if (commandName === 'ping') {
-            const ping = Date.now() - interaction.createdTimestamp;
-            await interaction.reply(`🏴‍☠️ **Pong!** 
-📡 Bot Latency: \`${ping}ms\`
-💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
-⚓ Ready to set sail!`);
-        }
         else {
             await interaction.reply({
                 content: '❌ Command not found or not implemented yet.',
@@ -845,11 +702,11 @@ client.on('interactionCreate', async (interaction) => {
 
     } catch (error) {
         console.error('❌ Error handling slash command:', error);
-        if (!interaction.replied) {
+        if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({
                 content: '❌ An error occurred while processing this command.',
                 ephemeral: true
-            });
+            }).catch(console.error);
         }
     }
 });
@@ -859,7 +716,7 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
     
     // Handle XP for messages
-    if (xpTracker) {
+    if (xpTracker && xpTracker.isOnCooldown && xpTracker.setCooldown && xpTracker.awardXP) {
         const cooldownKey = `${message.guild.id}:${message.author.id}:message`;
         const cooldown = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
         
@@ -869,7 +726,7 @@ client.on('messageCreate', async (message) => {
         }
     }
     
-    // Legacy text commands for testing
+    // Legacy commands
     if (message.content === '!ping') {
         const ping = Date.now() - message.createdTimestamp;
         message.reply(`🏴‍☠️ **Pong!** 
@@ -915,3 +772,123 @@ client.on('messageCreate', async (message) => {
 **💡 Use slash commands (/) for the best experience!**
 **⚡ All XP activity is logged for Marine Intelligence!**`);
     }
+});
+
+// Reaction XP handling
+client.on('messageReactionAdd', async (reaction, user) => {
+    if (user.bot || !reaction.message.guild) return;
+    
+    if (xpTracker && xpTracker.isOnCooldown && xpTracker.setCooldown && xpTracker.awardXP) {
+        const cooldownKey = `${reaction.message.guild.id}:${user.id}:reaction`;
+        const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
+        
+        if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
+            xpTracker.setCooldown(cooldownKey);
+            await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
+        }
+    }
+});
+
+// Error handling
+client.on('error', error => {
+    console.error('❌ Discord client error:', error);
+});
+
+client.on('warn', warning => {
+    console.warn('⚠️ Discord client warning:', warning);
+});
+
+process.on('unhandledRejection', error => {
+    console.error('❌ Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', error => {
+    console.error('❌ Uncaught exception:', error);
+    process.exit(1);
+});
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+async function gracefulShutdown() {
+    log('🛑 Shutting down bot gracefully...');
+    
+    try {
+        // Clean up XP tracker
+        if (xpTracker && xpTracker.cleanup) {
+            await xpTracker.cleanup();
+        }
+        
+        // Clean up voice connections
+        log(`🔌 Cleaning up ${activeConnections.size} voice connections...`);
+        activeConnections.forEach((connection, key) => {
+            try {
+                connection.destroy();
+                debugLog(`🔌 Destroyed connection for ${key}`);
+            } catch (error) {
+                // Ignore errors during shutdown
+            }
+        });
+        activeConnections.clear();
+        
+        // Close database connection
+        log('🗄️ Closing database connection...');
+        if (pool) {
+            await pool.end();
+        }
+        
+        // Destroy Discord client
+        client.destroy();
+        
+        log('👋 Bot shutdown complete!');
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
+    }
+    
+    process.exit(0);
+}
+
+// Keep the process alive and log status
+setInterval(() => {
+    if (DEBUG) {
+        const activeSessions = xpTracker && xpTracker.voiceSessions ? 
+            Object.keys(xpTracker.voiceSessions).length : 0;
+        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, Audio Connections: ${activeConnections.size}, Uptime: ${Math.floor(process.uptime()/60)}m`);
+    }
+}, 300000); // Log every 5 minutes in debug mode
+
+// Start the bot
+async function startBot() {
+    log('🚀 Starting One Piece Dynamic Voice Bot with XP System...');
+    log(`🔑 Discord Token: ${DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
+    log(`🆔 Client ID: ${CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
+    log(`🗄️ Database URL: ${process.env.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
+
+    if (!DISCORD_TOKEN) {
+        console.error('❌ DISCORD_TOKEN is required! Please check your .env file.');
+        process.exit(1);
+    }
+
+    if (!CLIENT_ID) {
+        console.error('❌ CLIENT_ID is required for slash commands! Please check your .env file.');
+        process.exit(1);
+    }
+
+    if (!process.env.DATABASE_URL) {
+        console.error('❌ DATABASE_URL is required! Please check your .env file.');
+        process.exit(1);
+    }
+
+    try {
+        await client.login(DISCORD_TOKEN);
+    } catch (error) {
+        console.error('❌ Failed to login to Discord:', error);
+        process.exit(1);
+    }
+}
+
+// Export for use in other modules
+module.exports = { client, pool };
+
+// Start the bot
+startBot();
