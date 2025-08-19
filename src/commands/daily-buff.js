@@ -1,12 +1,13 @@
-// src/commands/daily-buff.js - Complete file with Racing Stripe Progress Bar
+// src/commands/daily-buff.js - White Square Anime Progress with Rarity Flash
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-// Racing Stripe Animation Configuration
-const RACING_ANIMATION_CONFIG = {
-    PROGRESS_FRAMES: 25,      // Total frames for 0-100%
-    FRAME_DELAY: 200,         // Delay between frames
-    COMPLETION_PAUSE: 1500    // Pause when complete
+// Animation Configuration
+const ANIME_ANIMATION_CONFIG = {
+    PROGRESS_FRAMES: 25,      // Frames to reach 100%
+    FRAME_DELAY: 180,         // Delay between frames
+    FLASH_COUNT: 3,           // Number of color flashes
+    FLASH_DELAY: 400          // Delay between flashes
 };
 
 // Tier colors and names
@@ -37,86 +38,117 @@ const XP_MULTIPLIERS = {
     6: '2.5x'
 };
 
-class MovingRacingStripeBar {
+class AnimeProgressBar {
     
-    // Create racing stripe bar that moves from left to right (always 100% filled)
-    static createMovingRacingStripe(animationFrame = 0) {
+    // Create anime-style progress bar with white squares
+    static createAnimeProgress(percentage) {
         const totalBars = 20;
+        const filledBars = Math.floor((percentage / 100) * totalBars);
         
-        // Racing stripe patterns
-        const pattern1 = ['▓', '▒']; // Dark/light pattern
-        const pattern2 = ['▒', '▓']; // Inverted pattern
+        // Use white squares for filled portion, gray squares for empty
+        const filled = '⬜'.repeat(filledBars);          // White squares
+        const empty = '⬛'.repeat(totalBars - filledBars); // Black squares for empty
         
-        // Alternate pattern based on animation frame for movement effect
-        const usePattern1 = Math.floor(animationFrame / 2) % 2 === 0;
-        const currentPattern = usePattern1 ? pattern1 : pattern2;
-        
-        let bar = '';
-        
-        // Create full bar with racing stripes that shift position
-        for (let i = 0; i < totalBars; i++) {
-            const patternIndex = (i + animationFrame) % currentPattern.length;
-            bar += currentPattern[patternIndex];
-        }
-        
-        return bar;
+        return `[${filled}${empty}]`;
     }
     
-    // Create loading embed with moving racing stripes
-    static createLoadingEmbed(animationFrame = 0) {
-        const progressBar = this.createMovingRacingStripe(animationFrame);
+    // Create colored flash bar (for the 3 flashes at 100%)
+    static createColoredFlashBar(tier) {
+        const totalBars = 20;
         
-        // Cycle through colors for visual appeal
-        const colors = [0x6B7280, 0x3B82F6, 0x8B5CF6, 0xF59E0B, 0x10B981];
-        const color = colors[Math.floor(animationFrame / 5) % colors.length];
+        // Map tier colors to colored square emojis
+        const colorEmojis = {
+            1: '🟩', // Green
+            2: '🟦', // Blue  
+            3: '🟪', // Purple
+            4: '🟨', // Yellow/Gold
+            5: '🟧', // Orange
+            6: '🟥'  // Red
+        };
+        
+        const coloredSquare = colorEmojis[tier] || '⬜';
+        const filled = coloredSquare.repeat(totalBars);
+        
+        return `[${filled}]`;
+    }
+    
+    // Create loading embed during progress
+    static createLoadingEmbed(percentage) {
+        const progressBar = this.createAnimeProgress(percentage);
+        
+        // Color progression during loading (gray to blue)
+        let color = 0x6B7280; // Gray
+        if (percentage >= 80) color = 0x3B82F6; // Blue
+        else if (percentage >= 60) color = 0x8B5CF6; // Purple
+        else if (percentage >= 40) color = 0xF59E0B; // Orange
+        else if (percentage >= 20) color = 0x10B981; // Green
         
         return new EmbedBuilder()
-            .setTitle('⚡ Enhancement Protocol')
+            .setTitle('⚡ POWER LEVEL RISING...')
             .setDescription(
-                `\`${progressBar}\` **Analyzing...**\n\n` +
-                `Scanning enhancement compatibility...\n` +
-                `Energy matrix stabilizing...\n` +
-                `\u200B\n\u200B` // Spacers for consistent height
+                `${progressBar} **${percentage}%**\n\n` +
+                `**SPIRITUAL PRESSURE BUILDING...**\n` +
+                `**ENERGY SYNCHRONIZATION IN PROGRESS...**\n` +
+                `**TECHNIQUE MASTERY LOADING...**`
             )
             .setColor(color)
             .setTimestamp();
     }
     
-    // Create completion embed
-    static createCompletionEmbed(tier, animationFrame = 0) {
-        const progressBar = this.createMovingRacingStripe(animationFrame);
+    // Create flash embed (for the 3 color flashes)
+    static createFlashEmbed(tier, isFlashOn = true) {
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         
+        let progressBar;
+        let embedColor;
+        
+        if (isFlashOn) {
+            // Flash with rarity color
+            progressBar = this.createColoredFlashBar(tier);
+            embedColor = tierColor;
+        } else {
+            // Flash off (back to white)
+            progressBar = this.createAnimeProgress(100);
+            embedColor = 0xFFFFFF; // White
+        }
+        
         return new EmbedBuilder()
-            .setTitle('⚡ Enhancement Complete!')
+            .setTitle('💥 POWER LEVEL: MAXIMUM!')
             .setDescription(
-                `\`${progressBar}\` **Complete!**\n\n` +
-                `**${tierName}** Unlocked!\n` +
-                `XP Multiplier: **${XP_MULTIPLIERS[tier]}**\n` +
-                `Energy matrix fully charged!`
+                `${progressBar} **100%**\n\n` +
+                `**TECHNIQUE ACQUIRED!**\n` +
+                `**${tierName.toUpperCase()}**\n` +
+                `**SPIRITUAL PRESSURE: OVERWHELMING!**`
             )
-            .setColor(tierColor)
+            .setColor(embedColor)
             .setTimestamp();
     }
     
     // Create final reveal embed
     static createRevealEmbed(tier) {
-        const progressBar = this.createMovingRacingStripe(0);
+        const progressBar = this.createAnimeProgress(100);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         const xpMultiplier = XP_MULTIPLIERS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
         return new EmbedBuilder()
-            .setTitle('✨ Enhancement Complete')
+            .setTitle('✨ AWAKENING COMPLETE')
             .setDescription(
-                `\`${progressBar}\` **Success!**\n\n` +
+                `${progressBar} **MASTERED!**\n\n` +
                 `**${tierName}**\n` +
-                `XP Multiplier: **${xpMultiplier}**\n` +
-                `Resets: <t:${nextReset}:R>`
+                `Power Multiplier: **${xpMultiplier}**\n` +
+                `Next Training: <t:${nextReset}:R>`
             )
             .setColor(tierColor)
+            .addFields(
+                {
+                    name: '⚔️ New Abilities Unlocked',
+                    value: `Your spiritual pressure has increased!\nXP gains boosted by **${xpMultiplier}**`,
+                    inline: false
+                }
+            )
             .setTimestamp();
     }
 }
@@ -124,7 +156,7 @@ class MovingRacingStripeBar {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎰 Activate daily Marine Enhancement (Resets at 3:00 AM EDT)'),
+        .setDescription('⚡ Activate daily Power Enhancement (Resets at 3:00 AM EDT)'),
 
     async execute(interaction) {
         try {
@@ -135,12 +167,12 @@ module.exports = {
             // Check if XP tracker is available
             if (!global.xpTracker || !global.xpTracker.db) {
                 return await interaction.reply({
-                    content: '❌ **Enhancement System Offline**\n\nMarine Enhancement Protocol not available.',
+                    content: '❌ **Training System Offline**\n\nPower Enhancement Protocol not available.',
                     flags: 64
                 });
             }
 
-            // Check if user already rolled today
+            // Check if user already trained today
             const hasRolledToday = await this.checkDailyRoll(userId, guildId);
             if (hasRolledToday) {
                 const currentBuff = await this.getCurrentBuff(userId, guildId, member);
@@ -148,20 +180,20 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor(TIER_COLORS[currentBuff.tier] || 0x4A90E2)
-                    .setTitle('⚡ Enhancement Already Active')
+                    .setTitle('⚡ Power Already Awakened')
                     .addFields(
                         {
-                            name: 'Current Buff',
+                            name: 'Current Power Level',
                             value: `**${currentBuff.name}**`,
                             inline: true
                         },
                         {
-                            name: 'XP Multiplier',
+                            name: 'Power Multiplier',
                             value: `**${XP_MULTIPLIERS[currentBuff.tier] || '1.0x'}**`,
                             inline: true
                         },
                         {
-                            name: 'Resets In',
+                            name: 'Next Training',
                             value: `<t:${nextReset}:R>`,
                             inline: true
                         }
@@ -171,65 +203,69 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the racing stripe animation
+            // Start the anime power-up animation
             await interaction.deferReply();
-            await this.performRacingStripeAnimation(interaction, userId, guildId, member);
+            await this.performAnimePowerUpAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error:', error);
             
             if (interaction.deferred) {
                 await interaction.editReply({
-                    content: '❌ **Enhancement Protocol Failed**\n\nSystem error occurred.'
+                    content: '❌ **Power Enhancement Failed**\n\nSpiritual energy disrupted.'
                 });
             } else {
                 await interaction.reply({
-                    content: '❌ **Enhancement Protocol Failed**\n\nSystem error occurred.',
+                    content: '❌ **Power Enhancement Failed**\n\nSpiritual energy disrupted.',
                     flags: 64
                 });
             }
         }
     },
 
-    // Moving racing stripe animation (bar always 100% filled but patterns move)
-    async performRacingStripeAnimation(interaction, userId, guildId, member) {
+    // Anime power-up animation with white squares and color flash
+    async performAnimePowerUpAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            console.log(`[DAILY BUFF] Starting moving racing stripe animation for tier ${finalResult}`);
+            console.log(`[DAILY BUFF] Starting anime power-up animation for tier ${finalResult}`);
             
-            // Phase 1: Moving racing stripe animation
-            for (let frame = 0; frame < RACING_ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
-                const loadingEmbed = MovingRacingStripeBar.createLoadingEmbed(frame);
+            // Phase 1: Progressive white square filling (0% to 100%)
+            for (let frame = 0; frame <= ANIME_ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
+                const percentage = Math.round((frame / ANIME_ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
+                const loadingEmbed = AnimeProgressBar.createLoadingEmbed(percentage);
                 
                 await interaction.editReply({ embeds: [loadingEmbed] });
                 
-                if (frame < RACING_ANIMATION_CONFIG.PROGRESS_FRAMES - 1) {
-                    await new Promise(resolve => setTimeout(resolve, RACING_ANIMATION_CONFIG.FRAME_DELAY));
+                if (frame < ANIME_ANIMATION_CONFIG.PROGRESS_FRAMES) {
+                    await new Promise(resolve => setTimeout(resolve, ANIME_ANIMATION_CONFIG.FRAME_DELAY));
                 }
             }
 
-            // Phase 2: Show completion with continued animation
-            for (let celebFrame = 0; celebFrame < 8; celebFrame++) {
-                const completionEmbed = MovingRacingStripeBar.createCompletionEmbed(finalResult, celebFrame);
-                await interaction.editReply({ embeds: [completionEmbed] });
+            // Phase 2: 3 Color flashes at 100%
+            for (let flash = 0; flash < ANIME_ANIMATION_CONFIG.FLASH_COUNT; flash++) {
+                // Flash ON (rarity color)
+                const flashOnEmbed = AnimeProgressBar.createFlashEmbed(finalResult, true);
+                await interaction.editReply({ embeds: [flashOnEmbed] });
+                await new Promise(resolve => setTimeout(resolve, ANIME_ANIMATION_CONFIG.FLASH_DELAY));
                 
-                if (celebFrame < 7) {
-                    await new Promise(resolve => setTimeout(resolve, 300)); // Faster celebration animation
-                }
+                // Flash OFF (white)
+                const flashOffEmbed = AnimeProgressBar.createFlashEmbed(finalResult, false);
+                await interaction.editReply({ embeds: [flashOffEmbed] });
+                await new Promise(resolve => setTimeout(resolve, ANIME_ANIMATION_CONFIG.FLASH_DELAY));
             }
 
             // Apply buff
             await this.applyBuffRole(userId, guildId, member, finalResult);
             
             // Phase 3: Final reveal
-            const revealEmbed = MovingRacingStripeBar.createRevealEmbed(finalResult);
+            const revealEmbed = AnimeProgressBar.createRevealEmbed(finalResult);
             await interaction.editReply({ embeds: [revealEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Moving racing stripe animation error:', error);
+            console.error('[DAILY BUFF] Anime power-up animation error:', error);
             await interaction.editReply({
-                content: '❌ **Enhancement Failed**\n\nAnimation system malfunction.'
+                content: '❌ **Power Enhancement Failed**\n\nAnimation system malfunction.'
             });
         }
     },
@@ -246,7 +282,9 @@ module.exports = {
         else return 6;                    // 1% - Transcendent
     },
 
-    // Check if user has already rolled today
+    // [Include all the other existing methods: checkDailyRoll, getCurrentBuff, applyBuffRole, etc.]
+    // ... (keeping all existing database methods unchanged)
+
     async checkDailyRoll(userId, guildId) {
         try {
             await global.xpTracker.db.query(`
@@ -299,10 +337,7 @@ module.exports = {
 
     async applyBuffRole(userId, guildId, member, tier) {
         try {
-            // Remove existing buff roles
             await this.removeAllBuffRoles(member);
-
-            // Get and apply new role
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
             if (roleId && roleId !== `role_id_${tier}`) {
                 const role = member.guild.roles.cache.get(roleId);
@@ -310,10 +345,7 @@ module.exports = {
                     await member.roles.add(role, `Daily enhancement tier ${tier} awarded`);
                 }
             }
-
-            // Save to database
             await this.saveBuffRoll(userId, guildId, tier);
-
         } catch (error) {
             console.error('[DAILY BUFF] Error applying buff:', error);
             await this.saveBuffRoll(userId, guildId, tier);
@@ -339,14 +371,12 @@ module.exports = {
     async saveBuffRoll(userId, guildId, tier) {
         try {
             const currentDay = getCurrentDayKey();
-            
             await global.xpTracker.db.query(`
                 INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (user_id, guild_id, date)
                 DO UPDATE SET tier = $4
             `, [userId, guildId, currentDay, tier]);
-
         } catch (error) {
             console.error('[DAILY BUFF] Error saving buff roll:', error);
             throw error;
@@ -407,7 +437,6 @@ module.exports = {
             let removedRoles = [];
             let dbRecordsRemoved = 0;
             
-            // Remove all buff roles
             if (member) {
                 for (let i = 1; i <= 6; i++) {
                     const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
@@ -425,7 +454,6 @@ module.exports = {
                 }
             }
             
-            // Remove from database
             const deleteResult = await global.xpTracker.db.query(
                 'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 RETURNING *',
                 [userId, guildId, currentDay]
