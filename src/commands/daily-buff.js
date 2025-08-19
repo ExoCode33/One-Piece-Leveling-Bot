@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Enhanced Daily XP Buff System with Rainbow Animation
+// src/commands/daily-buff.js - FIXED: Added missing getTierIntensity method
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
@@ -55,6 +55,19 @@ class BuffAnimator {
             6: '🔴'  // Red energy
         };
         return energyColors[tier] || '🟢';
+    }
+
+    // FIXED: Added missing getTierIntensity method
+    static getTierIntensity(tier) {
+        const tierColor = this.getTierColor(tier);
+        const energyColor = this.getEnergyColor(tier);
+        
+        return {
+            core: tierColor,        // Brightest center
+            bright: tierColor,      // High intensity
+            medium: energyColor,    // Medium intensity  
+            light: '⬜'            // Light intensity
+        };
     }
 
     static createEnergyBuildupFrame(frame, tier, width = 18, height = 9) {
@@ -149,10 +162,10 @@ class BuffAnimator {
     }
 
     static createFluidWaveFrame(frame, tier, width = 18, height = 9) {
-        const grid = this.createGrid(width, height, ' ');
+        const grid = this.createGrid(width, height, '⬛');
         const centerX = Math.floor(width / 2);
         const centerY = Math.floor(height / 2);
-        const intensity = this.getTierIntensity(tier);
+        const intensity = this.getTierIntensity(tier); // FIXED: Now this method exists
         
         // Scanning waves with intensity gradients
         for (let row = 0; row < height; row++) {
