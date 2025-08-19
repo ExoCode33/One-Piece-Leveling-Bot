@@ -1,4 +1,4 @@
-// src/commands/admin.js - Updated without ASCII art dependencies
+// src/commands/admin.js - Complete Updated Admin Command with Fixed Daily Buff Removal
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -21,7 +21,7 @@ module.exports = {
                     { name: '📋 Bot Statistics [CLASSIFIED]', value: 'bot-stats' },
                     { name: '🔧 Database Maintenance [CLASSIFIED]', value: 'maintenance' },
                     { name: '☢️ Nuclear Protocol [CLASSIFIED]', value: 'nuclear' },
-                    { name: '🎰 Remove Daily Buff [TEST]', value: 'remove-daily-buff' }
+                    { name: '🎰 Remove Daily Buff [FIXED]', value: 'remove-daily-buff' }
                 )
         )
         .addUserOption(option =>
@@ -191,7 +191,7 @@ module.exports = {
         }
     },
 
-    // Updated handle daily buff removal for testing (simplified without ASCII art)
+    // ✅ FIXED: Updated handle daily buff removal method
     async handleRemoveDailyBuff(interaction, targetUser, reason) {
         try {
             await interaction.deferReply();
@@ -203,54 +203,64 @@ module.exports = {
                 });
             }
 
-            // Get buff role IDs from environment
-            const buffRoles = [];
-            const buffTiers = {};
-            
-            for (let i = 1; i <= 6; i++) {
-                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                if (roleId) {
-                    buffRoles.push({ tier: i, roleId });
-                    
-                    const role = interaction.guild.roles.cache.get(roleId);
-                    if (role && member.roles.cache.has(roleId)) {
-                        buffTiers[i] = role.name;
-                    }
-                }
-            }
-
-            if (Object.keys(buffTiers).length === 0) {
+            // ✅ FIXED: Use the new checkDailyBuffStatus function from daily-buff command
+            let buffStatus = null;
+            try {
+                // Import the daily-buff command functions
+                const dailyBuffCommand = require('./daily-buff');
+                buffStatus = await dailyBuffCommand.checkDailyBuffStatus(targetUser.id, interaction.guild.id);
+            } catch (error) {
+                console.error('[ADMIN] Error checking daily buff status:', error);
                 return await interaction.editReply({
-                    content: `❌ **No Daily Buff Found**\n\n${targetUser.username} does not have any daily buff roles.`
+                    content: '❌ **System Error**\n\nCould not check daily buff status. Please try again.'
                 });
             }
 
-            // Remove all buff roles
-            const removedRoles = [];
-            for (const { tier, roleId } of buffRoles) {
-                if (member.roles.cache.has(roleId)) {
-                    const role = interaction.guild.roles.cache.get(roleId);
-                    if (role) {
-                        await member.roles.remove(role);
-                        removedRoles.push(`${role.name} (Tier ${tier})`);
-                        console.log(`[ADMIN] Removed daily buff role ${role.name} from ${targetUser.username}`);
-                    }
-                }
+            console.log('[ADMIN] Daily buff status:', buffStatus);
+
+            // Check if user has any buff (either in database or roles)
+            if (!buffStatus.hasDBRecord && buffStatus.currentRoles.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setColor('#FF6B6B')
+                    .setTitle('🎰 No Daily Buff Found')
+                    .setDescription(`**${targetUser.username}** does not have any daily buff to remove.`)
+                    .addFields(
+                        {
+                            name: '📊 Current Status',
+                            value: `**Database Record:** ${buffStatus.hasDBRecord ? '✅ Found' : '❌ None'}\n**Current Roles:** ${buffStatus.currentRoles.length > 0 ? buffStatus.currentRoles.map(r => r.roleName).join(', ') : '❌ None'}\n**Current Day:** ${buffStatus.currentDay}`,
+                            inline: false
+                        }
+                    )
+                    .setFooter({ text: 'Marine Intelligence • Daily Buff System' })
+                    .setTimestamp();
+
+                return await interaction.editReply({ embeds: [embed] });
             }
 
-            // Remove from database
-            const currentDay = this.getCurrentDay();
-            const deleteResult = await global.xpTracker.db.query(
-                'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [targetUser.id, interaction.guild.id, currentDay]
-            );
+            // ✅ FIXED: Use the new forceRemoveDailyBuff function
+            let removalResult = null;
+            try {
+                const dailyBuffCommand = require('./daily-buff');
+                removalResult = await dailyBuffCommand.forceRemoveDailyBuff(targetUser.id, interaction.guild.id, `Admin removal: ${reason}`);
+            } catch (error) {
+                console.error('[ADMIN] Error removing daily buff:', error);
+                return await interaction.editReply({
+                    content: '❌ **Removal Failed**\n\nFailed to remove daily buff. Please try again.'
+                });
+            }
 
-            console.log(`[ADMIN] Removed daily buff database record for ${targetUser.username} (${deleteResult.rowCount} rows affected)`);
+            console.log('[ADMIN] Removal result:', removalResult);
 
-            // Create response embed
+            if (!removalResult.success) {
+                return await interaction.editReply({
+                    content: `❌ **Removal Failed**\n\n${removalResult.error || 'Unknown error occurred'}`
+                });
+            }
+
+            // Create success response
             const embed = new EmbedBuilder()
                 .setColor('#FF6B6B')
-                .setTitle('🎰 DAILY BUFF REMOVED - TESTING MODE')
+                .setTitle('🗑️ Daily Buff Removed - TESTING MODE')
                 .setDescription(`Successfully removed daily buff from **${targetUser.username}**`)
                 .addFields(
                     {
@@ -259,18 +269,18 @@ module.exports = {
                         inline: true
                     },
                     {
-                        name: '🗑️ Removed Roles',
-                        value: removedRoles.length > 0 ? removedRoles.join('\n') : 'No roles to remove',
+                        name: '🗑️ Removed Items',
+                        value: `**Roles:** ${removalResult.removedRoles.length > 0 ? removalResult.removedRoles.join('\n') : 'No roles to remove'}\n**DB Records:** ${removalResult.dbRecordsRemoved} deleted`,
                         inline: true
                     },
                     {
                         name: '📝 Details',
-                        value: `**Reason:** ${reason}\n**Database Records:** ${deleteResult.rowCount} removed\n**Status:** User can now roll again`,
+                        value: `**Reason:** ${reason}\n**Current Day:** ${removalResult.currentDay}\n**Status:** User can now roll again`,
                         inline: false
                     },
                     {
                         name: '⚠️ Testing Notice',
-                        value: '```diff\n+ This action is for testing purposes\n+ User can immediately use /daily-buff again\n+ Normal users must wait until 3 AM EST reset\n```',
+                        value: '```diff\n+ This action is for testing purposes\n+ User can immediately use /daily-buff again\n+ Normal users must wait until 3:00 AM EDT reset\n```',
                         inline: false
                     }
                 )
@@ -290,14 +300,14 @@ module.exports = {
     // Helper function to get current day (same as daily-buff command)
     getCurrentDay() {
         const now = new Date();
-        const estOffset = this.isEDT(now) ? -4 : -5;
-        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        const edtOffset = this.isEDT(now) ? -4 : -5;
+        const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
         
-        if (estTime.getHours() < 3) {
-            estTime.setDate(estTime.getDate() - 1);
+        if (edtTime.getHours() < 3) {
+            edtTime.setDate(edtTime.getDate() - 1);
         }
         
-        return estTime.toISOString().split('T')[0];
+        return edtTime.toISOString().split('T')[0];
     },
 
     // Helper function to check EDT
@@ -310,7 +320,7 @@ module.exports = {
         return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
-    // ... [rest of the existing methods remain the same: handleAddXP, handleRemoveXP, etc.]
+    // [Keep all other existing methods: handleAddXP, handleRemoveXP, etc.]
     async handleAddXP(interaction, targetUser, amount, reason) {
         try {
             await interaction.deferReply();
