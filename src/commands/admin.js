@@ -1,4 +1,4 @@
-// src/commands/admin.js - Fixed Admin Command with Proper Structure
+// src/commands/admin.js - Updated without ASCII art dependencies
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -191,7 +191,7 @@ module.exports = {
         }
     },
 
-    // NEW: Handle daily buff removal for testing
+    // Updated handle daily buff removal for testing (simplified without ASCII art)
     async handleRemoveDailyBuff(interaction, targetUser, reason) {
         try {
             await interaction.deferReply();
@@ -310,6 +310,7 @@ module.exports = {
         return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
+    // ... [rest of the existing methods remain the same: handleAddXP, handleRemoveXP, etc.]
     async handleAddXP(interaction, targetUser, amount, reason) {
         try {
             await interaction.deferReply();
