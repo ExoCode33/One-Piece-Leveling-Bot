@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Updated with simple animation like summon command
+// src/commands/daily-buff.js - Updated with grid explosion animation
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
@@ -38,7 +38,6 @@ const TIER_NAMES = {
     6: 'World Government Authorization'
 };
 
-// Remove hardcoded multipliers - will get from role settings instead
 class BuffAnimator {
     // Create a grid animation showing light emanating from center with complete explosion
     static createGridAnimation(frame, finalTier) {
@@ -223,41 +222,6 @@ class BuffAnimator {
         return embed;
     }
 }
-}
-
-    static createResultEmbed(tier, member) {
-        const tierName = TIER_NAMES[tier];
-        const multiplier = TIER_MULTIPLIERS[tier];
-        const color = TIER_COLORS[tier];
-        const nextReset = getNextResetUnixTimestamp();
-        
-        const embed = new EmbedBuilder()
-            .setTitle('✨ Marine Enhancement Acquired')
-            .setColor(color)
-            .setDescription(`**Enhancement Matrix Successfully Stabilized!**\n\n🎉 **Enhancement Complete!** 🎉`)
-            .addFields(
-                {
-                    name: '🔬 Enhancement Analysis',
-                    value: `**Classification:** ${tierName}\n**Power Amplification:** ${multiplier}x\n**Status:** Fully Crystallized`,
-                    inline: true
-                },
-                {
-                    name: '⏰ Operational Window',
-                    value: `**Activated:** Right Now\n**Duration:** Until 3:00 AM EST\n**Next Reset:** <t:${nextReset}:R>\n**Status:** ✅ Active`,
-                    inline: true
-                },
-                {
-                    name: '⚡ Enhancement Effects',
-                    value: `🚀 All XP gains boosted by **${multiplier}x**\n🔄 Stacks with other multipliers\n🛡️ Marine training protocols enhanced\n⭐ Active until daily reset`,
-                    inline: false
-                }
-            )
-            .setFooter({ text: `${tierName} Enhancement Active • Marine Enhancement Division` })
-            .setTimestamp();
-
-        return embed;
-    }
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -382,15 +346,13 @@ module.exports = {
 
     // Get current buff for a user
     async getCurrentBuff(userId, guildId, member) {
-        const buffRoles = TIER_MULTIPLIERS;
-        
-        for (const tier of Object.keys(buffRoles)) {
+        for (let tier = 1; tier <= 6; tier++) {
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
             if (roleId && member.roles.cache.has(roleId)) {
                 return {
-                    tier: parseInt(tier),
+                    tier: tier,
                     name: TIER_NAMES[tier],
-                    multiplier: TIER_MULTIPLIERS[tier]
+                    multiplier: 'From Settings' // Will be from role XP boost settings
                 };
             }
         }
