@@ -1,13 +1,12 @@
-// src/commands/daily-buff.js - Fixed Progress Bar Animation with Enhanced Loading Effect
+// src/commands/daily-buff.js - Simple Enhanced Progress Bar
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-// Progress Bar Animation Configuration
+// Simple animation config
 const ANIMATION_CONFIG = {
-    PROGRESS_FRAMES: 20,      // 20 frames for smoother progress
-    FRAME_DELAY: 300,         // 0.3s per frame (slower)
-    COMPLETION_PAUSE: 1500,   // 1.5s pause to show completion
-    FINAL_PAUSE: 800          // 0.8s pause before final reveal
+    PROGRESS_FRAMES: 25,      // More frames for smoother animation
+    FRAME_DELAY: 200,         // Faster frame rate
+    COMPLETION_PAUSE: 1200    // Pause when complete
 };
 
 // Tier colors and names
@@ -40,151 +39,99 @@ const XP_MULTIPLIERS = {
 
 class ProgressBarAnimator {
     
-    // Create enhanced progress bar with animated glow effect
-    static createProgressBar(percentage, glowPhase = 0) {
-        const totalBars = 35;
-        const filledBars = Math.floor((percentage / 100) * totalBars);
+    // Create smooth progress bar with gradient effect
+    static createProgressBar(percentage) {
+        const totalBars = 32;
+        const progress = (percentage / 100) * totalBars;
+        const filledBars = Math.floor(progress);
+        const partialProgress = progress - filledBars;
         
-        // Enhanced shading with glow effects
-        const glowChar = '▓';       // Glowing edge
-        const solidChar = '█';      // Fully loaded
-        const heavyChar = '▉';      // 87.5% shade
-        const mediumChar = '▊';     // 75% shade
-        const lightChar = '▋';      // 62.5% shade
-        const thinChar = '▌';       // 50% shade
-        const veryThinChar = '▍';   // 37.5% shade
-        const barelyChar = '▎';     // 25% shade
-        const emptyChar = '░';      // Empty
-        const darkChar = '▁';       // Dark empty
+        let bar = '';
         
-        let progressBar = '';
+        // Filled portion
+        bar += '█'.repeat(filledBars);
         
-        // Add filled bars with occasional glow effect
-        for (let i = 0; i < filledBars; i++) {
-            // Add glow effect near the leading edge
-            if (i >= filledBars - 2 && glowPhase > 0 && percentage < 100) {
-                progressBar += glowChar;
-            } else {
-                progressBar += solidChar;
-            }
-        }
-        
-        // Add sophisticated transition at progress edge
+        // Gradient transition at the edge
         if (filledBars < totalBars && percentage > 0) {
-            const partialProgress = ((percentage / 100) * totalBars) - filledBars;
+            if (partialProgress > 0.8) bar += '▉';
+            else if (partialProgress > 0.6) bar += '▊';
+            else if (partialProgress > 0.4) bar += '▋';
+            else if (partialProgress > 0.2) bar += '▌';
+            else if (partialProgress > 0) bar += '▍';
             
-            if (partialProgress >= 0.875) {
-                progressBar += heavyChar;
-            } else if (partialProgress >= 0.75) {
-                progressBar += mediumChar;
-            } else if (partialProgress >= 0.625) {
-                progressBar += lightChar;
-            } else if (partialProgress >= 0.5) {
-                progressBar += thinChar;
-            } else if (partialProgress >= 0.375) {
-                progressBar += veryThinChar;
-            } else if (partialProgress >= 0.25) {
-                progressBar += barelyChar;
-            } else if (partialProgress > 0) {
-                progressBar += emptyChar;
-            }
-            
-            // Add remaining empty bars with varying darkness
-            const remainingBars = totalBars - progressBar.length;
-            for (let i = 0; i < remainingBars; i++) {
-                // Alternate between empty and dark for texture
-                progressBar += (i % 3 === 0) ? darkChar : emptyChar;
-            }
-        } else {
-            // Add empty bars with texture
-            const remainingBars = totalBars - filledBars;
-            for (let i = 0; i < remainingBars; i++) {
-                progressBar += (i % 3 === 0) ? darkChar : emptyChar;
-            }
+            // Empty portion
+            const remaining = totalBars - bar.length;
+            bar += '░'.repeat(remaining);
+        } else if (percentage < 100) {
+            // Empty portion
+            bar += '░'.repeat(totalBars - filledBars);
         }
         
-        return progressBar;
+        return bar;
     }
     
-    // Create loading embed with glow effect
-    static createLoadingEmbed(percentage, frame) {
-        const glowPhase = frame % 3; // Cycle glow effect
-        const progressBar = this.createProgressBar(percentage, glowPhase);
+    // Create loading embed with consistent size
+    static createLoadingEmbed(percentage) {
+        const progressBar = this.createProgressBar(percentage);
         
-        // Progressive color change as it loads
-        let embedColor = 0x4A90E2; // Blue
-        if (percentage >= 80) embedColor = 0x10B981; // Green
-        else if (percentage >= 60) embedColor = 0xF59E0B; // Amber
-        else if (percentage >= 40) embedColor = 0x8B5CF6; // Purple
+        // Color progression
+        let color = 0x6B7280; // Gray
+        if (percentage >= 90) color = 0x10B981; // Green
+        else if (percentage >= 70) color = 0x3B82F6; // Blue
+        else if (percentage >= 40) color = 0x8B5CF6; // Purple
         
-        const embed = new EmbedBuilder()
+        return new EmbedBuilder()
             .setTitle('Enhancement Protocol')
             .setDescription(
-                `\`┌${'─'.repeat(37)}┐\`\n` +
-                `\`│ ${progressBar} │\`\n` +
-                `\`└${'─'.repeat(37)}┘\`\n\n` +
-                `**${percentage}%**\n\n` +
-                // Fixed spacing to maintain embed size
-                `\u200B\n\u200B\n\u200B\n\u200B` // Invisible characters for spacing
+                `\`${progressBar}\` **${percentage}%**\n\n` +
+                `\u200B\n\u200B\n\u200B\n\u200B\n\u200B` // Spacers for consistent height
             )
-            .setColor(embedColor)
+            .setColor(color)
             .setTimestamp();
-        
-        return embed;
     }
     
-    // Create completion embed with pulsing effect (no flickering)
+    // Create completion embed 
     static createCompletionEmbed(tier) {
-        const progressBar = this.createProgressBar(100, 2); // Max glow
+        const progressBar = this.createProgressBar(100);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         
-        const embed = new EmbedBuilder()
+        return new EmbedBuilder()
             .setTitle('Enhancement Protocol')
             .setDescription(
-                `\`┌${'─'.repeat(37)}┐\`\n` +
-                `\`│ ${progressBar} │\`\n` +
-                `\`└${'─'.repeat(37)}┘\`\n\n` +
-                `**100%** - **COMPLETE**\n\n` +
-                `**${tierName}**\n` +
-                `\u200B\n\u200B\n\u200B` // Maintain spacing
+                `\`${progressBar}\` **100%**\n\n` +
+                `**${tierName}**\n\n` +
+                `\u200B\n\u200B\n\u200B` // Spacers
             )
             .setColor(tierColor)
             .setTimestamp();
-        
-        return embed;
     }
     
-    // Create final reveal with progress bar still visible and details below
-    static createRevealEmbed(tier, member) {
+    // Create final reveal
+    static createRevealEmbed(tier) {
         const progressBar = this.createProgressBar(100);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         const xpMultiplier = XP_MULTIPLIERS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
-        const embed = new EmbedBuilder()
-            .setTitle('Enhancement Protocol')
+        return new EmbedBuilder()
+            .setTitle('Enhancement Complete')
             .setDescription(
-                `\`┌${'─'.repeat(37)}┐\`\n` +
-                `\`│ ${progressBar} │\`\n` +
-                `\`└${'─'.repeat(37)}┘\`\n\n` +
-                `**100%** - **COMPLETE**\n\n` +
+                `\`${progressBar}\` **100%**\n\n` +
                 `**${tierName}**\n` +
                 `XP Multiplier: **${xpMultiplier}**\n` +
                 `Resets: <t:${nextReset}:R>`
             )
             .setColor(tierColor)
             .setTimestamp();
-        
-        return embed;
     }
 }
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('⚡ Activate daily Marine Enhancement (Resets at 3:00 AM EDT)'),
+        .setDescription('Activate daily Marine Enhancement (Resets at 3:00 AM EDT)'),
 
     async execute(interaction) {
         try {
@@ -231,12 +178,12 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the progress bar animation
+            // Start the simple animation
             await interaction.deferReply();
-            await this.performProgressBarAnimation(interaction, userId, guildId, member);
+            await this.performAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error in daily-buff command:', error);
+            console.error('[DAILY BUFF] Error:', error);
             
             if (interaction.deferred) {
                 await interaction.editReply({
@@ -251,17 +198,15 @@ module.exports = {
         }
     },
 
-    // Progress bar animation with smooth completion (no flickering)
-    async performProgressBarAnimation(interaction, userId, guildId, member) {
+    // Simple, smooth animation
+    async performAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            console.log(`[DAILY BUFF] Starting enhanced animation for ${interaction.user.username}, tier ${finalResult}`);
-            
-            // PHASE 1: Progress bar loading (0% → 100%) with glow effects
+            // Phase 1: Smooth loading animation
             for (let frame = 0; frame <= ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
                 const percentage = Math.round((frame / ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
-                const loadingEmbed = ProgressBarAnimator.createLoadingEmbed(percentage, frame);
+                const loadingEmbed = ProgressBarAnimator.createLoadingEmbed(percentage);
                 
                 await interaction.editReply({ embeds: [loadingEmbed] });
                 
@@ -270,30 +215,27 @@ module.exports = {
                 }
             }
 
-            // PHASE 2: Show completion with tier color (no flickering)
+            // Phase 2: Show completion
             const completionEmbed = ProgressBarAnimator.createCompletionEmbed(finalResult);
             await interaction.editReply({ embeds: [completionEmbed] });
-            
-            // Hold completion state
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.COMPLETION_PAUSE));
 
-            // Apply the buff role and save to database
+            // Apply buff
             await this.applyBuffRole(userId, guildId, member, finalResult);
             
-            // PHASE 3: Final reveal with all details
-            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FINAL_PAUSE));
-            const revealEmbed = ProgressBarAnimator.createRevealEmbed(finalResult, member);
+            // Phase 3: Final reveal
+            const revealEmbed = ProgressBarAnimator.createRevealEmbed(finalResult);
             await interaction.editReply({ embeds: [revealEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Enhanced animation error:', error);
+            console.error('[DAILY BUFF] Animation error:', error);
             await interaction.editReply({
                 content: '❌ **Enhancement Failed**\n\nAnimation system malfunction.'
             });
         }
     },
 
-    // Calculate which tier to roll (weighted probabilities)
+    // Calculate which tier to roll
     calculateBuffTier() {
         const random = Math.random() * 100;
         
@@ -358,45 +300,24 @@ module.exports = {
 
     async applyBuffRole(userId, guildId, member, tier) {
         try {
-            console.log(`[DAILY BUFF] Applying tier ${tier} enhancement to ${member.user.username}`);
-
-            // Remove any existing buff roles first
+            // Remove existing buff roles
             await this.removeAllBuffRoles(member);
 
-            // Get the role ID for this tier
+            // Get and apply new role
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-
-            if (!roleId || roleId === `role_id_${tier}`) {
-                console.warn(`[DAILY BUFF] No role configured for tier ${tier}`);
-                // Still save to database even if no role
-                await this.saveBuffRoll(userId, guildId, tier);
-                return;
+            if (roleId && roleId !== `role_id_${tier}`) {
+                const role = member.guild.roles.cache.get(roleId);
+                if (role) {
+                    await member.roles.add(role, `Daily enhancement tier ${tier} awarded`);
+                }
             }
-
-            // Try to find the role
-            const role = member.guild.roles.cache.get(roleId);
-            if (!role) {
-                console.warn(`[DAILY BUFF] Role ${roleId} not found in guild`);
-                // Still save to database even if role not found
-                await this.saveBuffRoll(userId, guildId, tier);
-                return;
-            }
-
-            // Add the role
-            await member.roles.add(role, `Daily enhancement tier ${tier} awarded`);
-            console.log(`[DAILY BUFF] ✅ Successfully awarded ${role.name} to ${member.user.username}`);
 
             // Save to database
             await this.saveBuffRoll(userId, guildId, tier);
 
         } catch (error) {
-            console.error('[DAILY BUFF] ❌ Error applying buff role:', error);
-            // Still try to save to database
-            try {
-                await this.saveBuffRoll(userId, guildId, tier);
-            } catch (saveError) {
-                console.error('[DAILY BUFF] ❌ Failed to save to database:', saveError);
-            }
+            console.error('[DAILY BUFF] Error applying buff:', error);
+            await this.saveBuffRoll(userId, guildId, tier);
         }
     },
 
@@ -427,19 +348,16 @@ module.exports = {
                 DO UPDATE SET tier = $4
             `, [userId, guildId, currentDay, tier]);
 
-            console.log(`[DAILY BUFF] ✅ Saved tier ${tier} roll for ${userId} on ${currentDay}`);
-
         } catch (error) {
-            console.error('[DAILY BUFF] ❌ Error saving buff roll:', error);
+            console.error('[DAILY BUFF] Error saving buff roll:', error);
             throw error;
         }
     },
 
-    // Methods for admin command compatibility
+    // Admin compatibility methods
     async checkDailyBuffStatus(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
-            
             const dbResult = await global.xpTracker.db.query(
                 'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
                 [userId, guildId, currentDay]
@@ -466,13 +384,7 @@ module.exports = {
                 }
             }
             
-            return {
-                hasDBRecord,
-                dbTier,
-                currentDay,
-                currentRoles,
-                member
-            };
+            return { hasDBRecord, dbTier, currentDay, currentRoles, member };
             
         } catch (error) {
             console.error('[DAILY BUFF] Error checking buff status:', error);
@@ -489,8 +401,6 @@ module.exports = {
 
     async forceRemoveDailyBuff(userId, guildId, reason = 'Admin removal') {
         try {
-            console.log(`[DAILY BUFF ADMIN] Force removing daily buff for user ${userId}`);
-            
             const currentDay = getCurrentDayKey();
             const guild = global.xpTracker.client.guilds.cache.get(guildId);
             const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
@@ -545,7 +455,7 @@ module.exports = {
     }
 };
 
-// Helper functions for timezone handling
+// Helper functions
 function getCurrentDayKey() {
     const now = new Date();
     const edtOffset = isEDTDaylightSaving(now) ? -4 : -5;
