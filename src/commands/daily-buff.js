@@ -5,7 +5,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 // Animation configuration
 const ANIMATION_CONFIG = {
     FRAME_DELAY: 700,
-    TOTAL_FRAMES: 8,
+    TOTAL_FRAMES: 10, // Increased for better explosion
     GRID_WIDTH: 18,
     GRID_HEIGHT: 9
 };
@@ -38,17 +38,9 @@ const TIER_NAMES = {
     6: 'World Government Authorization'
 };
 
-const TIER_MULTIPLIERS = {
-    1: 1.1,
-    2: 1.2,
-    3: 1.3,
-    4: 1.5,
-    5: 1.7,
-    6: 2.0
-};
-
+// Remove hardcoded multipliers - will get from role settings instead
 class BuffAnimator {
-    // Create a grid animation showing light emanating from center
+    // Create a grid animation showing light emanating from center with complete explosion
     static createGridAnimation(frame, finalTier) {
         const width = ANIMATION_CONFIG.GRID_WIDTH;
         const height = ANIMATION_CONFIG.GRID_HEIGHT;
@@ -65,9 +57,15 @@ class BuffAnimator {
             grid.push(row);
         }
         
-        if (frame <= 6) {
-            // Frames 1-6: Light expanding outward from center
-            const radius = frame * 1.2; // Expand radius each frame
+        if (frame <= 2) {
+            // Frames 1-2: All black, just starting
+            // Grid stays all black
+        } else if (frame <= 4) {
+            // Frames 3-4: Small light at center
+            grid[centerY][centerX] = '⬜';
+        } else if (frame <= 6) {
+            // Frames 5-6: Light expanding outward
+            const radius = (frame - 4) * 1.5; // Gradual expansion
             
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
@@ -79,7 +77,7 @@ class BuffAnimator {
                 }
             }
         } else if (frame === 7) {
-            // Frame 7: Small explosion with rarity color
+            // Frame 7: Initial explosion - small rarity burst
             const explosionRadius = 2;
             const tierEmoji = TIER_EMOJIS[finalTier];
             
@@ -94,17 +92,50 @@ class BuffAnimator {
                     }
                 }
             }
-        } else {
-            // Frame 8: Full explosion
+        } else if (frame === 8) {
+            // Frame 8: Medium explosion
+            const explosionRadius = 3.5;
             const tierEmoji = TIER_EMOJIS[finalTier];
             
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
                     const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
                     
-                    if (distance <= 4) {
+                    if (distance <= explosionRadius) {
                         grid[y][x] = tierEmoji;
-                    } else if (distance <= 6) {
+                    } else if (distance <= explosionRadius + 2) {
+                        grid[y][x] = '⬜';
+                    }
+                }
+            }
+        } else if (frame === 9) {
+            // Frame 9: Large explosion
+            const explosionRadius = 5;
+            const tierEmoji = TIER_EMOJIS[finalTier];
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    
+                    if (distance <= explosionRadius) {
+                        grid[y][x] = tierEmoji;
+                    } else if (distance <= explosionRadius + 2.5) {
+                        grid[y][x] = '⬜';
+                    }
+                }
+            }
+        } else {
+            // Frame 10: Maximum explosion - fills most of the grid
+            const explosionRadius = 7;
+            const tierEmoji = TIER_EMOJIS[finalTier];
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    
+                    if (distance <= explosionRadius) {
+                        grid[y][x] = tierEmoji;
+                    } else if (distance <= explosionRadius + 1) {
                         grid[y][x] = '⬜';
                     }
                 }
@@ -131,16 +162,16 @@ class BuffAnimator {
             statusMessage = '🔬 **Initializing enhancement matrix...**';
             color = 0x808080; // Gray
         } else if (currentFrame <= 4) {
-            statusMessage = '⚡ **Energy building from core...**';
+            statusMessage = '⚡ **Energy core igniting...**';
             color = 0xFFFF00; // Yellow
         } else if (currentFrame <= 6) {
-            statusMessage = '🌟 **Power emanating outward...**';
+            statusMessage = '🌟 **Power wave expanding...**';
             color = 0xFFFFFF; // White
-        } else if (currentFrame === 7) {
-            statusMessage = '💥 **Enhancement crystallizing...**';
+        } else if (currentFrame <= 8) {
+            statusMessage = '💥 **Enhancement explosion initiated...**';
             color = TIER_COLORS[finalTier];
         } else {
-            statusMessage = '✨ **Enhancement complete!**';
+            statusMessage = '🎆 **MAXIMUM POWER EXPLOSION!**';
             color = TIER_COLORS[finalTier];
         }
         
@@ -150,7 +181,7 @@ class BuffAnimator {
                 `${statusMessage}\n\n` +
                 `\`\`\`\n${gridAnimation}\n\`\`\`\n\n` +
                 `📊 **Progress:** ${progressPercent}%\n` +
-                `⚡ **Status:** ${currentFrame >= 7 ? 'Enhancement stabilizing...' : 'Energy matrix expanding...'}`
+                `⚡ **Status:** ${currentFrame >= 7 ? 'EXPLOSIVE ENHANCEMENT!' : 'Energy matrix expanding...'}`
             )
             .setColor(color)
             .setFooter({ text: `Processing... ${currentFrame}/${totalFrames} completed` })
@@ -158,6 +189,40 @@ class BuffAnimator {
         
         return embed;
     }
+
+    static createResultEmbed(tier, member) {
+        const tierName = TIER_NAMES[tier];
+        const color = TIER_COLORS[tier];
+        const nextReset = getNextResetUnixTimestamp();
+        
+        // Get the actual multiplier from the role (will be set by admin in role settings)
+        let powerAmplification = '1.0x'; // Default fallback
+        
+        // Try to get the role and check if it has XP boost settings
+        const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
+        if (roleId && global.xpBoostManager && member.guild) {
+            // This will be handled asynchronously, but we'll show default for now
+            // The actual multiplier will come from the role's XP boost settings
+            powerAmplification = 'Loading...'; // Will be updated by admin settings
+        }
+        
+        const embed = new EmbedBuilder()
+            .setTitle('✨ Marine Enhancement Acquired')
+            .setColor(color)
+            .setDescription(`**${tierName} Enhancement Successfully Activated!**\n\n🎉 **Enhancement Complete!** 🎉`)
+            .addFields(
+                {
+                    name: '⚡ Enhancement Details',
+                    value: `**Status:** Active\n**Next Reset:** <t:${nextReset}:R>\n**Power Amplification:** ${powerAmplification}`,
+                    inline: false
+                }
+            )
+            .setFooter({ text: `${tierName} Enhancement Active • Marine Enhancement Division` })
+            .setTimestamp();
+
+        return embed;
+    }
+}
 
     static createResultEmbed(tier, member) {
         const tierName = TIER_NAMES[tier];
