@@ -1,4 +1,4 @@
-// src/utils/dailyResetManager.js - Daily Reset System
+// src/utils/dailyResetManager.js - Fixed Daily Reset System
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -82,6 +82,7 @@ class DailyResetManager {
 
             console.log(`[DAILY CAP] Loaded ${loadedCount} daily voice XP records for ${currentDay}`);
 
+            // Clean up old records (keep last 30 days)
             await this.db.query(
                 "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '30 days'"
             );
@@ -134,28 +135,21 @@ class DailyResetManager {
         scheduleNext();
     }
 
-    // Perform daily reset
+    // Perform daily reset - FIXED VERSION
     async performDailyReset() {
         try {
             console.log(`[DAILY CAP] ⏰ Performing daily reset at ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST...`);
             
             const currentDay = this.getCurrentDay();
             
-            // Clear memory cache
-            const keysToDelete = [];
-            for (const [key] of this.dailyVoiceXP.entries()) {
-                if (!key.includes(currentDay)) {
-                    keysToDelete.push(key);
-                }
-            }
+            // ✅ FIXED: Clear ALL voice XP cache (not just old entries)
+            console.log(`[DAILY CAP] Clearing ALL voice XP cache for new day: ${currentDay}`);
+            this.dailyVoiceXP.clear();
             
-            keysToDelete.forEach(key => this.dailyVoiceXP.delete(key));
-            console.log(`[DAILY CAP] ✅ Voice XP reset complete - cleared ${keysToDelete.length} cached entries`);
-
-            // Reset daily buffs
+            // Reset daily buffs with improved error handling
             await this.resetDailyBuffs();
             
-            // Clean up database records
+            // Clean up database records with better error handling
             try {
                 const buffDeleteResult = await this.db.query(
                     'DELETE FROM daily_buff_rolls WHERE date < $1',
@@ -166,6 +160,17 @@ class DailyResetManager {
                 console.error('[DAILY BUFF] Error cleaning up daily buff database:', error);
             }
             
+            // ✅ FIXED: Clean up old voice XP records but don't delete current day
+            try {
+                const voiceDeleteResult = await this.db.query(
+                    'DELETE FROM daily_voice_xp WHERE date < $1',
+                    [currentDay]
+                );
+                console.log(`[DAILY CAP] Cleaned up ${voiceDeleteResult.rowCount} old voice XP records`);
+            } catch (error) {
+                console.error('[DAILY CAP] Error cleaning up voice XP database:', error);
+            }
+            
             console.log(`[DAILY CAP] 🆕 New day started: ${currentDay}`);
             await this.notifyDailyReset(currentDay);
             
@@ -174,7 +179,7 @@ class DailyResetManager {
         }
     }
 
-    // Reset daily buffs for all users
+    // ✅ FIXED: Reset daily buffs with better error handling and rate limiting
     async resetDailyBuffs() {
         try {
             console.log('[DAILY BUFF] 🔄 Resetting daily buffs for all users...');
@@ -182,56 +187,81 @@ class DailyResetManager {
             const buffRoles = [];
             for (let i = 1; i <= 6; i++) {
                 const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                if (roleId) {
-                    buffRoles.push(roleId);
+                if (roleId && roleId !== `role_id_${i}`) { // Skip placeholder values
+                    buffRoles.push({ tier: i, roleId });
                 }
             }
 
             if (buffRoles.length === 0) {
-                console.log('[DAILY BUFF] No buff roles configured');
+                console.log('[DAILY BUFF] No buff roles configured (check environment variables)');
                 return;
             }
 
+            console.log(`[DAILY BUFF] Found ${buffRoles.length} configured buff roles:`, buffRoles.map(r => `Tier ${r.tier}: ${r.roleId}`));
+
             let totalUsersReset = 0;
+            let totalErrors = 0;
 
             for (const [guildId, guild] of this.client.guilds.cache) {
                 try {
                     let guildUsersReset = 0;
+                    let guildErrors = 0;
                     
-                    for (const roleId of buffRoles) {
+                    console.log(`[DAILY BUFF] Processing guild: ${guild.name} (${guild.id})`);
+                    
+                    for (const { tier, roleId } of buffRoles) {
                         const role = guild.roles.cache.get(roleId);
                         if (role && role.members.size > 0) {
                             console.log(`[DAILY BUFF] Removing ${role.name} from ${role.members.size} users in ${guild.name}`);
                             
-                            for (const [memberId, member] of role.members) {
-                                try {
-                                    await member.roles.remove(role);
-                                    guildUsersReset++;
-                                } catch (error) {
-                                    console.error(`[DAILY BUFF] Failed to remove role from ${member.user.username}:`, error.message);
-                                }
+                            // Process members in smaller batches to avoid rate limits
+                            const memberArray = Array.from(role.members.values());
+                            const batchSize = 5; // Process 5 members at a time
+                            
+                            for (let i = 0; i < memberArray.length; i += batchSize) {
+                                const batch = memberArray.slice(i, i + batchSize);
                                 
-                                await new Promise(resolve => setTimeout(resolve, 100));
+                                await Promise.all(batch.map(async (member) => {
+                                    try {
+                                        await member.roles.remove(role, 'Daily reset - removing buff roles');
+                                        guildUsersReset++;
+                                        console.log(`[DAILY BUFF] ✅ Removed ${role.name} from ${member.user.username}`);
+                                    } catch (error) {
+                                        guildErrors++;
+                                        console.error(`[DAILY BUFF] ❌ Failed to remove role from ${member.user.username}:`, error.message);
+                                    }
+                                }));
+                                
+                                // Rate limiting: wait between batches
+                                if (i + batchSize < memberArray.length) {
+                                    await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                                }
                             }
+                        } else if (role) {
+                            console.log(`[DAILY BUFF] Role ${role.name} has no members to remove`);
+                        } else {
+                            console.warn(`[DAILY BUFF] Role not found in ${guild.name}: ${roleId}`);
                         }
                     }
                     
                     totalUsersReset += guildUsersReset;
-                    console.log(`[DAILY BUFF] Reset ${guildUsersReset} users in ${guild.name}`);
+                    totalErrors += guildErrors;
+                    console.log(`[DAILY BUFF] Guild ${guild.name}: ${guildUsersReset} users reset, ${guildErrors} errors`);
                     
                 } catch (error) {
                     console.error(`[DAILY BUFF] Error resetting buffs in guild ${guild.name}:`, error);
+                    totalErrors++;
                 }
             }
 
-            console.log(`[DAILY BUFF] ✅ Daily buff reset complete - removed roles from ${totalUsersReset} total users`);
+            console.log(`[DAILY BUFF] ✅ Daily buff reset complete - removed roles from ${totalUsersReset} total users, ${totalErrors} errors`);
 
         } catch (error) {
             console.error('[DAILY BUFF] ❌ Error during daily buff reset:', error);
         }
     }
 
-    // Daily voice XP methods
+    // Daily voice XP methods - FIXED
     getDailyVoiceXP(userId, guildId, date = null) {
         if (!date) {
             date = this.getCurrentDay();
@@ -268,23 +298,36 @@ class DailyResetManager {
         }
     }
 
-    // Force daily reset for testing
+    // ✅ FIXED: Force daily reset with complete cache clearing
     async forceDailyReset(triggeredBy = 'SYSTEM') {
         try {
             console.log(`[DAILY RESET] 🚨 FORCE RESET TRIGGERED BY ${triggeredBy} 🚨`);
             
             const currentDay = this.getCurrentDay();
             const beforeCacheSize = this.dailyVoiceXP.size;
-            this.dailyVoiceXP.clear();
             
+            // ✅ FIXED: Completely clear voice XP cache
+            this.dailyVoiceXP.clear();
+            console.log(`[DAILY RESET] Cleared ${beforeCacheSize} voice XP cache entries`);
+            
+            // Reset daily buffs
             await this.resetDailyBuffs();
             
+            // Clean up database
             try {
                 const buffDeleteResult = await this.db.query(
                     'DELETE FROM daily_buff_rolls WHERE date < $1',
                     [currentDay]
                 );
                 console.log(`[DAILY BUFF] Force deleted ${buffDeleteResult.rowCount} old daily buff records`);
+                
+                // ✅ FIXED: Don't delete current day voice XP, only old records
+                const voiceDeleteResult = await this.db.query(
+                    'DELETE FROM daily_voice_xp WHERE date < $1',
+                    [currentDay]
+                );
+                console.log(`[DAILY CAP] Force deleted ${voiceDeleteResult.rowCount} old voice XP records`);
+                
             } catch (error) {
                 console.error('[DAILY RESET] Error during force cleanup:', error);
             }
@@ -306,7 +349,31 @@ class DailyResetManager {
         }
     }
 
-    // Notify daily reset
+    // Enhanced cleanup for daily voice XP on specific day
+    async cleanupDailyVoiceXP() {
+        try {
+            const currentDay = this.getCurrentDay();
+            
+            // Clean memory cache for any non-current day entries
+            const keysToDelete = [];
+            for (const [key] of this.dailyVoiceXP.entries()) {
+                if (!key.endsWith(`_${currentDay}`)) {
+                    keysToDelete.push(key);
+                }
+            }
+            
+            keysToDelete.forEach(key => this.dailyVoiceXP.delete(key));
+            
+            if (keysToDelete.length > 0) {
+                console.log(`[DAILY CAP] Cleaned up ${keysToDelete.length} old cache entries`);
+            }
+            
+        } catch (error) {
+            console.error('[DAILY CAP] Error cleaning up daily voice XP:', error);
+        }
+    }
+
+    // Notify daily reset with improved messaging
     async notifyDailyReset(newDay, isForced = false, triggeredBy = 'SYSTEM') {
         try {
             for (const [guildId, guildSettings] of (global.guildSettings || new Map()).entries()) {
@@ -321,7 +388,7 @@ class DailyResetManager {
                                 .addFields(
                                     {
                                         name: '🎤 Voice XP Reset',
-                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000} XP\nStatus: All daily limits reset\n\`\`\``,
+                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500} XP\nStatus: All daily limits reset\nCache: Completely cleared\n\`\`\``,
                                         inline: true
                                     },
                                     {
