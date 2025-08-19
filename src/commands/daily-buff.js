@@ -41,43 +41,128 @@ const XP_MULTIPLIERS = {
 
 class ProgressBarAnimator {
     
-    // Create progress bar visual
+    // Create enhanced progress bar visual with glowing effects
     static createProgressBar(percentage) {
         const totalBars = 20;
         const filledBars = Math.floor((percentage / 100) * totalBars);
         const emptyBars = totalBars - filledBars;
         
-        const filled = '█'.repeat(filledBars);
-        const empty = '░'.repeat(emptyBars);
+        // Different characters for visual appeal
+        const glowChar = '▰';      // Main filled character
+        const fadeChar = '▱';      // Fading character
+        const emptyChar = '░';     // Empty character
         
-        return filled + empty;
+        let progressBar = '';
+        
+        // Add filled bars with glow effect
+        for (let i = 0; i < filledBars; i++) {
+            progressBar += glowChar;
+        }
+        
+        // Add a fading character at the progress edge for smooth effect
+        if (filledBars < totalBars && percentage > 0) {
+            progressBar += fadeChar;
+            emptyBars--;
+        }
+        
+        // Add empty bars
+        progressBar += emptyChar.repeat(Math.max(0, emptyBars));
+        
+        return progressBar;
     }
     
-    // Create loading embed
-    static createLoadingEmbed(percentage) {
+    // Create animated loading text
+    static getLoadingText(frame) {
+        const loadingTexts = [
+            'Initializing Enhancement Protocol',
+            'Scanning Marine Database',
+            'Analyzing Combat Potential', 
+            'Calculating Enhancement Matrix',
+            'Syncing Power Levels',
+            'Calibrating Enhancement Field',
+            'Processing Enhancement Data',
+            'Finalizing Enhancement Protocol',
+            'Activating Enhancement Systems',
+            'Enhancement Ready for Deployment'
+        ];
+        
+        return loadingTexts[frame] || 'Completing Enhancement';
+    }
+    
+    // Create particles effect around progress bar
+    static createParticleEffect(percentage) {
+        if (percentage < 20) {
+            return '✦ ◦ ✧ ◦ ✦';
+        } else if (percentage < 40) {
+            return '✦ ✧ ⟡ ✧ ✦ ◦ ✧';
+        } else if (percentage < 60) {
+            return '✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦';
+        } else if (percentage < 80) {
+            return '✨ ✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦ ✨';
+        } else {
+            return '✨ ⭐ ✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦ ⭐ ✨';
+        }
+    }
+    
+    // Create loading embed with enhanced visuals
+    static createLoadingEmbed(percentage, frame) {
         const progressBar = this.createProgressBar(percentage);
+        const loadingText = this.getLoadingText(frame);
+        const particles = this.createParticleEffect(percentage);
+        
+        // Progressive color change as it loads
+        let embedColor = 0x4A90E2; // Blue
+        if (percentage >= 80) embedColor = 0x10B981; // Green
+        else if (percentage >= 60) embedColor = 0xF59E0B; // Amber
+        else if (percentage >= 40) embedColor = 0x8B5CF6; // Purple
         
         const embed = new EmbedBuilder()
             .setTitle('⚡ Marine Enhancement Protocol')
-            .setDescription(`**Scanning Enhancement Matrix...**\n\n\`${progressBar}\` ${percentage}%`)
-            .setColor(0xFFFFFF) // White color during loading
-            .setFooter({ text: 'Marine Enhancement Division • Processing...' })
+            .setDescription(
+                `**${loadingText}...**\n\n` +
+                `${particles}\n` +
+                `\`┌${'─'.repeat(22)}┐\`\n` +
+                `\`│ ${progressBar} │\` **${percentage}%**\n` +
+                `\`└${'─'.repeat(22)}┘\`\n` +
+                `${particles}`
+            )
+            .setColor(embedColor)
+            .addFields({
+                name: '📊 System Status',
+                value: `\`\`\`yaml\nEnhancement Level: ${Math.floor(percentage / 10)}/10\nPower Stability: ${percentage < 100 ? 'BUILDING' : 'OPTIMAL'}\nThreat Assessment: ${percentage < 50 ? 'LOW' : percentage < 80 ? 'MODERATE' : 'HIGH'}\nProtocol Status: ${percentage < 100 ? 'IN PROGRESS' : 'COMPLETE'}\n\`\`\``,
+                inline: false
+            })
+            .setFooter({ text: `Marine Enhancement Division • ${percentage < 100 ? 'Processing' : 'Complete'}...` })
             .setTimestamp();
         
         return embed;
     }
     
-    // Create blinking embed (alternates between tier color and white)
+    // Create blinking embed with enhanced effects
     static createBlinkEmbed(tier, isColorPhase) {
         const progressBar = this.createProgressBar(100);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
+        const particles = '✨ ⭐ ✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦ ⭐ ✨';
         
         const embed = new EmbedBuilder()
             .setTitle('⚡ Marine Enhancement Protocol')
-            .setDescription(`**Enhancement Complete!**\n\n\`${progressBar}\` 100%\n\n✨ **${tierName}** ✨`)
-            .setColor(isColorPhase ? tierColor : 0xFFFFFF) // Alternate between tier color and white
-            .setFooter({ text: 'Marine Enhancement Division • Complete!' })
+            .setDescription(
+                `**Enhancement Complete!**\n\n` +
+                `${particles}\n` +
+                `\`┌${'─'.repeat(22)}┐\`\n` +
+                `\`│ ${progressBar} │\` **100%**\n` +
+                `\`└${'─'.repeat(22)}┘\`\n` +
+                `${particles}\n\n` +
+                `${isColorPhase ? `🌟 **${tierName}** 🌟` : '⚡ **PROCESSING...** ⚡'}`
+            )
+            .setColor(isColorPhase ? tierColor : 0xFFFFFF)
+            .addFields({
+                name: '📊 System Status',
+                value: `\`\`\`yaml\nEnhancement Level: 10/10\nPower Stability: OPTIMAL\nThreat Assessment: MAXIMUM\nProtocol Status: ${isColorPhase ? 'ACTIVATED' : 'FINALIZING'}\n\`\`\``,
+                inline: false
+            })
+            .setFooter({ text: `Marine Enhancement Division • ${isColorPhase ? 'Enhancement Active!' : 'Finalizing...'}` })
             .setTimestamp();
         
         return embed;
@@ -198,7 +283,7 @@ module.exports = {
             // PHASE 1: Progress bar loading (0% → 100%)
             for (let frame = 0; frame <= ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
                 const percentage = Math.round((frame / ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
-                const loadingEmbed = ProgressBarAnimator.createLoadingEmbed(percentage);
+                const loadingEmbed = ProgressBarAnimator.createLoadingEmbed(percentage, frame);
                 
                 await interaction.editReply({ embeds: [loadingEmbed] });
                 
