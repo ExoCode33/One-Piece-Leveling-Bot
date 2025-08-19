@@ -40,7 +40,7 @@ const QUESTION_DIFFICULTY_MAP = {
     6: 'Hard'     // Question 6 - Hard
 };
 
-// ✅ PRODUCTION: API configuration that handles AniQuizAPI's metadata format
+// ✅ PRODUCTION: API configuration that correctly handles AniQuizAPI's actual format
 const QUIZ_APIS = [
     {
         name: 'AniQuizAPI',
@@ -48,36 +48,51 @@ const QUIZ_APIS = [
         parser: (data) => {
             console.log('[API DEBUG] Raw AniQuizAPI response:', JSON.stringify(data, null, 2));
             
-            // ✅ FIXED: AniQuizAPI ALWAYS includes metadata alongside quiz data
-            // We need to extract the quiz fields while ignoring the metadata
+            // ✅ FIXED: Handle AniQuizAPI's actual response format
             let question, options, answer, difficulty;
             
-            // Check if this response has quiz data (even with metadata)
-            if (data.question && data.options && data.answer) {
-                // Standard format - extract quiz data, ignore metadata
+            // AniQuizAPI returns data in this format:
+            // { "data": { "question": "...", "correct": "...", "options": [...], "difficulty": "..." }, "creator": "...", ... }
+            if (data.data && data.data.question && data.data.correct && data.data.options) {
+                // ✅ CORRECT: Extract from nested data object with "correct" field
+                question = data.data.question;
+                options = Array.isArray(data.data.options) ? data.data.options : [];
+                answer = data.data.correct; // ✅ FIXED: API uses "correct" not "answer"
+                difficulty = data.data.difficulty || 'Medium';
+                
+                console.log('[API DEBUG] ✅ Extracted quiz data from AniQuizAPI nested format');
+            } else if (data.question && data.correct && data.options) {
+                // Fallback: Direct format with "correct" field
+                question = data.question;
+                options = Array.isArray(data.options) ? data.options : [];
+                answer = data.correct; // ✅ FIXED: API uses "correct" not "answer"
+                difficulty = data.difficulty || 'Medium';
+                
+                console.log('[API DEBUG] ✅ Extracted quiz data from AniQuizAPI direct format');
+            } else if (data.question && data.answer && data.options) {
+                // Standard format with "answer" field (backup)
                 question = data.question;
                 options = Array.isArray(data.options) ? data.options : [];
                 answer = data.answer;
                 difficulty = data.difficulty || 'Medium';
                 
-                console.log('[API DEBUG] Successfully extracted quiz data from AniQuizAPI (ignoring metadata)');
-            } else if (data.data && data.data.question) {
-                // Nested data format
-                question = data.data.question;
-                options = Array.isArray(data.data.options) ? data.data.options : [];
-                answer = data.data.answer;
-                difficulty = data.data.difficulty || 'Medium';
+                console.log('[API DEBUG] ✅ Extracted quiz data from standard format');
             } else if (data.results && Array.isArray(data.results) && data.results.length > 0) {
-                // Results array format
+                // Results array format (backup)
                 const result = data.results[0];
                 question = result.question;
                 options = Array.isArray(result.options) ? result.options : [];
-                answer = result.answer;
+                answer = result.answer || result.correct; // Handle both field names
                 difficulty = result.difficulty || 'Medium';
+                
+                console.log('[API DEBUG] ✅ Extracted quiz data from results array format');
             } else {
-                // ✅ FIXED: Better error message for truly invalid responses
-                console.log('[API DEBUG] No valid quiz data found in AniQuizAPI response');
-                throw new Error('No quiz data found in API response');
+                // ✅ BETTER: Log what fields we actually found
+                const foundFields = Object.keys(data);
+                const dataFields = data.data ? Object.keys(data.data) : [];
+                console.log('[API DEBUG] Available fields:', foundFields);
+                console.log('[API DEBUG] Data fields:', dataFields);
+                throw new Error('No valid quiz data structure found in API response');
             }
             
             // Validate required fields
@@ -86,21 +101,35 @@ const QUIZ_APIS = [
             }
             
             if (!Array.isArray(options) || options.length < 2) {
+                console.log('[API DEBUG] Options validation failed:', { options, isArray: Array.isArray(options), length: options?.length });
                 throw new Error(`Invalid or insufficient options (found ${options?.length || 0}, need at least 2)`);
             }
             
             if (!answer || !answer.trim()) {
-                throw new Error('Missing or empty answer');
+                console.log('[API DEBUG] Answer validation failed:', { answer, type: typeof answer });
+                throw new Error('Missing or empty answer/correct field');
             }
             
             // Ensure answer is in options
             if (!options.includes(answer)) {
-                console.log('[API DEBUG] Answer not found in options, adding it');
-                // If answer not in options, replace last option with correct answer
-                if (options.length > 0) {
-                    options[options.length - 1] = answer;
+                console.log('[API DEBUG] Answer not found in options, checking case sensitivity...');
+                // Try case-insensitive match
+                const answerLower = answer.toLowerCase();
+                const matchingOption = options.find(opt => opt.toLowerCase() === answerLower);
+                
+                if (matchingOption) {
+                    answer = matchingOption; // Use the exact option text
+                    console.log('[API DEBUG] Found case-insensitive match:', matchingOption);
                 } else {
-                    options = [answer, 'Option 2', 'Option 3', 'Option 4'];
+                    console.log('[API DEBUG] Answer not found in options, adding it');
+                    console.log('[API DEBUG] Answer:', answer);
+                    console.log('[API DEBUG] Options:', options);
+                    // If answer not in options, replace last option with correct answer
+                    if (options.length > 0) {
+                        options[options.length - 1] = answer;
+                    } else {
+                        options = [answer, 'Option 2', 'Option 3', 'Option 4'];
+                    }
                 }
             }
             
@@ -113,11 +142,18 @@ const QUIZ_APIS = [
                 options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
             }
             
-            // Clean up options
+            // Clean up options and ensure we have at least 2
             const cleanOptions = options.filter(opt => opt && opt.trim()).slice(0, 4);
             
+            if (cleanOptions.length < 2) {
+                throw new Error(`Insufficient clean options (got ${cleanOptions.length}, need at least 2)`);
+            }
+            
+            // Decode HTML entities in question
+            const decodedQuestion = question.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            
             console.log('[API DEBUG] ✅ Successfully parsed AniQuizAPI question:', { 
-                question: question.substring(0, 50) + '...', 
+                question: decodedQuestion.substring(0, 50) + '...', 
                 optionsCount: cleanOptions.length, 
                 answer, 
                 difficulty,
@@ -125,7 +161,7 @@ const QUIZ_APIS = [
             });
             
             return {
-                question: question.trim(),
+                question: decodedQuestion.trim(),
                 options: cleanOptions,
                 answer: answer.trim(),
                 difficulty: difficulty
