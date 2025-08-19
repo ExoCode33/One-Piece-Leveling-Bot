@@ -1,162 +1,325 @@
-// src/commands/daily-buff.js - White Square Anime Progress with Rarity Flash
+// src/commands/daily-buff.js - API-based Anime Quiz System with Fallback
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-// Animation Configuration
-const ANIME_ANIMATION_CONFIG = {
-    PROGRESS_FRAMES: 25,      // Frames to reach 100%
-    FRAME_DELAY: 180,         // Delay between frames
-    FLASH_COUNT: 3,           // Number of color flashes
-    FLASH_DELAY: 400          // Delay between flashes
-};
-
-// Tier colors and names
+// Tier colors and configurations
 const TIER_COLORS = {
-    1: 0x22C55E, // Green - Common
-    2: 0x3B82F6, // Blue - Rare
-    3: 0x8B5CF6, // Purple - Epic
-    4: 0xF59E0B, // Gold - Legendary
-    5: 0xF97316, // Orange - Mythical
-    6: 0xEF4444  // Red - Transcendent
+    1: 0x22C55E, // Green
+    2: 0x3B82F6, // Blue  
+    3: 0x8B5CF6, // Purple
+    4: 0xF59E0B, // Gold
+    5: 0xF97316, // Orange
+    6: 0xEF4444  // Red
 };
 
 const TIER_NAMES = {
-    1: 'Common Enhancement',
-    2: 'Rare Enhancement',
-    3: 'Epic Enhancement',
-    4: 'Legendary Enhancement',
-    5: 'Mythical Enhancement',
-    6: 'Transcendent Enhancement'
+    1: 'Marine Training',
+    2: 'Enhanced Drill', 
+    3: 'Elite Protocol',
+    4: 'Admiral Focus',
+    5: 'Fleet Command',
+    6: 'World Government Authorization'
 };
 
-const XP_MULTIPLIERS = {
-    1: '1.2x',
-    2: '1.4x',
-    3: '1.6x',
-    4: '1.8x',
-    5: '2.0x',
-    6: '2.5x'
-};
-
-class AnimeProgressBar {
-    
-    // Create anime-style progress bar with white squares
-    static createAnimeProgress(percentage) {
-        const totalBars = 20;
-        const filledBars = Math.floor((percentage / 100) * totalBars);
-        
-        // Use white squares for filled portion, gray squares for empty
-        const filled = '⬜'.repeat(filledBars);          // White squares
-        const empty = '⬛'.repeat(totalBars - filledBars); // Black squares for empty
-        
-        return `[${filled}${empty}]`;
-    }
-    
-    // Create colored flash bar (for the 3 flashes at 100%)
-    static createColoredFlashBar(tier) {
-        const totalBars = 20;
-        
-        // Map tier colors to colored square emojis
-        const colorEmojis = {
-            1: '🟩', // Green
-            2: '🟦', // Blue  
-            3: '🟪', // Purple
-            4: '🟨', // Yellow/Gold
-            5: '🟧', // Orange
-            6: '🟥'  // Red
-        };
-        
-        const coloredSquare = colorEmojis[tier] || '⬜';
-        const filled = coloredSquare.repeat(totalBars);
-        
-        return `[${filled}]`;
-    }
-    
-    // Create loading embed during progress
-    static createLoadingEmbed(percentage) {
-        const progressBar = this.createAnimeProgress(percentage);
-        
-        // Color progression during loading (gray to blue)
-        let color = 0x6B7280; // Gray
-        if (percentage >= 80) color = 0x3B82F6; // Blue
-        else if (percentage >= 60) color = 0x8B5CF6; // Purple
-        else if (percentage >= 40) color = 0xF59E0B; // Orange
-        else if (percentage >= 20) color = 0x10B981; // Green
-        
-        return new EmbedBuilder()
-            .setTitle('⚡ POWER LEVEL RISING...')
-            .setDescription(
-                `${progressBar} **${percentage}%**\n\n` +
-                `**SPIRITUAL PRESSURE BUILDING...**\n` +
-                `**ENERGY SYNCHRONIZATION IN PROGRESS...**\n` +
-                `**TECHNIQUE MASTERY LOADING...**`
-            )
-            .setColor(color)
-            .setTimestamp();
-    }
-    
-    // Create flash embed (for the 3 color flashes)
-    static createFlashEmbed(tier, isFlashOn = true) {
-        const tierColor = TIER_COLORS[tier];
-        const tierName = TIER_NAMES[tier];
-        
-        let progressBar;
-        let embedColor;
-        
-        if (isFlashOn) {
-            // Flash with rarity color
-            progressBar = this.createColoredFlashBar(tier);
-            embedColor = tierColor;
-        } else {
-            // Flash off (back to white)
-            progressBar = this.createAnimeProgress(100);
-            embedColor = 0xFFFFFF; // White
+// API Configuration
+const QUIZ_APIS = [
+    {
+        name: 'AniQuizAPI',
+        url: 'https://aniquizapi.vercel.app/api/quiz',
+        parser: (data) => ({
+            question: data.question,
+            options: data.options,
+            answer: data.answer,
+            difficulty: data.difficulty || 'Medium',
+            source: 'AniQuizAPI'
+        })
+    },
+    {
+        name: 'OpenTDB',
+        url: 'https://opentdb.com/api.php?amount=1&category=31&type=multiple',
+        parser: (data) => {
+            if (!data.results || data.results.length === 0) return null;
+            const q = data.results[0];
+            const options = [...q.incorrect_answers, q.correct_answer];
+            // Shuffle options
+            for (let i = options.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [options[i], options[j]] = [options[j], options[i]];
+            }
+            return {
+                question: q.question.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&"),
+                options: options,
+                answer: q.correct_answer,
+                difficulty: q.difficulty || 'Medium',
+                source: 'OpenTDB'
+            };
         }
-        
-        return new EmbedBuilder()
-            .setTitle('💥 POWER LEVEL: MAXIMUM!')
-            .setDescription(
-                `${progressBar} **100%**\n\n` +
-                `**TECHNIQUE ACQUIRED!**\n` +
-                `**${tierName.toUpperCase()}**\n` +
-                `**SPIRITUAL PRESSURE: OVERWHELMING!**`
-            )
-            .setColor(embedColor)
-            .setTimestamp();
     }
-    
-    // Create final reveal embed
-    static createRevealEmbed(tier) {
-        const progressBar = this.createAnimeProgress(100);
-        const tierColor = TIER_COLORS[tier];
-        const tierName = TIER_NAMES[tier];
-        const xpMultiplier = XP_MULTIPLIERS[tier];
-        const nextReset = getNextResetUnixTimestamp();
+];
+
+// Fallback questions (only 15 for reliability)
+const FALLBACK_QUESTIONS = [
+    {
+        question: "Who is the captain of the Straw Hat Pirates in One Piece?",
+        options: ["Monkey D. Luffy", "Roronoa Zoro", "Nami", "Sanji"],
+        answer: "Monkey D. Luffy",
+        difficulty: "Easy"
+    },
+    {
+        question: "What is Naruto's signature jutsu?",
+        options: ["Chidori", "Rasengan", "Shadow Clone Jutsu", "Byakugan"],
+        answer: "Rasengan",
+        difficulty: "Easy"
+    },
+    {
+        question: "In Attack on Titan, what is Eren's Titan form called?",
+        options: ["Attack Titan", "Colossal Titan", "Female Titan", "Beast Titan"],
+        answer: "Attack Titan",
+        difficulty: "Medium"
+    },
+    {
+        question: "Which anime features the character Light Yagami?",
+        options: ["Death Note", "Tokyo Ghoul", "Code Geass", "Future Diary"],
+        answer: "Death Note",
+        difficulty: "Easy"
+    },
+    {
+        question: "Who is known as 'Humanity's Strongest Soldier' in Attack on Titan?",
+        options: ["Levi Ackerman", "Erwin Smith", "Mikasa Ackerman", "Eren Yeager"],
+        answer: "Levi Ackerman",
+        difficulty: "Easy"
+    },
+    {
+        question: "What is the name of the school in My Hero Academia?",
+        options: ["U.A. High School", "Shiketsu High", "Ketsubutsu Academy", "Seiai Academy"],
+        answer: "U.A. High School",
+        difficulty: "Medium"
+    },
+    {
+        question: "In Dragon Ball Z, what is Goku's Saiyan name?",
+        options: ["Kakarot", "Vegeta", "Raditz", "Bardock"],
+        answer: "Kakarot",
+        difficulty: "Medium"
+    },
+    {
+        question: "Who is the main protagonist of Demon Slayer?",
+        options: ["Tanjiro Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira", "Giyu Tomioka"],
+        answer: "Tanjiro Kamado",
+        difficulty: "Easy"
+    },
+    {
+        question: "What is the name of the notebook in Death Note?",
+        options: ["Death Note", "Life Note", "Fate Note", "Soul Note"],
+        answer: "Death Note",
+        difficulty: "Easy"
+    },
+    {
+        question: "In Fullmetal Alchemist, what is the first law of alchemy?",
+        options: ["Equivalent Exchange", "Conservation of Mass", "Transmutation Circle", "Philosopher's Stone"],
+        answer: "Equivalent Exchange",
+        difficulty: "Medium"
+    },
+    {
+        question: "Who is the Survey Corps commander in Attack on Titan?",
+        options: ["Erwin Smith", "Levi Ackerman", "Hange Zoe", "Keith Shadis"],
+        answer: "Erwin Smith",
+        difficulty: "Medium"
+    },
+    {
+        question: "What is the name of Ichigo's sword in Bleach?",
+        options: ["Zangetsu", "Senbonzakura", "Hyorinmaru", "Ryujin Jakka"],
+        answer: "Zangetsu",
+        difficulty: "Medium"
+    },
+    {
+        question: "In Jujutsu Kaisen, what is Yuji Itadori's curse technique?",
+        options: ["None (he uses Sukuna's power)", "Divergent Fist", "Black Flash", "Cursed Energy Manipulation"],
+        answer: "None (he uses Sukuna's power)",
+        difficulty: "Hard"
+    },
+    {
+        question: "Who is the Flame Hashira in Demon Slayer?",
+        options: ["Kyojuro Rengoku", "Giyu Tomioka", "Tengen Uzui", "Sanemi Shinazugawa"],
+        answer: "Kyojuro Rengoku",
+        difficulty: "Medium"
+    },
+    {
+        question: "What is the name of the virtual reality game in Sword Art Online?",
+        options: ["Sword Art Online", "Alfheim Online", "Gun Gale Online", "Underworld"],
+        answer: "Sword Art Online",
+        difficulty: "Easy"
+    }
+];
+
+class AnimeQuizSystem {
+    // Fetch anime question from APIs with fallback
+    static async fetchAnimeQuestion() {
+        console.log('[ANIME QUIZ] Fetching fresh anime question from APIs...');
         
-        return new EmbedBuilder()
-            .setTitle('✨ AWAKENING COMPLETE')
-            .setDescription(
-                `${progressBar} **MASTERED!**\n\n` +
-                `**${tierName}**\n` +
-                `Power Multiplier: **${xpMultiplier}**\n` +
-                `Next Training: <t:${nextReset}:R>`
-            )
-            .setColor(tierColor)
+        // Try each API in order
+        for (const api of QUIZ_APIS) {
+            try {
+                console.log(`[ANIME QUIZ] Trying ${api.name}...`);
+                
+                const response = await fetch(api.url, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'DiscordBot-AnimeQuiz/1.0',
+                        'Accept': 'application/json'
+                    },
+                    timeout: 5000 // 5 second timeout
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const parsedQuestion = api.parser(data);
+                    
+                    if (parsedQuestion && parsedQuestion.question && parsedQuestion.options && parsedQuestion.answer) {
+                        console.log(`[ANIME QUIZ] ✅ Successfully fetched from ${api.name}`);
+                        return parsedQuestion;
+                    }
+                }
+                
+                console.log(`[ANIME QUIZ] ❌ ${api.name} returned invalid data`);
+            } catch (error) {
+                console.log(`[ANIME QUIZ] ❌ ${api.name} failed:`, error.message);
+            }
+        }
+
+        // All APIs failed, use fallback
+        console.log('[ANIME QUIZ] 🛡️ All APIs failed, using fallback question');
+        const fallbackQuestion = FALLBACK_QUESTIONS[Math.floor(Math.random() * FALLBACK_QUESTIONS.length)];
+        return {
+            ...fallbackQuestion,
+            source: 'Fallback'
+        };
+    }
+
+    // Create quiz embed with question
+    static createQuizEmbed(questionData, userId) {
+        const difficultyEmoji = {
+            'Easy': '🟢',
+            'Medium': '🟡', 
+            'Hard': '🔴'
+        };
+
+        const embed = new EmbedBuilder()
+            .setTitle('🎌 Anime Knowledge Challenge!')
+            .setColor('#FF6B35')
+            .setDescription(`**${questionData.question}**\n\n*Choose the correct answer to earn your daily enhancement!*`)
             .addFields(
                 {
-                    name: '⚔️ New Abilities Unlocked',
-                    value: `Your spiritual pressure has increased!\nXP gains boosted by **${xpMultiplier}**`,
-                    inline: false
+                    name: '📊 Quiz Info',
+                    value: `${difficultyEmoji[questionData.difficulty] || '🟡'} **Difficulty:** ${questionData.difficulty}\n🌐 **Source:** ${questionData.source}\n⏱️ **Time Limit:** 30 seconds`,
+                    inline: true
+                },
+                {
+                    name: '🎯 Reward',
+                    value: `✨ **Daily XP Enhancement**\n🎲 **Random Tier (1-6)**\n⚡ **XP Multiplier Boost**`,
+                    inline: true
                 }
             )
+            .setFooter({ text: 'Marine Intelligence • Anime Knowledge Assessment' })
             .setTimestamp();
+
+        return embed;
+    }
+
+    // Create answer buttons (max 4 options)
+    static createAnswerButtons(questionData, userId) {
+        const buttons = [];
+        const options = questionData.options.slice(0, 4); // Ensure max 4 options
+        const emojis = ['🇦', '🇧', '🇨', '🇩'];
+
+        options.forEach((option, index) => {
+            const isCorrect = option === questionData.answer;
+            const truncatedOption = option.length > 75 ? option.substring(0, 72) + '...' : option;
+            
+            buttons.push(
+                new ButtonBuilder()
+                    .setCustomId(`anime_quiz_${userId}_${index}_${isCorrect}`)
+                    .setLabel(truncatedOption)
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji(emojis[index])
+            );
+        });
+
+        // Create action rows (max 5 buttons per row)
+        const rows = [];
+        for (let i = 0; i < buttons.length; i += 5) {
+            rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+        }
+
+        return rows;
+    }
+
+    // Create result embed after answering
+    static createResultEmbed(isCorrect, questionData, tier, member) {
+        const tierName = TIER_NAMES[tier];
+        const color = isCorrect ? TIER_COLORS[tier] : 0xFF0000;
+        const nextReset = getNextResetUnixTimestamp();
+        
+        // Get power amplification from role settings
+        let powerAmplification = '1.0x';
+        try {
+            const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
+            if (roleId && global.xpBoostManager && member.guild) {
+                powerAmplification = 'From Role Settings';
+            }
+        } catch (error) {
+            console.error('[DAILY BUFF] Error getting role multiplier:', error);
+        }
+
+        if (isCorrect) {
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Correct Answer!')
+                .setColor(color)
+                .setDescription(`**Excellent anime knowledge!** 🎉\n\n**${tierName} Enhancement Activated!**`)
+                .addFields(
+                    {
+                        name: '📚 Quiz Result',
+                        value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty} | **Source:** ${questionData.source}`,
+                        inline: false
+                    },
+                    {
+                        name: '⚡ Enhancement Details',
+                        value: `**Status:** Active\n**Next Reset:** <t:${nextReset}:R>\n**Power Amplification:** ${powerAmplification}`,
+                        inline: false
+                    }
+                )
+                .setFooter({ text: `${tierName} Enhancement Active • Marine Enhancement Division` })
+                .setTimestamp();
+
+            return embed;
+        } else {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Incorrect Answer')
+                .setColor(color)
+                .setDescription(`**Better luck next time!** 📚\n\nNo enhancement earned today.`)
+                .addFields(
+                    {
+                        name: '📚 Quiz Result',
+                        value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty} | **Source:** ${questionData.source}`,
+                        inline: false
+                    },
+                    {
+                        name: '💡 Try Again',
+                        value: `**Next Attempt:** <t:${nextReset}:R>\n**Tip:** Study more anime to improve your chances!\n**Reward:** Daily XP Enhancement`,
+                        inline: false
+                    }
+                )
+                .setFooter({ text: 'Marine Intelligence • Study harder, recruit!' })
+                .setTimestamp();
+
+            return embed;
+        }
     }
 }
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('⚡ Activate daily Power Enhancement (Resets at 3:00 AM EDT)'),
+        .setDescription('🎌 Take the daily anime quiz to earn XP enhancement! Resets at 3:00 AM EST'),
 
     async execute(interaction) {
         try {
@@ -167,110 +330,139 @@ module.exports = {
             // Check if XP tracker is available
             if (!global.xpTracker || !global.xpTracker.db) {
                 return await interaction.reply({
-                    content: '❌ **Training System Offline**\n\nPower Enhancement Protocol not available.',
+                    content: '❌ **Daily Buff System Unavailable**\n\nXP tracking system not initialized.',
                     flags: 64
                 });
             }
 
-            // Check if user already trained today
+            // Check if user already took quiz today
             const hasRolledToday = await this.checkDailyRoll(userId, guildId);
             if (hasRolledToday) {
                 const currentBuff = await this.getCurrentBuff(userId, guildId, member);
                 const nextReset = getNextResetUnixTimestamp();
                 
                 const embed = new EmbedBuilder()
-                    .setColor(TIER_COLORS[currentBuff.tier] || 0x4A90E2)
-                    .setTitle('⚡ Power Already Awakened')
-                    .addFields(
-                        {
-                            name: 'Current Power Level',
-                            value: `**${currentBuff.name}**`,
-                            inline: true
-                        },
-                        {
-                            name: 'Power Multiplier',
-                            value: `**${XP_MULTIPLIERS[currentBuff.tier] || '1.0x'}**`,
-                            inline: true
-                        },
-                        {
-                            name: 'Next Training',
-                            value: `<t:${nextReset}:R>`,
-                            inline: true
-                        }
-                    )
+                    .setColor('#FF6B6B')
+                    .setTitle('🎌 Daily Quiz Already Completed')
+                    .setDescription(`You've already taken today's anime quiz!\n\n**Current Enhancement:** ${currentBuff.name}\n**Status:** ${currentBuff.multiplier}\n\n*Next quiz available: <t:${nextReset}:R>*`)
+                    .setFooter({ text: 'Marine Intelligence • Daily Anime Assessment' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the anime power-up animation
+            // Start the quiz
             await interaction.deferReply();
-            await this.performAnimePowerUpAnimation(interaction, userId, guildId, member);
+            await this.startAnimeQuiz(interaction, userId, guildId, member);
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error:', error);
+            console.error('[DAILY BUFF] Error in daily-buff command:', error);
             
             if (interaction.deferred) {
                 await interaction.editReply({
-                    content: '❌ **Power Enhancement Failed**\n\nSpiritual energy disrupted.'
+                    content: '❌ **Error**\n\nSomething went wrong with the anime quiz system. Please try again.'
                 });
             } else {
                 await interaction.reply({
-                    content: '❌ **Power Enhancement Failed**\n\nSpiritual energy disrupted.',
+                    content: '❌ **Error**\n\nSomething went wrong with the anime quiz system. Please try again.',
                     flags: 64
                 });
             }
         }
     },
 
-    // Anime power-up animation with white squares and color flash
-    async performAnimePowerUpAnimation(interaction, userId, guildId, member) {
-        const finalResult = this.calculateBuffTier();
-        
+    // Start the anime quiz
+    async startAnimeQuiz(interaction, userId, guildId, member) {
         try {
-            console.log(`[DAILY BUFF] Starting anime power-up animation for tier ${finalResult}`);
+            console.log(`[ANIME QUIZ] Starting quiz for ${interaction.user.username}`);
             
-            // Phase 1: Progressive white square filling (0% to 100%)
-            for (let frame = 0; frame <= ANIME_ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
-                const percentage = Math.round((frame / ANIME_ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
-                const loadingEmbed = AnimeProgressBar.createLoadingEmbed(percentage);
-                
-                await interaction.editReply({ embeds: [loadingEmbed] });
-                
-                if (frame < ANIME_ANIMATION_CONFIG.PROGRESS_FRAMES) {
-                    await new Promise(resolve => setTimeout(resolve, ANIME_ANIMATION_CONFIG.FRAME_DELAY));
+            // Fetch anime question from API
+            const questionData = await AnimeQuizSystem.fetchAnimeQuestion();
+            
+            // Create quiz embed and buttons
+            const quizEmbed = AnimeQuizSystem.createQuizEmbed(questionData, userId);
+            const answerButtons = AnimeQuizSystem.createAnswerButtons(questionData, userId);
+            
+            // Send the quiz
+            await interaction.editReply({ 
+                embeds: [quizEmbed], 
+                components: answerButtons 
+            });
+
+            // Set up button collector for answers
+            const message = await interaction.fetchReply();
+            const collector = message.createMessageComponentCollector({ 
+                time: 30000, // 30 seconds
+                filter: (i) => i.user.id === userId && i.customId.startsWith('anime_quiz_')
+            });
+
+            collector.on('collect', async (buttonInteraction) => {
+                try {
+                    await buttonInteraction.deferUpdate();
+                    
+                    // Parse button response
+                    const [, , userIdFromButton, optionIndex, isCorrectStr] = buttonInteraction.customId.split('_');
+                    const isCorrect = isCorrectStr === 'true';
+                    
+                    // Calculate tier based on result
+                    let tier = 1; // Default if wrong
+                    if (isCorrect) {
+                        tier = this.calculateBuffTier();
+                        
+                        // Apply the buff role and save to database
+                        await this.applyBuffRole(userId, guildId, member, tier);
+                    }
+                    
+                    // Create and show result
+                    const resultEmbed = AnimeQuizSystem.createResultEmbed(isCorrect, questionData, tier, member);
+                    
+                    await buttonInteraction.editReply({
+                        embeds: [resultEmbed],
+                        components: [] // Remove buttons
+                    });
+                    
+                    collector.stop();
+                    
+                } catch (error) {
+                    console.error('[ANIME QUIZ] Button interaction error:', error);
+                    await buttonInteraction.editReply({
+                        content: '❌ **Error processing answer**\n\nPlease try the quiz again.',
+                        components: []
+                    });
                 }
-            }
+            });
 
-            // Phase 2: 3 Color flashes at 100%
-            for (let flash = 0; flash < ANIME_ANIMATION_CONFIG.FLASH_COUNT; flash++) {
-                // Flash ON (rarity color)
-                const flashOnEmbed = AnimeProgressBar.createFlashEmbed(finalResult, true);
-                await interaction.editReply({ embeds: [flashOnEmbed] });
-                await new Promise(resolve => setTimeout(resolve, ANIME_ANIMATION_CONFIG.FLASH_DELAY));
-                
-                // Flash OFF (white)
-                const flashOffEmbed = AnimeProgressBar.createFlashEmbed(finalResult, false);
-                await interaction.editReply({ embeds: [flashOffEmbed] });
-                await new Promise(resolve => setTimeout(resolve, ANIME_ANIMATION_CONFIG.FLASH_DELAY));
-            }
+            collector.on('end', async (collected) => {
+                if (collected.size === 0) {
+                    // Timeout - no answer given
+                    const timeoutEmbed = new EmbedBuilder()
+                        .setColor('#FF0000')
+                        .setTitle('⏰ Quiz Timeout!')
+                        .setDescription('**Time\'s up!** You didn\'t answer in time.\n\nNo enhancement earned today.')
+                        .addFields({
+                            name: '💡 Next Attempt',
+                            value: `Try again tomorrow at <t:${getNextResetUnixTimestamp()}:R>`,
+                            inline: false
+                        })
+                        .setFooter({ text: 'Marine Intelligence • Answer faster next time!' })
+                        .setTimestamp();
 
-            // Apply buff
-            await this.applyBuffRole(userId, guildId, member, finalResult);
-            
-            // Phase 3: Final reveal
-            const revealEmbed = AnimeProgressBar.createRevealEmbed(finalResult);
-            await interaction.editReply({ embeds: [revealEmbed] });
+                    await interaction.editReply({
+                        embeds: [timeoutEmbed],
+                        components: []
+                    });
+                }
+            });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Anime power-up animation error:', error);
+            console.error('[ANIME QUIZ] Quiz error:', error);
             await interaction.editReply({
-                content: '❌ **Power Enhancement Failed**\n\nAnimation system malfunction.'
+                content: '❌ **Quiz Error**\n\nFailed to load anime quiz. Please try again.'
             });
         }
     },
 
-    // Calculate which tier to roll
+    // Calculate which tier to award (same probabilities as before)
     calculateBuffTier() {
         const random = Math.random() * 100;
         
@@ -279,26 +471,14 @@ module.exports = {
         else if (random < 85) return 3;   // 15% - Epic
         else if (random < 94) return 4;   // 9% - Legendary
         else if (random < 99) return 5;   // 5% - Mythical
-        else return 6;                    // 1% - Transcendent
+        else return 6;                    // 1% - Divine
     },
 
-    // [Include all the other existing methods: checkDailyRoll, getCurrentBuff, applyBuffRole, etc.]
-    // ... (keeping all existing database methods unchanged)
-
+    // Check if user has already taken quiz today
     async checkDailyRoll(userId, guildId) {
         try {
-            await global.xpTracker.db.query(`
-                CREATE TABLE IF NOT EXISTS daily_buff_rolls (
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    date DATE NOT NULL,
-                    tier INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, guild_id, date)
-                )
-            `);
-
             const currentDay = getCurrentDayKey();
+            
             const result = await global.xpTracker.db.query(
                 'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
                 [userId, guildId, currentDay]
@@ -311,191 +491,110 @@ module.exports = {
         }
     },
 
+    // Get current buff for a user
     async getCurrentBuff(userId, guildId, member) {
-        try {
-            const currentDay = getCurrentDayKey();
-            const dbResult = await global.xpTracker.db.query(
-                'SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [userId, guildId, currentDay]
-            );
-
-            if (dbResult.rows.length > 0) {
-                const tier = dbResult.rows[0].tier;
+        for (let tier = 1; tier <= 6; tier++) {
+            const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
+            if (roleId && member.roles.cache.has(roleId)) {
                 return {
                     tier: tier,
-                    name: TIER_NAMES[tier] || `Tier ${tier}`,
-                    multiplier: XP_MULTIPLIERS[tier] || '1.0x'
+                    name: TIER_NAMES[tier],
+                    multiplier: 'Active'
                 };
             }
-
-            return { tier: 0, name: 'No Enhancement', multiplier: '1.0x' };
-        } catch (error) {
-            console.error('[DAILY BUFF] Error getting current buff:', error);
-            return { tier: 0, name: 'No Enhancement', multiplier: '1.0x' };
         }
+
+        return { tier: 0, name: 'No Enhancement', multiplier: 'None' };
     },
 
+    // Apply the buff role to the user
     async applyBuffRole(userId, guildId, member, tier) {
         try {
+            // Remove any existing buff roles first
             await this.removeAllBuffRoles(member);
+
+            // Add the new buff role
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-            if (roleId && roleId !== `role_id_${tier}`) {
+            if (roleId) {
                 const role = member.guild.roles.cache.get(roleId);
                 if (role) {
-                    await member.roles.add(role, `Daily enhancement tier ${tier} awarded`);
+                    await member.roles.add(role);
+                    console.log(`[DAILY BUFF] ✅ Awarded ${role.name} to ${member.user.username}`);
+                } else {
+                    console.error(`[DAILY BUFF] ❌ Role not found: ${roleId}`);
                 }
+            } else {
+                console.warn(`[DAILY BUFF] ⚠️ No role ID configured for tier ${tier}`);
             }
+
+            // Save to database
             await this.saveBuffRoll(userId, guildId, tier);
+
         } catch (error) {
-            console.error('[DAILY BUFF] Error applying buff:', error);
-            await this.saveBuffRoll(userId, guildId, tier);
+            console.error('[DAILY BUFF] ❌ Error applying buff role:', error);
         }
     },
 
+    // Remove all buff roles from user
     async removeAllBuffRoles(member) {
-        try {
-            for (let i = 1; i <= 6; i++) {
-                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                    const role = member.guild.roles.cache.get(roleId);
-                    if (role) {
-                        await member.roles.remove(role, 'Removing old daily enhancement');
-                    }
+        for (let i = 1; i <= 6; i++) {
+            const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+            if (roleId && member.roles.cache.has(roleId)) {
+                const role = member.guild.roles.cache.get(roleId);
+                if (role) {
+                    await member.roles.remove(role);
+                    console.log(`[DAILY BUFF] Removed ${role.name} from ${member.user.username}`);
                 }
             }
-        } catch (error) {
-            console.error('[DAILY BUFF] Error removing buff roles:', error);
         }
     },
 
+    // Save the buff roll to database
     async saveBuffRoll(userId, guildId, tier) {
         try {
+            // Create table if it doesn't exist
+            await global.xpTracker.db.query(`
+                CREATE TABLE IF NOT EXISTS daily_buff_rolls (
+                    user_id VARCHAR(20) NOT NULL,
+                    guild_id VARCHAR(20) NOT NULL,
+                    date DATE NOT NULL,
+                    tier INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, guild_id, date)
+                )
+            `);
+
             const currentDay = getCurrentDayKey();
+            
             await global.xpTracker.db.query(`
                 INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (user_id, guild_id, date)
                 DO UPDATE SET tier = $4
             `, [userId, guildId, currentDay, tier]);
-        } catch (error) {
-            console.error('[DAILY BUFF] Error saving buff roll:', error);
-            throw error;
-        }
-    },
 
-    // Admin compatibility methods
-    async checkDailyBuffStatus(userId, guildId) {
-        try {
-            const currentDay = getCurrentDayKey();
-            const dbResult = await global.xpTracker.db.query(
-                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [userId, guildId, currentDay]
-            );
-            
-            const hasDBRecord = dbResult.rows.length > 0;
-            const dbTier = hasDBRecord ? dbResult.rows[0].tier : null;
-            
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            const currentRoles = [];
-            if (member) {
-                for (let i = 1; i <= 6; i++) {
-                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const role = member.guild.roles.cache.get(roleId);
-                        currentRoles.push({
-                            tier: i,
-                            roleId: roleId,
-                            roleName: role ? role.name : 'Unknown Role'
-                        });
-                    }
-                }
-            }
-            
-            return { hasDBRecord, dbTier, currentDay, currentRoles, member };
-            
-        } catch (error) {
-            console.error('[DAILY BUFF] Error checking buff status:', error);
-            return {
-                hasDBRecord: false,
-                dbTier: null,
-                currentDay: getCurrentDayKey(),
-                currentRoles: [],
-                member: null,
-                error: error.message
-            };
-        }
-    },
+            console.log(`[DAILY BUFF] ✅ Saved tier ${tier} quiz result for ${userId} on ${currentDay}`);
 
-    async forceRemoveDailyBuff(userId, guildId, reason = 'Admin removal') {
-        try {
-            const currentDay = getCurrentDayKey();
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            let removedRoles = [];
-            let dbRecordsRemoved = 0;
-            
-            if (member) {
-                for (let i = 1; i <= 6; i++) {
-                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const role = member.guild.roles.cache.get(roleId);
-                        if (role) {
-                            try {
-                                await member.roles.remove(role, reason);
-                                removedRoles.push(`${role.name} (Tier ${i})`);
-                            } catch (error) {
-                                console.error(`Failed to remove role ${role.name}:`, error.message);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            const deleteResult = await global.xpTracker.db.query(
-                'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 RETURNING *',
-                [userId, guildId, currentDay]
-            );
-            
-            dbRecordsRemoved = deleteResult.rowCount;
-            
-            return {
-                success: true,
-                removedRoles,
-                dbRecordsRemoved,
-                currentDay,
-                userId,
-                guildId
-            };
-            
         } catch (error) {
-            console.error('[DAILY BUFF ADMIN] Error force removing daily buff:', error);
-            return {
-                success: false,
-                error: error.message,
-                removedRoles: [],
-                dbRecordsRemoved: 0
-            };
+            console.error('[DAILY BUFF] ❌ Error saving buff roll:', error);
         }
     }
 };
 
-// Helper functions
+// Helper functions for timezone handling
 function getCurrentDayKey() {
     const now = new Date();
-    const edtOffset = isEDTDaylightSaving(now) ? -4 : -5;
-    const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
+    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
+    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
     
-    if (edtTime.getHours() < 3) {
-        edtTime.setDate(edtTime.getDate() - 1);
+    if (estTime.getHours() < 3) {
+        estTime.setDate(estTime.getDate() - 1);
     }
     
-    return edtTime.toISOString().split('T')[0];
+    return estTime.toISOString().split('T')[0];
 }
 
-function isEDTDaylightSaving(date) {
+function isESTDaylightSaving(date) {
     const year = date.getFullYear();
     const march = new Date(year, 2, 1);
     const november = new Date(year, 10, 1);
@@ -508,16 +607,16 @@ function isEDTDaylightSaving(date) {
 
 function getNextResetUnixTimestamp() {
     const now = new Date();
-    const edtOffset = isEDTDaylightSaving(now) ? -4 : -5;
-    const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
+    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
+    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
     
-    const nextReset = new Date(edtTime);
+    const nextReset = new Date(estTime);
     nextReset.setHours(3, 0, 0, 0);
     
-    if (edtTime.getHours() >= 3) {
+    if (estTime.getHours() >= 3) {
         nextReset.setDate(nextReset.getDate() + 1);
     }
     
-    const utcReset = new Date(nextReset.getTime() - (edtOffset * 60 * 60 * 1000));
+    const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
     return Math.floor(utcReset.getTime() / 1000);
 }
