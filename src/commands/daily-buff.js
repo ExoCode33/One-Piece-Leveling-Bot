@@ -1,287 +1,7 @@
-// Epic Braille Pattern Daily Buff Animation - Fate/Night Inspired
-// Using braille characters for smooth, detailed explosions
+// src/commands/daily-buff.js - Updated with ASCII Art Animation
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-
-// Animation Configuration for Epic Braille Sequence
-const ANIMATION_CONFIG = {
-    BUILDUP_DELAY: 700,      // Slow buildup for maximum tension
-    EXPLOSION_DELAY: 250,    // Fast explosion frames
-    FINAL_PAUSE: 2000,       // Long pause on final result
-    BUILDUP_FRAMES: 7,       
-    EXPLOSION_FRAMES: 12,    
-    AFTERGLOW_FRAMES: 3      
-};
-
-class BrailleBuffAnimator {
-    
-    // Get tier-specific configuration
-    static getTierConfig(tier) {
-        const configs = {
-            1: { name: 'COMMON', color: 'GREEN', intensity: '⣿' },
-            2: { name: 'RARE', color: 'BLUE', intensity: '⣿' },
-            3: { name: 'EPIC', color: 'PURPLE', intensity: '⣿' },
-            4: { name: 'LEGENDARY', color: 'GOLD', intensity: '⣿' },
-            5: { name: 'MYTHICAL', color: 'ORANGE', intensity: '⣿' },
-            6: { name: 'DIVINE', color: 'RED', intensity: '⣿' }
-        };
-        return configs[tier] || configs[1];
-    }
-
-    // PHASE 1: Initial Energy Detection
-    static createDetectionFrame(frame) {
-        const frames = [
-            // Frame 0: Empty space
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 1: Tiny spark
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 2: Small glow
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⢄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 3: Growing energy
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣾⡆⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 4: Energy expanding
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣪⣷⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⣽⣻⣾⡆⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣯⣿⡷⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠂⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 5: Pre-explosion buildup
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⣪⣷⣿⣾⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣽⣻⣿⣻⣾⡆⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣯⣿⣿⣿⣿⡷⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣯⣿⣿⣿⡷⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⠛⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 6: Critical mass
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠀⡀⢀⠀⢠⠀⠀⠀⠀⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⢠⢤⣀⠀⠀⠈⣆⢧⠈⡆⢸⠀⠀⠀⢰⢡⠇⠀⠀⠀⠀⡀⠀⠀⠀⠀\n" +
-            "⠀⠀⢀⠀⣯⢀⣨⠃⠀⠀⠸⡜⣄⣣⢸⠀⠀⠀⡜⡌⠀⠀⠀⢀⡜⡁⠀⠀⠀⠀\n" +
-            "⠀⠙⢮⡳⢄⠈⠁⠀⢠⠴⠍⣛⣚⣣⢳⢽⡀⣏⣲⣀⢧⡥⠤⠶⢤⣠⢎⠜⠁⠀\n" +
-            "⠠⣀⠀⠙⢦⡑⢄⢀⣾⣧⡎⠁⠀⠙⡎⡇⡇⡇⠹⢪⣀⡓⣦⢀⣼⣵⠋⢀⠴⣊\n" +
-            "⠀⠈⠑⢦⣀⠙⣲⣝⢭⡚⠃⠀⠀⠀⠸⠸⣹⠁⠀⠀⠀⠉⣹⣪⣎⡸⢞⡵⠊⠁\n" +
-            "⠀⠀⠀⠀⠈⣷⢯⣨⠷⣝⠦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠵⣪⢶⣙⡤⠖⢉"
-        ];
-        
-        return frames[Math.min(frame, frames.length - 1)] || frames[0];
-    }
-
-    // PHASE 2: Massive Explosion Sequence
-    static createExplosionFrame(frame) {
-        const explosionFrames = [
-            // Frame 0: Initial burst
-            "⠀⠀⠀⠀⠀⠀⠀⢠⠀⡀⢀⠀⢠⠀⠀⠀⠀⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⢠⢤⣀⠀⠈⣆⢧⠈⡆⢸⠀⠀⠀⢰⢡⠇⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀\n" +
-            "⠀⢀⠀⣯⢀⣨⠃⠀⠸⡜⣄⣣⢸⠀⠀⠀⡜⡌⠀⠀⠀⠀⢀⡜⡁⠀⠀⠀⠀⠀\n" +
-            "⠙⢮⡳⢄⠈⠁⠀⢠⠴⠍⣛⣚⣣⢳⢽⡀⣏⣲⣀⢧⡥⠤⠶⢤⣠⢎⠜⠁⠀⠀\n" +
-            "⠠⣀⠙⢦⡑⢄⢀⣾⣧⡎⠁⠀⠙⡎⡇⡇⡇⠹⢪⣀⡓⣦⢀⣼⣵⠋⢀⠴⣊⠔\n" +
-            "⠀⠈⠑⢦⣀⠙⣲⣝⢭⡚⠃⠀⠀⠸⠸⣹⠁⠀⠀⠀⠉⣹⣪⣎⡸⢞⡵⠊⠁⣀\n" +
-            "⠀⠀⠀⠀⠈⣷⢯⣨⠷⣝⠦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠵⣪⢶⣙⡤⠖⢉⣀",
-
-            // Frame 1: Cross explosion
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
-
-            // Frame 2: Star burst pattern
-            "⠀⠀⠀⣀⠀⠀⠀⠀⣰⣿⣿⣿⣿⣿⣷⡀⠀⠀⠀⠀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⣰⣿⣷⡀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⢀⣾⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⣰⣿⣿⣿⣿⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀",
-
-            // Frame 3: Massive expansion
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
-
-            // Frame 4: Energy waves rippling outward
-            "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤\n" +
-            "⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒\n" +
-            "⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-            "⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿\n" +
-            "⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒\n" +
-            "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤",
-
-            // Frame 5: Crystallization pattern
-            "⠀⠀⠀⠀⠀⠀⠀⢸⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠇⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⢸⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀\n" +
-            "⣀⣀⣀⣀⣸⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀⣀⣀\n" +
-            "⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⠟⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⣿⡿⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⢿⣿⣿⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⢿⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⡿⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 6: Diamond burst pattern
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣸⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⣿⣿⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 7: Spiral energy pattern
-            "⠀⠀⠀⠀⠀⣀⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀\n" +
-            "⢀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀\n" +
-            "⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇⠀⠀⠀⠀\n" +
-            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀",
-
-            // Frame 8: Multiple ring explosions
-            "⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡀\n" +
-            "⣿⣿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⣿⣿\n" +
-            "⣿⠏⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡀⠀⠹⣿\n" +
-            "⡿⠀⣠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣄⠀⢿⡇\n" +
-            "⡇⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⢸⡇\n" +
-            "⣿⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⣿⡇\n" +
-            "⣿⣄⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠏⣠⣿⡇",
-
-            // Frame 9: Swirling vortex
-            "⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣶⣶⣶⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀",
-
-            // Frame 10: Lightning cracks
-            "⠀⢀⠤⢒⡭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⢭⡒⠤⡀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⡠⠊⡴⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⢌⠢⡀⠀⠀⠀⠀⠀⠀\n" +
-            "⢡⡜⠁⠀⢀⡠⠔⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠢⠄⡀⠈⢜⡄⠀⠀⠀⠀⠀\n" +
-            "⡼⠀⡠⠊⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠢⡘⡆⠀⠀⠀⠀\n" +
-            "⡇⡜⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⡸⡄⠀⠀⠀\n" +
-            "⢣⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡜⠀⠀⠀\n" +
-            "⠈⠳⢄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀⠀⠀",
-
-            // Frame 11: Final stabilization pattern
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⣶⣦⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀\n" +
-            "⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀"
-        ];
-        
-        return explosionFrames[Math.min(frame, explosionFrames.length - 1)] || explosionFrames[0];
-    }
-
-    // PHASE 3: Final Result with Tier-Specific Pattern
-    static createFinalResult(tier) {
-        const config = this.getTierConfig(tier);
-        const buffTiers = {
-            1: { name: 'Marine Training', multiplier: 1.1 },
-            2: { name: 'Enhanced Drill', multiplier: 1.2 },
-            3: { name: 'Elite Protocol', multiplier: 1.3 },
-            4: { name: 'Admiral Focus', multiplier: 1.5 },
-            5: { name: 'Fleet Command', multiplier: 1.7 },
-            6: { name: 'World Government Authorization', multiplier: 2.0 }
-        };
-
-        const buff = buffTiers[tier];
-        
-        // Create tier-specific final patterns
-        const patterns = {
-            1: "⠀⠀⠀⠀⢀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⠀⠀⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⠀⠀⠀⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⠀⠀⠀⠀⠀⠉⠛⠛⠛⠛⠛⠛⠛⠛⠛⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-            
-            2: "⠀⠀⠀⢀⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀\n" +
-               "⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀\n" +
-               "⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀\n" +
-               "⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠀⠀⠀⠀\n" +
-               "⠀⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠋⠀⠀⠀⠀⠀⠀",
-            
-            6: "⢠⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⡄\n" +
-               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
-               "⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿"
-        };
-
-        const pattern = patterns[tier] || patterns[1];
-        
-        return `╔═══════════════════════════════════╗\n` +
-               `║        ENHANCEMENT MATRIX         ║\n` +
-               `╠═══════════════════════════════════╣\n` +
-               `║                                   ║\n` +
-               pattern.split('\n').map(line => `║ ${line} ║`).join('\n') + '\n' +
-               `║                                   ║\n` +
-               `║  ${config.name} ENHANCEMENT      ║\n` +
-               `║  ${buff.name.padEnd(29)} ║\n` +
-               `║  MULTIPLIER: ${buff.multiplier}x${' '.repeat(18)} ║\n` +
-               `║                                   ║\n` +
-               `╚═══════════════════════════════════╝`;
-    }
-
-    // Get hex color for embeds
-    static getTierColorHex(tier) {
-        const colors = {
-            1: 0x22C55E, // Green
-            2: 0x3B82F6, // Blue  
-            3: 0x8B5CF6, // Purple
-            4: 0xF59E0B, // Gold
-            5: 0xF97316, // Orange
-            6: 0xEF4444  // Red
-        };
-        return colors[tier] || 0x6B7280;
-    }
-}
+const DailyBuffAsciiAnimator = require('../utils/dailyBuffAsciiArt');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -310,7 +30,7 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor('#FF6B6B')
-                    .setTitle('DAILY BUFF ALREADY CLAIMED')
+                    .setTitle('🎰 DAILY BUFF ALREADY CLAIMED')
                     .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name}\n**Multiplier:** ${currentBuff.multiplier}x XP\n\n*Next reset: <t:${nextReset}:R>*`)
                     .setFooter({ text: 'Marine Intelligence • Daily Buff System' })
                     .setTimestamp();
@@ -318,9 +38,9 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the epic braille animation sequence
+            // Start the ASCII art animation sequence
             await interaction.deferReply();
-            await this.performEpicBrailleAnimation(interaction, userId, guildId, member);
+            await this.performAsciiAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
@@ -338,83 +58,88 @@ module.exports = {
         }
     },
 
-    // Epic braille animation sequence inspired by Fate/Night
-    async performEpicBrailleAnimation(interaction, userId, guildId, member) {
+    // ASCII art animation sequence
+    async performAsciiAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
-        const config = BrailleBuffAnimator.getTierConfig(finalResult);
         
         try {
-            // Phase 1: Energy Detection & Buildup (7 frames)
-            for (let frame = 0; frame < ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
-                const embed = new EmbedBuilder()
-                    .setColor(0x4A90E2)
-                    .setTitle('⚡ MARINE ENHANCEMENT SCANNER')
-                    .setDescription(
-                        `**Detecting mystical enhancement signature...**\n\n\`\`\`\n${BrailleBuffAnimator.createDetectionFrame(frame)}\n\`\`\`\n\n**Energy Reading:** ${Math.round(((frame + 1) / ANIMATION_CONFIG.BUILDUP_FRAMES) * 100)}%\n**Status:** ${frame < 3 ? 'Scanning...' : frame < 5 ? 'Energy detected!' : 'Critical mass approaching!'}`
-                    )
-                    .setFooter({ text: `Phase 1/3 • Detecting ${config.name} enhancement pattern...` })
-                    .setTimestamp();
-                
-                await interaction.editReply({ embeds: [embed] });
-                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BUILDUP_DELAY));
-            }
-
-            // Phase 2: Epic Explosion Sequence (12 frames)
-            for (let frame = 0; frame < ANIMATION_CONFIG.EXPLOSION_FRAMES; frame++) {
-                const embed = new EmbedBuilder()
-                    .setColor(BrailleBuffAnimator.getTierColorHex(finalResult))
-                    .setTitle('💥 ENHANCEMENT MATERIALIZATION')
-                    .setDescription(
-                        `**${config.name} POWER BURST IN PROGRESS!**\n\n\`\`\`\n${BrailleBuffAnimator.createExplosionFrame(frame)}\n\`\`\`\n\n**⚠️ WARNING:** Massive energy discharge detected!\n**Matrix Status:** ${frame < 4 ? 'Initial burst...' : frame < 8 ? 'Full expansion!' : 'Crystallizing...'}`
-                    )
-                    .setFooter({ text: `Phase 2/3 • ${config.name} enhancement materializing...` })
-                    .setTimestamp();
-                
-                await interaction.editReply({ embeds: [embed] });
-                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.EXPLOSION_DELAY));
-            }
-
-            // Phase 3: Final Result with Epic Reveal
-            const buffInfo = this.getBuffTiers()[finalResult];
-            const nextReset = getNextResetUnixTimestamp();
+            // Create the full animation sequence
+            const animationSequence = DailyBuffAsciiAnimator.createAnimationSequence(finalResult);
             
-            const finalEmbed = new EmbedBuilder()
-                .setColor(BrailleBuffAnimator.getTierColorHex(finalResult))
-                .setTitle('✨ MARINE ENHANCEMENT ACQUIRED')
-                .setDescription(
-                    `**Enhancement Matrix Successfully Stabilized!**\n\n\`\`\`\n${BrailleBuffAnimator.createFinalResult(finalResult)}\n\`\`\`\n\n🎉 **Enhancement Complete!** 🎉`
-                )
-                .addFields(
-                    {
-                        name: '🔬 Enhancement Analysis',
-                        value: `**Classification:** ${config.name}\n**Type:** ${buffInfo.name}\n**Power Amplification:** ${buffInfo.multiplier}x\n**Stability:** Fully Crystallized`,
-                        inline: true
-                    },
-                    {
-                        name: '⏰ Operational Window',
-                        value: `**Activated:** Right Now\n**Duration:** Until 3:00 AM EST\n**Next Reset:** <t:${nextReset}:R>\n**Status:** ✅ Active`,
-                        inline: true
-                    },
-                    {
-                        name: '⚡ Enhancement Effects',
-                        value: `🚀 All XP gains boosted by **${buffInfo.multiplier}x**\n🔄 Stacks with other multipliers\n🛡️ Marine training protocols enhanced\n⭐ Active until daily reset`,
-                        inline: false
-                    }
-                )
-                .setFooter({ text: `Phase 3/3 Complete • ${buffInfo.name} Enhancement Active • Marine Enhancement Division` })
-                .setTimestamp();
-
-            await interaction.editReply({ embeds: [finalEmbed] });
+            console.log(`[DAILY BUFF] Starting ASCII animation for ${interaction.user.username}, tier ${finalResult}`);
+            
+            // Play through each frame in the sequence
+            for (let i = 0; i < animationSequence.length; i++) {
+                const sequenceItem = animationSequence[i];
+                
+                // Create embed for this frame
+                const embed = new EmbedBuilder()
+                    .setColor(sequenceItem.color)
+                    .setTitle('⚡ MARINE ENHANCEMENT SCANNER')
+                    .setDescription(DailyBuffAsciiAnimator.createStatusDisplay(sequenceItem, finalResult))
+                    .setFooter({ 
+                        text: `Phase ${sequenceItem.phase === 'detection' ? '1' : sequenceItem.phase === 'explosion' ? '2' : '3'}/3 • ${sequenceItem.phase === 'result' ? 'Enhancement Complete' : 'Processing...'}` 
+                    })
+                    .setTimestamp();
+                
+                // Update the message
+                await interaction.editReply({ embeds: [embed] });
+                
+                // Wait for the specified delay (except for the last frame)
+                if (i < animationSequence.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, sequenceItem.delay));
+                }
+            }
 
             // Apply the buff role and save to database
             await this.applyBuffRole(userId, guildId, member, finalResult);
+            
+            // Create final success embed with enhanced details
+            const finalEmbed = await this.createFinalSuccessEmbed(interaction, finalResult, member);
+            
+            // Wait a moment then show the final result
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await interaction.editReply({ embeds: [finalEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Braille animation error:', error);
+            console.error('[DAILY BUFF] ASCII animation error:', error);
             await interaction.editReply({
                 content: '❌ **Animation Error**\n\nFailed to complete enhancement sequence. Please try again.'
             });
         }
+    },
+
+    // Create enhanced final success embed
+    async createFinalSuccessEmbed(interaction, tier, member) {
+        const config = DailyBuffAsciiAnimator.getTierConfig(tier);
+        const buffInfo = this.getBuffTiers()[tier];
+        const nextReset = getNextResetUnixTimestamp();
+        
+        const embed = new EmbedBuilder()
+            .setColor(DailyBuffAsciiAnimator.getTierColorHex(tier))
+            .setTitle('✨ MARINE ENHANCEMENT ACQUIRED')
+            .setDescription(`**Enhancement Matrix Successfully Stabilized!**\n\n\`\`\`\n${DailyBuffAsciiAnimator.createFinalResult(tier)}\n\`\`\`\n\n🎉 **Enhancement Complete!** 🎉`)
+            .addFields(
+                {
+                    name: '🔬 Enhancement Analysis',
+                    value: `**Classification:** ${config.name}\n**Type:** ${buffInfo.name}\n**Power Amplification:** ${buffInfo.multiplier}x\n**Stability:** Fully Crystallized`,
+                    inline: true
+                },
+                {
+                    name: '⏰ Operational Window',
+                    value: `**Activated:** Right Now\n**Duration:** Until 3:00 AM EST\n**Next Reset:** <t:${nextReset}:R>\n**Status:** ✅ Active`,
+                    inline: true
+                },
+                {
+                    name: '⚡ Enhancement Effects',
+                    value: `🚀 All XP gains boosted by **${buffInfo.multiplier}x**\n🔄 Stacks with other multipliers\n🛡️ Marine training protocols enhanced\n⭐ Active until daily reset`,
+                    inline: false
+                }
+            )
+            .setFooter({ text: `${buffInfo.name} Enhancement Active • Marine Enhancement Division` })
+            .setTimestamp();
+
+        return embed;
     },
 
     // Calculate which tier to roll (weighted probabilities)
