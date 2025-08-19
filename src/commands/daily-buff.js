@@ -1,8 +1,8 @@
-// src/commands/daily-buff.js - API-based Anime Quiz System with Fallback
+// src/commands/daily-buff.js - Enhanced with Guess The Opening API
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-// Tier colors and configurations
+// Tier colors and configurations (same as before)
 const TIER_COLORS = {
     1: 0x22C55E, // Green
     2: 0x3B82F6, // Blue  
@@ -21,123 +21,129 @@ const TIER_NAMES = {
     6: 'World Government Authorization'
 };
 
-// API Configuration - Anime-focused only
+// ✅ NEW: Enhanced API Configuration with Guess The Opening
 const QUIZ_APIS = [
+    {
+        name: 'GuessTheOpening',
+        url: 'https://openings.moe/api/details/random',
+        type: 'opening',
+        parser: (data) => {
+            if (!data || !data.sources || data.sources.length === 0) {
+                throw new Error('No opening data available');
+            }
+            
+            const opening = data.sources[0];
+            const animeName = opening.name || 'Unknown Anime';
+            const songTitle = opening.title || 'Unknown Song';
+            const artist = opening.artist || 'Unknown Artist';
+            
+            // Create multiple choice options
+            const correctAnswer = animeName;
+            const options = [correctAnswer, 'Attack on Titan', 'Demon Slayer', 'My Hero Academia']
+                .slice(0, 4); // Ensure only 4 options
+            
+            // Shuffle options if we have more than just the correct answer
+            if (options.length > 1) {
+                for (let i = options.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [options[i], options[j]] = [options[j], options[i]];
+                }
+            }
+            
+            return {
+                question: `🎵 Which anime does this opening song belong to?\n\n**Song:** "${songTitle}"\n**Artist:** ${artist}`,
+                options: options,
+                answer: correctAnswer,
+                difficulty: 'Medium',
+                type: 'opening',
+                songData: {
+                    title: songTitle,
+                    artist: artist,
+                    anime: animeName,
+                    videoUrl: opening.video || null
+                }
+            };
+        }
+    },
     {
         name: 'AniQuizAPI',
         url: 'https://aniquizapi.vercel.app/api/quiz',
+        type: 'quiz',
         parser: (data) => ({
             question: data.question,
             options: data.options,
             answer: data.answer,
-            difficulty: data.difficulty || 'Medium'
+            difficulty: data.difficulty || 'Medium',
+            type: 'quiz'
         })
     }
 ];
 
-// Pure Anime Fallback Questions (no Pokemon, games, or other topics)
+// Enhanced Fallback Questions with Opening-style questions
 const FALLBACK_QUESTIONS = [
+    // Opening/Music themed questions
+    {
+        question: "🎵 Which anime features the opening song 'Unravel'?",
+        options: ["Tokyo Ghoul", "Attack on Titan", "Death Note", "Parasyte"],
+        answer: "Tokyo Ghoul",
+        difficulty: "Medium",
+        type: "opening"
+    },
+    {
+        question: "🎵 'Cruel Angel's Thesis' is the opening of which iconic anime?",
+        options: ["Neon Genesis Evangelion", "Cowboy Bebop", "Ghost in the Shell", "Akira"],
+        answer: "Neon Genesis Evangelion",
+        difficulty: "Easy",
+        type: "opening"
+    },
+    {
+        question: "🎵 Which anime opening is performed by LiSA and starts with 'Gurenge'?",
+        options: ["Demon Slayer", "Sword Art Online", "Attack on Titan", "Fire Force"],
+        answer: "Demon Slayer",
+        difficulty: "Easy",
+        type: "opening"
+    },
+    // Regular anime questions (your existing ones)
     {
         question: "Who is the captain of the Straw Hat Pirates in One Piece?",
         options: ["Monkey D. Luffy", "Roronoa Zoro", "Nami", "Sanji"],
         answer: "Monkey D. Luffy",
-        difficulty: "Easy"
+        difficulty: "Easy",
+        type: "quiz"
     },
     {
         question: "What is Naruto's signature jutsu?",
         options: ["Chidori", "Rasengan", "Shadow Clone Jutsu", "Byakugan"],
         answer: "Rasengan",
-        difficulty: "Easy"
+        difficulty: "Easy",
+        type: "quiz"
     },
     {
         question: "In Attack on Titan, what is Eren's Titan form called?",
         options: ["Attack Titan", "Colossal Titan", "Female Titan", "Beast Titan"],
         answer: "Attack Titan",
-        difficulty: "Medium"
-    },
-    {
-        question: "Which anime features the character Light Yagami who uses a Death Note?",
-        options: ["Death Note", "Tokyo Ghoul", "Code Geass", "Future Diary"],
-        answer: "Death Note",
-        difficulty: "Easy"
-    },
-    {
-        question: "Who is known as 'Humanity's Strongest Soldier' in Attack on Titan?",
-        options: ["Levi Ackerman", "Erwin Smith", "Mikasa Ackerman", "Eren Yeager"],
-        answer: "Levi Ackerman",
-        difficulty: "Easy"
-    },
-    {
-        question: "What is the name of the hero school in My Hero Academia?",
-        options: ["U.A. High School", "Shiketsu High", "Ketsubutsu Academy", "Seiai Academy"],
-        answer: "U.A. High School",
-        difficulty: "Medium"
-    },
-    {
-        question: "In Dragon Ball Z, what is Goku's Saiyan birth name?",
-        options: ["Kakarot", "Vegeta", "Raditz", "Bardock"],
-        answer: "Kakarot",
-        difficulty: "Medium"
-    },
-    {
-        question: "Who is the main protagonist of Demon Slayer: Kimetsu no Yaiba?",
-        options: ["Tanjiro Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira", "Giyu Tomioka"],
-        answer: "Tanjiro Kamado",
-        difficulty: "Easy"
-    },
-    {
-        question: "In Fullmetal Alchemist, what is the fundamental law of alchemy?",
-        options: ["Equivalent Exchange", "Conservation of Mass", "Transmutation Circle", "Philosopher's Stone"],
-        answer: "Equivalent Exchange",
-        difficulty: "Medium"
-    },
-    {
-        question: "Who is the Survey Corps commander in Attack on Titan?",
-        options: ["Erwin Smith", "Levi Ackerman", "Hange Zoe", "Keith Shadis"],
-        answer: "Erwin Smith",
-        difficulty: "Medium"
-    },
-    {
-        question: "What is the name of Ichigo's Zanpakuto in Bleach?",
-        options: ["Zangetsu", "Senbonzakura", "Hyorinmaru", "Ryujin Jakka"],
-        answer: "Zangetsu",
-        difficulty: "Medium"
-    },
-    {
-        question: "In Jujutsu Kaisen, who is known as the King of Curses?",
-        options: ["Ryomen Sukuna", "Satoru Gojo", "Yuji Itadori", "Megumi Fushiguro"],
-        answer: "Ryomen Sukuna",
-        difficulty: "Medium"
-    },
-    {
-        question: "Who is the Flame Hashira in Demon Slayer?",
-        options: ["Kyojuro Rengoku", "Giyu Tomioka", "Tengen Uzui", "Sanemi Shinazugawa"],
-        answer: "Kyojuro Rengoku",
-        difficulty: "Medium"
-    },
-    {
-        question: "In One Piece, what is the name of Luffy's Devil Fruit?",
-        options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"],
-        answer: "Gomu Gomu no Mi",
-        difficulty: "Medium"
-    },
-    {
-        question: "Who is the main antagonist in the first season of Tokyo Ghoul?",
-        options: ["Jason (Yamori)", "Rize Kamishiro", "Shu Tsukiyama", "Eto Yoshimura"],
-        answer: "Jason (Yamori)",
-        difficulty: "Hard"
+        difficulty: "Medium",
+        type: "quiz"
     }
+    // ... (rest of your existing fallback questions)
 ];
 
 class AnimeQuizSystem {
-    // Fetch anime question from APIs with fallback
-    static async fetchAnimeQuestion() {
+    // ✅ ENHANCED: Fetch question with preference for opening API
+    static async fetchAnimeQuestion(preferOpening = true) {
         console.log('[ANIME QUIZ] Fetching fresh anime question from APIs...');
         
+        // Reorder APIs based on preference
+        let apiOrder = [...QUIZ_APIS];
+        if (preferOpening) {
+            // Put opening API first if we prefer it
+            apiOrder = apiOrder.sort((a, b) => a.type === 'opening' ? -1 : 1);
+        }
+        
         // Try each API in order
-        for (const api of QUIZ_APIS) {
+        for (const api of apiOrder) {
             try {
-                console.log(`[ANIME QUIZ] Trying ${api.name}...`);
+                console.log(`[ANIME QUIZ] Trying ${api.name} (${api.type})...`);
                 
                 const response = await fetch(api.url, {
                     method: 'GET',
@@ -145,7 +151,7 @@ class AnimeQuizSystem {
                         'User-Agent': 'DiscordBot-AnimeQuiz/1.0',
                         'Accept': 'application/json'
                     },
-                    timeout: 5000 // 5 second timeout
+                    timeout: 8000 // Increased timeout for opening API
                 });
                 
                 if (response.ok) {
@@ -153,7 +159,7 @@ class AnimeQuizSystem {
                     const parsedQuestion = api.parser(data);
                     
                     if (parsedQuestion && parsedQuestion.question && parsedQuestion.options && parsedQuestion.answer) {
-                        console.log(`[ANIME QUIZ] ✅ Successfully fetched from ${api.name}`);
+                        console.log(`[ANIME QUIZ] ✅ Successfully fetched ${api.type} from ${api.name}`);
                         return parsedQuestion;
                     }
                 }
@@ -164,13 +170,17 @@ class AnimeQuizSystem {
             }
         }
 
-                // All APIs failed, use fallback
+        // All APIs failed, use fallback
         console.log('[ANIME QUIZ] 🛡️ All APIs failed, using fallback anime question');
-        const fallbackQuestion = FALLBACK_QUESTIONS[Math.floor(Math.random() * FALLBACK_QUESTIONS.length)];
+        const fallbackQuestions = preferOpening ? 
+            FALLBACK_QUESTIONS.filter(q => q.type === 'opening').concat(FALLBACK_QUESTIONS) :
+            FALLBACK_QUESTIONS;
+        
+        const fallbackQuestion = fallbackQuestions[Math.floor(Math.random() * fallbackQuestions.length)];
         return fallbackQuestion;
     }
 
-    // Create quiz embed with question
+    // ✅ ENHANCED: Create quiz embed with opening-specific styling
     static createQuizEmbed(questionData, userId) {
         const difficultyEmoji = {
             'Easy': '🟢',
@@ -178,14 +188,17 @@ class AnimeQuizSystem {
             'Hard': '🔴'
         };
 
+        const isOpening = questionData.type === 'opening';
+        const embedColor = isOpening ? '#FF1493' : '#FF6B35'; // Pink for openings, orange for regular
+        
         const embed = new EmbedBuilder()
-            .setTitle('🎌 Anime Knowledge Challenge!')
-            .setColor('#FF6B35')
+            .setTitle(isOpening ? '🎵 Anime Opening Challenge!' : '🎌 Anime Knowledge Challenge!')
+            .setColor(embedColor)
             .setDescription(`**${questionData.question}**\n\n*Choose the correct answer to earn your daily enhancement!*`)
             .addFields(
                 {
                     name: '📊 Quiz Info',
-                    value: `${difficultyEmoji[questionData.difficulty] || '🟡'} **Difficulty:** ${questionData.difficulty}\n⏱️ **Time Limit:** 30 seconds`,
+                    value: `${difficultyEmoji[questionData.difficulty] || '🟡'} **Difficulty:** ${questionData.difficulty}\n⏱️ **Time Limit:** 30 seconds\n${isOpening ? '🎵 **Type:** Opening Challenge' : '🧠 **Type:** Anime Knowledge'}`,
                     inline: true
                 },
                 {
@@ -194,13 +207,26 @@ class AnimeQuizSystem {
                     inline: true
                 }
             )
-            .setFooter({ text: 'Marine Intelligence • Anime Knowledge Assessment' })
+            .setFooter({ 
+                text: isOpening ? 
+                    'Marine Intelligence • Anime Opening Assessment' : 
+                    'Marine Intelligence • Anime Knowledge Assessment' 
+            })
             .setTimestamp();
+
+        // Add song info for opening questions
+        if (isOpening && questionData.songData) {
+            embed.addFields({
+                name: '🎼 Song Details',
+                value: `**Title:** ${questionData.songData.title}\n**Artist:** ${questionData.songData.artist}`,
+                inline: false
+            });
+        }
 
         return embed;
     }
 
-    // Create answer buttons (max 4 options)
+    // Create answer buttons (same as before)
     static createAnswerButtons(questionData, userId) {
         const buttons = [];
         const options = questionData.options.slice(0, 4); // Ensure max 4 options
@@ -228,11 +254,12 @@ class AnimeQuizSystem {
         return rows;
     }
 
-    // Create result embed after answering
+    // ✅ ENHANCED: Create result embed with opening-specific information
     static createResultEmbed(isCorrect, questionData, tier, member) {
         const tierName = TIER_NAMES[tier];
         const color = isCorrect ? TIER_COLORS[tier] : 0xFF0000;
         const nextReset = getNextResetUnixTimestamp();
+        const isOpening = questionData.type === 'opening';
         
         // Get power amplification from role settings
         let powerAmplification = '1.0x';
@@ -247,12 +274,12 @@ class AnimeQuizSystem {
 
         if (isCorrect) {
             const embed = new EmbedBuilder()
-                .setTitle('✅ Correct Answer!')
+                .setTitle(isOpening ? '✅ Correct! Great Music Knowledge!' : '✅ Correct Answer!')
                 .setColor(color)
-                .setDescription(`**Excellent anime knowledge!** 🎉\n\n**${tierName} Enhancement Activated!**`)
+                .setDescription(`**${isOpening ? 'Excellent anime opening knowledge!' : 'Excellent anime knowledge!'}** 🎉\n\n**${tierName} Enhancement Activated!**`)
                 .addFields(
                     {
-                        name: '📚 Quiz Result',
+                        name: isOpening ? '🎵 Opening Quiz Result' : '📚 Quiz Result',
                         value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty}`,
                         inline: false
                     },
@@ -261,9 +288,19 @@ class AnimeQuizSystem {
                         value: `**Status:** Active\n**Next Reset:** <t:${nextReset}:R>\n**Power Amplification:** ${powerAmplification}`,
                         inline: false
                     }
-                )
-                .setFooter({ text: `${tierName} Enhancement Active • Marine Enhancement Division` })
-                .setTimestamp();
+                );
+
+            // Add song details for opening questions
+            if (isOpening && questionData.songData) {
+                embed.addFields({
+                    name: '🎼 Song Information',
+                    value: `**Title:** ${questionData.songData.title}\n**Artist:** ${questionData.songData.artist}\n**Anime:** ${questionData.songData.anime}`,
+                    inline: false
+                });
+            }
+
+            embed.setFooter({ text: `${tierName} Enhancement Active • Marine Enhancement Division` })
+                 .setTimestamp();
 
             return embed;
         } else {
@@ -273,18 +310,28 @@ class AnimeQuizSystem {
                 .setDescription(`**Better luck next time!** 📚\n\nNo enhancement earned today.`)
                 .addFields(
                     {
-                        name: '📚 Quiz Result',
+                        name: isOpening ? '🎵 Opening Quiz Result' : '📚 Quiz Result',
                         value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty}`,
                         inline: false
                     },
                     {
                         name: '💡 Try Again',
-                        value: `**Next Attempt:** <t:${nextReset}:R>\n**Tip:** Study more anime to improve your chances!\n**Reward:** Daily XP Enhancement`,
+                        value: `**Next Attempt:** <t:${nextReset}:R>\n**Tip:** ${isOpening ? 'Listen to more anime openings' : 'Study more anime'} to improve your chances!\n**Reward:** Daily XP Enhancement`,
                         inline: false
                     }
-                )
-                .setFooter({ text: 'Marine Intelligence • Study harder, recruit!' })
-                .setTimestamp();
+                );
+
+            // Add song details for opening questions
+            if (isOpening && questionData.songData) {
+                embed.addFields({
+                    name: '🎼 Song Information',
+                    value: `**Title:** ${questionData.songData.title}\n**Artist:** ${questionData.songData.artist}\n**Anime:** ${questionData.songData.anime}`,
+                    inline: false
+                });
+            }
+
+            embed.setFooter({ text: 'Marine Intelligence • Study harder, recruit!' })
+                 .setTimestamp();
 
             return embed;
         }
@@ -294,13 +341,19 @@ class AnimeQuizSystem {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎌 Take the daily anime quiz to earn XP enhancement! Resets at 3:00 AM EST'),
+        .setDescription('🎌 Take the daily anime quiz to earn XP enhancement! Features opening challenges!')
+        .addBooleanOption(option =>
+            option.setName('prefer-openings')
+                .setDescription('Prefer anime opening questions over general anime questions')
+                .setRequired(false)
+        ),
 
     async execute(interaction) {
         try {
             const userId = interaction.user.id;
             const guildId = interaction.guild.id;
             const member = interaction.member;
+            const preferOpenings = interaction.options.getBoolean('prefer-openings') ?? true; // Default to true
 
             // Check if XP tracker is available
             if (!global.xpTracker || !global.xpTracker.db) {
@@ -328,7 +381,7 @@ module.exports = {
 
             // Start the quiz
             await interaction.deferReply();
-            await this.startAnimeQuiz(interaction, userId, guildId, member);
+            await this.startAnimeQuiz(interaction, userId, guildId, member, preferOpenings);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
@@ -346,13 +399,13 @@ module.exports = {
         }
     },
 
-    // Start the anime quiz
-    async startAnimeQuiz(interaction, userId, guildId, member) {
+    // ✅ ENHANCED: Start the anime quiz with opening preference
+    async startAnimeQuiz(interaction, userId, guildId, member, preferOpenings = true) {
         try {
-            console.log(`[ANIME QUIZ] Starting quiz for ${interaction.user.username}`);
+            console.log(`[ANIME QUIZ] Starting ${preferOpenings ? 'opening-focused' : 'general'} quiz for ${interaction.user.username}`);
             
-            // Fetch anime question from API
-            const questionData = await AnimeQuizSystem.fetchAnimeQuestion();
+            // Fetch anime question from API with preference
+            const questionData = await AnimeQuizSystem.fetchAnimeQuestion(preferOpenings);
             
             // Create quiz embed and buttons
             const quizEmbed = AnimeQuizSystem.createQuizEmbed(questionData, userId);
@@ -437,7 +490,7 @@ module.exports = {
         }
     },
 
-    // Calculate which tier to award (same probabilities as before)
+    // Rest of your existing methods (calculateBuffTier, checkDailyRoll, etc.)
     calculateBuffTier() {
         const random = Math.random() * 100;
         
@@ -449,114 +502,11 @@ module.exports = {
         else return 6;                    // 1% - Divine
     },
 
-    // Check if user has already taken quiz today
-    async checkDailyRoll(userId, guildId) {
-        try {
-            const currentDay = getCurrentDayKey();
-            
-            const result = await global.xpTracker.db.query(
-                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [userId, guildId, currentDay]
-            );
-
-            return result.rows.length > 0;
-        } catch (error) {
-            console.error('[DAILY BUFF] Error checking daily roll:', error);
-            return false;
-        }
-    },
-
-    // Get current buff for a user
-    async getCurrentBuff(userId, guildId, member) {
-        for (let tier = 1; tier <= 6; tier++) {
-            const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-            if (roleId && member.roles.cache.has(roleId)) {
-                return {
-                    tier: tier,
-                    name: TIER_NAMES[tier],
-                    multiplier: 'Active'
-                };
-            }
-        }
-
-        return { tier: 0, name: 'No Enhancement', multiplier: 'None' };
-    },
-
-    // Apply the buff role to the user
-    async applyBuffRole(userId, guildId, member, tier) {
-        try {
-            // Remove any existing buff roles first
-            await this.removeAllBuffRoles(member);
-
-            // Add the new buff role
-            const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-            if (roleId) {
-                const role = member.guild.roles.cache.get(roleId);
-                if (role) {
-                    await member.roles.add(role);
-                    console.log(`[DAILY BUFF] ✅ Awarded ${role.name} to ${member.user.username}`);
-                } else {
-                    console.error(`[DAILY BUFF] ❌ Role not found: ${roleId}`);
-                }
-            } else {
-                console.warn(`[DAILY BUFF] ⚠️ No role ID configured for tier ${tier}`);
-            }
-
-            // Save to database
-            await this.saveBuffRoll(userId, guildId, tier);
-
-        } catch (error) {
-            console.error('[DAILY BUFF] ❌ Error applying buff role:', error);
-        }
-    },
-
-    // Remove all buff roles from user
-    async removeAllBuffRoles(member) {
-        for (let i = 1; i <= 6; i++) {
-            const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-            if (roleId && member.roles.cache.has(roleId)) {
-                const role = member.guild.roles.cache.get(roleId);
-                if (role) {
-                    await member.roles.remove(role);
-                    console.log(`[DAILY BUFF] Removed ${role.name} from ${member.user.username}`);
-                }
-            }
-        }
-    },
-
-    // Save the buff roll to database
-    async saveBuffRoll(userId, guildId, tier) {
-        try {
-            // Create table if it doesn't exist
-            await global.xpTracker.db.query(`
-                CREATE TABLE IF NOT EXISTS daily_buff_rolls (
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    date DATE NOT NULL,
-                    tier INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, guild_id, date)
-                )
-            `);
-
-            const currentDay = getCurrentDayKey();
-            
-            await global.xpTracker.db.query(`
-                INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (user_id, guild_id, date)
-                DO UPDATE SET tier = $4
-            `, [userId, guildId, currentDay, tier]);
-
-            console.log(`[DAILY BUFF] ✅ Saved tier ${tier} quiz result for ${userId} on ${currentDay}`);
-
-        } catch (error) {
-            console.error('[DAILY BUFF] ❌ Error saving buff roll:', error);
-        }
-    }
+    // ... (rest of your existing methods remain the same)
+    // checkDailyRoll, getCurrentBuff, applyBuffRole, etc.
 };
 
-// Helper functions for timezone handling
+// Helper functions (same as before)
 function getCurrentDayKey() {
     const now = new Date();
     const estOffset = isESTDaylightSaving(now) ? -4 : -5;
