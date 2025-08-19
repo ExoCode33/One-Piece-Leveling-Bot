@@ -1,10 +1,37 @@
-// src/utils/dailyResetManager.js - Fixed Daily Reset System
+// Notify daily reset with improved messaging
+    async notifyDailyReset(newDay, isForced = false, triggeredBy = 'SYSTEM') {
+        try {
+            for (const [guildId, guildSettings] of (global.guildSettings || new Map()).entries()) {
+                if (guildSettings.xpLogEnabled && guildSettings.xpLogChannel) {
+                    try {
+                        const channel = await this.client.channels.fetch(guildSettings.xpLogChannel);
+                        if (channel && channel.isTextBased()) {
+                            const embed = new EmbedBuilder()
+                                .setColor(isForced ? 0xFFFF00 : 0x00FF00)
+                                .setTitle(isForced ? '🚨 MANUAL DAILY RESET COMPLETE' : '🌅 DAILY RESET COMPLETE')
+                                .setDescription(`\`\`\`diff\n${isForced ? '+ MANUAL RESET TRIGGERED' : '+ Daily systems have been reset'}\n+ New tracking day: ${newDay}\n+ Reset time: ${DAILY_RESET_HOUR_EDT}:${DAILY_RESET_MINUTE_EDT.toString().padStart(2, '0')} EDT\n${isForced ? `+ Triggered by: ${triggeredBy}\n` : ''}\`\`\``)
+                                .addFields(
+                                    {
+                                        name: '🎤 Voice XP Reset',
+                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500} XP\nStatus: All daily limits reset\nCache: Completely cleared\nDatabase: All records deleted\n\`\`\``,
+                                        inline: true
+                                    },
+                                    {
+                                        name: '🎰 Daily Buffs Reset',
+                                        value: `\`\`\`yaml\nAll buff roles FORCE removed\nNew rolls available\nCommand: /daily-buff\nDatabase: All records deleted\n\`\`\``,
+                                        inline: true
+                                    }
+                                )
+                                .setFooter({ text: `⚓ Marine Intelligence • ${isForced ? 'Manual' : 'Automatic'} Reset System` })
+                                .setTimestamp();
+                            
+                            await// src/utils/dailyResetManager.js - Fixed Daily Reset System with EDT timezone
 
 const { EmbedBuilder } = require('discord.js');
 
-// CONFIGURABLE RESET TIME (EST)
-const DAILY_RESET_HOUR_EST = parseInt(process.env.DAILY_RESET_HOUR_EST) || 3;
-const DAILY_RESET_MINUTE_EST = parseInt(process.env.DAILY_RESET_MINUTE_EST) || 0;
+// CONFIGURABLE RESET TIME (EDT)
+const DAILY_RESET_HOUR_EDT = parseInt(process.env.DAILY_RESET_HOUR_EDT) || parseInt(process.env.DAILY_RESET_HOUR_EST) || 3;
+const DAILY_RESET_MINUTE_EDT = parseInt(process.env.DAILY_RESET_MINUTE_EDT) || parseInt(process.env.DAILY_RESET_MINUTE_EST) || 0;
 
 class DailyResetManager {
     constructor(xpTracker) {
@@ -20,22 +47,22 @@ class DailyResetManager {
         this.scheduleDailyReset();
     }
 
-    // Get current day based on configurable EST reset time
+    // Get current day based on configurable EDT reset time
     getCurrentDay() {
         const now = new Date();
-        const estOffset = this.isEDT(now) ? -4 : -5;
-        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        const edtOffset = this.isEDT(now) ? -4 : -5;
+        const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
         
-        const currentHour = estTime.getHours();
-        const currentMinute = estTime.getMinutes();
-        const resetTimeInMinutes = (DAILY_RESET_HOUR_EST * 60) + DAILY_RESET_MINUTE_EST;
+        const currentHour = edtTime.getHours();
+        const currentMinute = edtTime.getMinutes();
+        const resetTimeInMinutes = (DAILY_RESET_HOUR_EDT * 60) + DAILY_RESET_MINUTE_EDT;
         const currentTimeInMinutes = (currentHour * 60) + currentMinute;
         
         if (currentTimeInMinutes < resetTimeInMinutes) {
-            estTime.setDate(estTime.getDate() - 1);
+            edtTime.setDate(edtTime.getDate() - 1);
         }
         
-        return estTime.toISOString().split('T')[0];
+        return edtTime.toISOString().split('T')[0];
     }
 
     // Check if date is in Eastern Daylight Time (EDT) - FIXED DST CALCULATION
@@ -104,32 +131,32 @@ class DailyResetManager {
     scheduleDailyReset() {
         const scheduleNext = () => {
             const now = new Date();
-            const estOffset = this.isEDT(now) ? -4 : -5;
-            const estNow = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+            const edtOffset = this.isEDT(now) ? -4 : -5;
+            const edtNow = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
             
             // DEBUG: Show timezone calculation details
             console.log(`[DAILY RESET] Current UTC time: ${now.toISOString()}`);
-            console.log(`[DAILY RESET] EST offset: ${estOffset} hours`);
-            console.log(`[DAILY RESET] Calculated EST time: ${estNow.toISOString().replace('T', ' ').substring(0, 19)} EST`);
+            console.log(`[DAILY RESET] EDT offset: ${edtOffset} hours`);
+            console.log(`[DAILY RESET] Calculated EDT time: ${edtNow.toISOString().replace('T', ' ').substring(0, 19)} EDT`);
             console.log(`[DAILY RESET] Is EDT (Daylight Saving)? ${this.isEDT(now)}`);
             
-            let nextReset = new Date(estNow);
-            nextReset.setHours(DAILY_RESET_HOUR_EST, DAILY_RESET_MINUTE_EST, 0, 0);
+            let nextReset = new Date(edtNow);
+            nextReset.setHours(DAILY_RESET_HOUR_EDT, DAILY_RESET_MINUTE_EDT, 0, 0);
             
-            const currentTimeInMinutes = (estNow.getHours() * 60) + estNow.getMinutes();
-            const resetTimeInMinutes = (DAILY_RESET_HOUR_EST * 60) + DAILY_RESET_MINUTE_EST;
+            const currentTimeInMinutes = (edtNow.getHours() * 60) + edtNow.getMinutes();
+            const resetTimeInMinutes = (DAILY_RESET_HOUR_EDT * 60) + DAILY_RESET_MINUTE_EDT;
             
             if (currentTimeInMinutes >= resetTimeInMinutes) {
                 nextReset.setDate(nextReset.getDate() + 1);
             }
             
-            const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+            const utcReset = new Date(nextReset.getTime() - (edtOffset * 60 * 60 * 1000));
             const timeUntilReset = utcReset.getTime() - now.getTime();
             
             const hoursUntil = Math.floor(timeUntilReset / (1000 * 60 * 60));
             const minutesUntil = Math.floor((timeUntilReset % (1000 * 60 * 60)) / (1000 * 60));
             
-            console.log(`[DAILY RESET] Next reset: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST (${hoursUntil}h ${minutesUntil}m)`);
+            console.log(`[DAILY RESET] Next reset: ${DAILY_RESET_HOUR_EDT}:${DAILY_RESET_MINUTE_EDT.toString().padStart(2, '0')} EDT (${hoursUntil}h ${minutesUntil}m)`);
             console.log(`[DAILY RESET] Next reset UTC: ${utcReset.toISOString()}`);
             
             if (this.resetTimeouts.has('daily')) {
@@ -151,7 +178,7 @@ class DailyResetManager {
     // Perform daily reset - FIXED VERSION
     async performDailyReset() {
         try {
-            console.log(`[DAILY CAP] ⏰ Performing daily reset at ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST...`);
+            console.log(`[DAILY CAP] ⏰ Performing daily reset at ${DAILY_RESET_HOUR_EDT}:${DAILY_RESET_MINUTE_EDT.toString().padStart(2, '0')} EDT...`);
             
             const currentDay = this.getCurrentDay();
             
@@ -159,25 +186,21 @@ class DailyResetManager {
             console.log(`[DAILY CAP] Clearing ALL voice XP cache for new day: ${currentDay}`);
             this.dailyVoiceXP.clear();
             
-            // Reset daily buffs with improved error handling
+            // ✅ FIXED: Reset daily buffs FIRST, then clean database
             await this.resetDailyBuffs();
             
             // Clean up database records with better error handling
             try {
-                const buffDeleteResult = await this.db.query(
-                    'DELETE FROM daily_buff_rolls WHERE date < $1',
-                    [currentDay]
-                );
-                console.log(`[DAILY BUFF] Cleaned up ${buffDeleteResult.rowCount} old daily buff records`);
+                // ✅ FIXED: Delete ALL buff rolls, not just old ones, to ensure complete reset
+                const buffDeleteResult = await this.db.query('DELETE FROM daily_buff_rolls');
+                console.log(`[DAILY BUFF] ✅ AUTO-RESET: Deleted ALL ${buffDeleteResult.rowCount} daily buff records for complete reset`);
             } catch (error) {
                 console.error('[DAILY BUFF] Error cleaning up daily buff database:', error);
             }
             
             // ✅ FIXED: For automatic daily reset, delete ALL voice XP records to ensure complete reset
             try {
-                const voiceDeleteResult = await this.db.query(
-                    'DELETE FROM daily_voice_xp'
-                );
+                const voiceDeleteResult = await this.db.query('DELETE FROM daily_voice_xp');
                 console.log(`[DAILY CAP] ✅ AUTO-RESET: Deleted ALL ${voiceDeleteResult.rowCount} voice XP records for fresh start`);
             } catch (error) {
                 console.error('[DAILY CAP] Error cleaning up voice XP database:', error);
@@ -191,7 +214,7 @@ class DailyResetManager {
         }
     }
 
-    // ✅ FIXED: Reset daily buffs with better error handling and rate limiting
+    // ✅ FIXED: Reset daily buffs with better error handling, rate limiting, and forced role removal
     async resetDailyBuffs() {
         try {
             console.log('[DAILY BUFF] 🔄 Resetting daily buffs for all users...');
@@ -224,29 +247,49 @@ class DailyResetManager {
                     for (const { tier, roleId } of buffRoles) {
                         const role = guild.roles.cache.get(roleId);
                         if (role && role.members.size > 0) {
-                            console.log(`[DAILY BUFF] Removing ${role.name} from ${role.members.size} users in ${guild.name}`);
+                            console.log(`[DAILY BUFF] 🎯 FORCE REMOVING ${role.name} from ${role.members.size} users in ${guild.name}`);
                             
-                            // Process members in smaller batches to avoid rate limits
+                            // ✅ FIXED: Process members in smaller batches with more aggressive error handling
                             const memberArray = Array.from(role.members.values());
-                            const batchSize = 5; // Process 5 members at a time
+                            const batchSize = 3; // Reduced batch size for better reliability
                             
                             for (let i = 0; i < memberArray.length; i += batchSize) {
                                 const batch = memberArray.slice(i, i + batchSize);
                                 
-                                await Promise.all(batch.map(async (member) => {
+                                // ✅ FIXED: Process each member individually with full error handling
+                                for (const member of batch) {
                                     try {
-                                        await member.roles.remove(role, 'Daily reset - removing buff roles');
+                                        console.log(`[DAILY BUFF] 🗑️ Removing ${role.name} from ${member.user.username}...`);
+                                        await member.roles.remove(role, 'Daily reset - force removing all buff roles');
                                         guildUsersReset++;
-                                        console.log(`[DAILY BUFF] ✅ Removed ${role.name} from ${member.user.username}`);
+                                        console.log(`[DAILY BUFF] ✅ Successfully removed ${role.name} from ${member.user.username}`);
                                     } catch (error) {
                                         guildErrors++;
-                                        console.error(`[DAILY BUFF] ❌ Failed to remove role from ${member.user.username}:`, error.message);
+                                        console.error(`[DAILY BUFF] ❌ Failed to remove ${role.name} from ${member.user.username}:`, error.message);
+                                        
+                                        // ✅ FIXED: Try alternative removal method if standard fails
+                                        try {
+                                            console.log(`[DAILY BUFF] 🔄 Retrying removal for ${member.user.username}...`);
+                                            await member.edit({ 
+                                                roles: member.roles.cache.filter(r => r.id !== roleId).map(r => r.id),
+                                                reason: 'Daily reset - force buff role removal (retry method)'
+                                            });
+                                            console.log(`[DAILY BUFF] ✅ Retry successful for ${member.user.username}`);
+                                            guildUsersReset++;
+                                            guildErrors--; // Cancel out the error since retry worked
+                                        } catch (retryError) {
+                                            console.error(`[DAILY BUFF] ❌ Retry also failed for ${member.user.username}:`, retryError.message);
+                                        }
                                     }
-                                }));
+                                    
+                                    // ✅ FIXED: Longer delay between each member to avoid rate limits
+                                    await new Promise(resolve => setTimeout(resolve, 500)); // 500ms per member
+                                }
                                 
                                 // Rate limiting: wait between batches
                                 if (i + batchSize < memberArray.length) {
-                                    await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                                    console.log(`[DAILY BUFF] ⏳ Batch complete, waiting before next batch...`);
+                                    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between batches
                                 }
                             }
                         } else if (role) {
@@ -258,12 +301,15 @@ class DailyResetManager {
                     
                     totalUsersReset += guildUsersReset;
                     totalErrors += guildErrors;
-                    console.log(`[DAILY BUFF] Guild ${guild.name}: ${guildUsersReset} users reset, ${guildErrors} errors`);
+                    console.log(`[DAILY BUFF] Guild ${guild.name} complete: ${guildUsersReset} users reset, ${guildErrors} errors`);
                     
                 } catch (error) {
                     console.error(`[DAILY BUFF] Error resetting buffs in guild ${guild.name}:`, error);
                     totalErrors++;
                 }
+                
+                // ✅ FIXED: Wait between guilds to avoid global rate limits
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
             console.log(`[DAILY BUFF] ✅ Daily buff reset complete - removed roles from ${totalUsersReset} total users, ${totalErrors} errors`);
@@ -322,21 +368,17 @@ class DailyResetManager {
             this.dailyVoiceXP.clear();
             console.log(`[DAILY RESET] Cleared ${beforeCacheSize} voice XP cache entries`);
             
-            // Reset daily buffs
+            // ✅ FIXED: Reset daily buffs FIRST (remove roles before database cleanup)
             await this.resetDailyBuffs();
             
             // Clean up database
             try {
-                const buffDeleteResult = await this.db.query(
-                    'DELETE FROM daily_buff_rolls WHERE date < $1',
-                    [currentDay]
-                );
-                console.log(`[DAILY BUFF] Force deleted ${buffDeleteResult.rowCount} old daily buff records`);
+                // ✅ FIXED: Delete ALL buff rolls for complete reset
+                const buffDeleteResult = await this.db.query('DELETE FROM daily_buff_rolls');
+                console.log(`[DAILY BUFF] ✅ FORCE DELETED ALL ${buffDeleteResult.rowCount} daily buff records for complete reset`);
                 
                 // ✅ FIXED: Delete ALL daily voice XP records for fresh start
-                const voiceDeleteResult = await this.db.query(
-                    'DELETE FROM daily_voice_xp'
-                );
+                const voiceDeleteResult = await this.db.query('DELETE FROM daily_voice_xp');
                 console.log(`[DAILY CAP] ✅ FORCE DELETED ALL ${voiceDeleteResult.rowCount} voice XP records for complete reset`);
                 
             } catch (error) {
@@ -349,6 +391,7 @@ class DailyResetManager {
                 currentDay,
                 cacheCleared: beforeCacheSize,
                 voiceXPRecordsDeleted: true,
+                buffRolesRemoved: true,
                 success: true
             };
             
@@ -396,16 +439,16 @@ class DailyResetManager {
                             const embed = new EmbedBuilder()
                                 .setColor(isForced ? 0xFFFF00 : 0x00FF00)
                                 .setTitle(isForced ? '🚨 MANUAL DAILY RESET COMPLETE' : '🌅 DAILY RESET COMPLETE')
-                                .setDescription(`\`\`\`diff\n${isForced ? '+ MANUAL RESET TRIGGERED' : '+ Daily systems have been reset'}\n+ New tracking day: ${newDay}\n+ Reset time: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST\n${isForced ? `+ Triggered by: ${triggeredBy}\n` : ''}\`\`\``)
+                                .setDescription(`\`\`\`diff\n${isForced ? '+ MANUAL RESET TRIGGERED' : '+ Daily systems have been reset'}\n+ New tracking day: ${newDay}\n+ Reset time: ${DAILY_RESET_HOUR_EDT}:${DAILY_RESET_MINUTE_EDT.toString().padStart(2, '0')} EDT\n${isForced ? `+ Triggered by: ${triggeredBy}\n` : ''}\`\`\``)
                                 .addFields(
                                     {
                                         name: '🎤 Voice XP Reset',
-                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500} XP\nStatus: All daily limits reset\nCache: Completely cleared\n\`\`\``,
+                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500} XP\nStatus: All daily limits reset\nCache: Completely cleared\nDatabase: All records deleted\n\`\`\``,
                                         inline: true
                                     },
                                     {
                                         name: '🎰 Daily Buffs Reset',
-                                        value: `\`\`\`yaml\nAll buff roles removed\nNew rolls available\nCommand: /daily-buff\n\`\`\``,
+                                        value: `\`\`\`yaml\nAll buff roles FORCE removed\nNew rolls available\nCommand: /daily-buff\nDatabase: All records deleted\n\`\`\``,
                                         inline: true
                                     }
                                 )
@@ -440,18 +483,18 @@ class DailyResetManager {
     // 🔍 DEBUG METHOD: Check timezone calculation
     debugTimezone() {
         const now = new Date();
-        const estOffset = this.isEDT(now) ? -4 : -5;
-        const estNow = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        const edtOffset = this.isEDT(now) ? -4 : -5;
+        const edtNow = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
         
         console.log('\n🔍 TIMEZONE DEBUG INFORMATION:');
         console.log(`Server UTC time: ${now.toISOString()}`);
         console.log(`Server local time: ${now.toString()}`);
         console.log(`Is EDT (Daylight Saving)? ${this.isEDT(now)}`);
-        console.log(`EST offset: ${estOffset} hours`);
-        console.log(`Calculated EST time: ${estNow.toISOString().replace('T', ' ').substring(0, 19)}`);
+        console.log(`EDT offset: ${edtOffset} hours`);
+        console.log(`Calculated EDT time: ${edtNow.toISOString().replace('T', ' ').substring(0, 19)}`);
         console.log(`Using built-in timezone: ${now.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
         console.log(`Current day key: ${this.getCurrentDay()}`);
-        console.log(`Reset hour: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST}`);
+        console.log(`Reset hour: ${DAILY_RESET_HOUR_EDT}:${DAILY_RESET_MINUTE_EDT}`);
         
         // Compare with system timezone
         const nyTime = new Date().toLocaleString('en-US', { 
@@ -470,10 +513,10 @@ class DailyResetManager {
         
         return {
             serverUTC: now.toISOString(),
-            calculatedEST: estNow.toISOString(),
+            calculatedEDT: edtNow.toISOString(),
             systemNY: nyTime,
             isEDT: this.isEDT(now),
-            estOffset: estOffset,
+            edtOffset: edtOffset,
             currentDay: this.getCurrentDay()
         };
     }
