@@ -419,97 +419,69 @@ class ProgressiveQuizSystem {
         return fallbackQuestion;
     }
 
-    // ✅ ENHANCED: Create progressive quiz embed with improved layout and RGB colors
-    static createProgressiveQuizEmbed(questionData, questionNumber, userId, timeRemaining = 30) {
+    // ✅ STREAMLINED: Create clean progressive quiz embed with 20s timer
+    static createProgressiveQuizEmbed(questionData, questionNumber, userId, timeRemaining = 20) {
         const difficultyEmoji = {
             'Easy': '🟢',
             'Medium': '🟡', 
             'Hard': '🔴'
         };
 
-        // Enhanced progress visualization
+        // Clean progress visualization
         const progressEmoji = '🔹'.repeat(questionNumber - 1) + '🔸' + '⚪'.repeat(6 - questionNumber);
-        const progressText = `${questionNumber}/6`;
         
-        // ✅ ENHANCED: Advanced 30-second countdown with better visuals
-        const totalTime = 30;
+        // ✅ OPTIMIZED: 20-second countdown with cleaner visuals
+        const totalTime = 20;
         const timeProgress = Math.max(0, Math.min(totalTime, timeRemaining));
-        const progressLength = 15; // Shorter for better mobile display
+        const progressLength = 10; // Shorter for cleaner look
         const filledBars = Math.round((timeProgress / totalTime) * progressLength);
         const emptyBars = progressLength - filledBars;
         
-        // Enhanced color coding with RGB values
-        let timeBarEmoji, timeColor, embedColor;
-        if (timeRemaining > 20) {
+        // Color coding with RGB values
+        let timeBarEmoji, embedColor;
+        if (timeRemaining > 12) {
             timeBarEmoji = '🟩';
-            timeColor = '🟢';
-            embedColor = [46, 204, 113]; // Green - rgb(46, 204, 113)
-        } else if (timeRemaining > 10) {
+            embedColor = [46, 204, 113]; // Green
+        } else if (timeRemaining > 6) {
             timeBarEmoji = '🟨';
-            timeColor = '🟡';
-            embedColor = [255, 165, 0]; // Orange - rgb(255, 165, 0)
+            embedColor = [255, 165, 0]; // Orange
         } else {
             timeBarEmoji = '🟥';
-            timeColor = '🔴';
-            embedColor = [231, 76, 60]; // Red - rgb(231, 76, 60)
+            embedColor = [231, 76, 60]; // Red
         }
         
         const timeBar = timeBarEmoji.repeat(filledBars) + '⬛'.repeat(emptyBars);
         
-        // Current and target tier colors for visual hierarchy
-        const currentTierColor = questionNumber > 1 ? TIER_COLORS[questionNumber - 1] : [156, 163, 175]; // Gray
-        const targetTierColor = TIER_COLORS[questionNumber];
-        
         const embed = new EmbedBuilder()
             .setAuthor({ 
-                name: '🏛️ WORLD GOVERNMENT INTELLIGENCE BUREAU',
-                iconURL: 'https://cdn.discordapp.com/emojis/1234567890123456789.png' // Optional: Add Marine logo
+                name: '🎯 Progressive Anime Challenge'
             })
-            .setTitle(`⚔️ Progressive Anime Knowledge Assessment`)
+            .setTitle(`Question ${questionNumber}/6`)
             .setColor(embedColor)
-            .setDescription(`> **${questionData.question}**\n\n*🎯 Answer correctly to advance, or secure your current progress!*`)
+            .setDescription(`**${questionData.question}**`)
             .addFields(
                 {
-                    name: '📊 Assessment Status',
-                    value: `\`\`\`yaml\nQuestion: ${progressText}\nDifficulty: ${questionData.difficulty}\nProgress: ${progressEmoji}\n\`\`\``,
+                    name: `${difficultyEmoji[questionData.difficulty]} ${questionData.difficulty}`,
+                    value: `${progressEmoji}`,
                     inline: true
                 },
                 {
-                    name: '⏰ Time Pressure',
-                    value: `${timeColor} **${timeRemaining}s**\n\`${timeBar}\`\n*${timeRemaining <= 5 ? '🚨 CRITICAL TIME' : timeRemaining <= 15 ? '⚠️ Time Running Low' : '✅ Adequate Time'}*`,
+                    name: `⏰ ${timeRemaining}s`,
+                    value: `\`${timeBar}\``,
                     inline: true
                 },
                 {
-                    name: '🎖️ Enhancement Tiers',
+                    name: '🎖️ Tiers',
                     value: questionNumber > 1 ? 
-                        `**Current Secured:**\n> 🔒 **Tier ${questionNumber - 1}** - ${TIER_NAMES[questionNumber - 1]}\n> ${TIER_DESCRIPTIONS[questionNumber - 1]}\n\n**Target Advancement:**\n> 🎯 **Tier ${questionNumber}** - ${TIER_NAMES[questionNumber]}\n> ${TIER_DESCRIPTIONS[questionNumber]}` :
-                        `**Target Achievement:**\n> 🎯 **Tier ${questionNumber}** - ${TIER_NAMES[questionNumber]}\n> ${TIER_DESCRIPTIONS[questionNumber]}\n\n*⚠️ Failure grants no enhancement and blocks retry*`,
+                        `**Secured:** ${TIER_NAMES[questionNumber - 1]}\n**Target:** ${TIER_NAMES[questionNumber]}` :
+                        `**Target:** ${TIER_NAMES[questionNumber]}`,
                     inline: false
                 }
             )
             .setFooter({ 
-                text: `Marine Intelligence Division • Progressive Assessment Protocol • Question ${questionNumber}/6`,
-                iconURL: 'https://cdn.discordapp.com/emojis/1234567890123456789.png' // Optional: Small Marine icon
+                text: `Marine Intelligence • Question ${questionNumber}/6`
             })
             .setTimestamp();
-
-        // Add difficulty-specific styling
-        if (questionData.difficulty === 'Hard') {
-            embed.addFields({
-                name: '⚠️ DIFFICULTY WARNING',
-                value: '```diff\n- EXTREME DIFFICULTY DETECTED\n- PROCEED WITH CAUTION\n- HIGH RISK / HIGH REWARD\n```',
-                inline: false
-            });
-        }
-
-        // Add urgency field for low time
-        if (timeRemaining <= 10) {
-            embed.addFields({
-                name: '🚨 URGENT DECISION REQUIRED',
-                value: `\`\`\`ansi\n\u001b[1;31m⚠️ ${timeRemaining} SECONDS REMAINING\n⚠️ ANSWER NOW OR LOSE PROGRESS\u001b[0m\n\`\`\``,
-                inline: false
-            });
-        }
 
         return embed;
     }
@@ -555,41 +527,25 @@ class ProgressiveQuizSystem {
         return rows;
     }
 
-    // ✅ ENHANCED: Create final result embed with improved RGB styling
+    // ✅ STREAMLINED: Create clean result embeds with minimal text
     static createProgressiveResultEmbed(isCorrect, questionData, finalTier, member, questionNumber, stoppedEarly = false) {
         const tierName = finalTier > 0 ? TIER_NAMES[finalTier] : 'No Enhancement';
-        const tierDescription = finalTier > 0 ? TIER_DESCRIPTIONS[finalTier] : '❌ No benefits granted';
         const color = finalTier > 0 ? TIER_COLORS[finalTier] : [156, 163, 175]; // Gray for no tier
         const nextReset = getNextResetUnixTimestamp();
 
         if (stoppedEarly) {
             const embed = new EmbedBuilder()
-                .setAuthor({ 
-                    name: '🏛️ WORLD GOVERNMENT INTELLIGENCE BUREAU'
-                })
-                .setTitle('🛑 Strategic Withdrawal - Enhancement Secured!')
+                .setTitle('🛑 Tier Claimed!')
                 .setColor(color)
-                .setDescription(`> **Tactical decision acknowledged!** 🎖️\n> Your enhancement has been successfully secured and activated.`)
+                .setDescription(`**${tierName}** enhancement secured!`)
                 .addFields(
                     {
-                        name: '📊 Mission Summary',
-                        value: `\`\`\`yaml\nQuestions Completed: ${finalTier}/6\nStrategy: Risk Management\nOutcome: Enhancement Secured\nStatus: SUCCESSFUL OPERATION\n\`\`\``,
-                        inline: false
-                    },
-                    {
-                        name: '🎖️ Enhancement Activated',
-                        value: `**${tierName}**\n${tierDescription}\n\n\`\`\`diff\n+ Enhancement Status: ACTIVE\n+ Authority Level: Tier ${finalTier}\n+ Duration: Until Next Reset\n\`\`\``,
-                        inline: false
-                    },
-                    {
-                        name: '⏰ System Information',
-                        value: `**Next Reset:** <t:${nextReset}:R>\n**Reset Time:** <t:${nextReset}:f>\n**Strategy:** Calculated Risk Management`,
+                        name: '📊 Results',
+                        value: `**Score:** ${finalTier}/6\n**Next Reset:** <t:${nextReset}:R>`,
                         inline: false
                     }
                 )
-                .setFooter({ 
-                    text: `${tierName} Enhancement Active • Marine Enhancement Division • Strategic Success`,
-                })
+                .setFooter({ text: `${tierName} Active • Marine Intelligence` })
                 .setTimestamp();
             return embed;
         }
@@ -597,32 +553,17 @@ class ProgressiveQuizSystem {
         if (isCorrect && finalTier === 6) {
             // Perfect score!
             const embed = new EmbedBuilder()
-                .setAuthor({ 
-                    name: '🏛️ WORLD GOVERNMENT INTELLIGENCE BUREAU'
-                })
-                .setTitle('🏆 PERFECT ASSESSMENT - MAXIMUM CLEARANCE GRANTED!')
+                .setTitle('🏆 PERFECT SCORE!')
                 .setColor(color)
-                .setDescription(`> **EXTRAORDINARY ACHIEVEMENT!** 👑\n> Maximum enhancement tier unlocked with perfect performance!`)
+                .setDescription(`**Maximum tier unlocked!** 👑`)
                 .addFields(
                     {
-                        name: '🎖️ Perfect Performance Record',
-                        value: `**Final Question:** ${questionData.question.substring(0, 80)}${questionData.question.length > 80 ? '...' : ''}\n**Answer:** ${questionData.answer} ✅\n**Difficulty:** ${questionData.difficulty}\n\n\`\`\`ansi\n\u001b[1;33m🏆 PERFECT SCORE: 6/6 QUESTIONS CORRECT\u001b[0m\n\`\`\``,
-                        inline: false
-                    },
-                    {
-                        name: '👑 Maximum Enhancement Granted',
-                        value: `**${tierName}**\n${tierDescription}\n\n\`\`\`diff\n+ Enhancement Status: MAXIMUM TIER ACTIVE\n+ Authority Level: WORLD GOVERNMENT\n+ Achievement: PERFECT SCORE\n+ Special Recognition: ELITE PERFORMANCE\n\`\`\``,
-                        inline: false
-                    },
-                    {
-                        name: '⏰ Elite Status Information',
-                        value: `**Next Reset:** <t:${nextReset}:R>\n**Reset Time:** <t:${nextReset}:f>\n**Achievement:** Perfect Knowledge Assessment`,
+                        name: '🎖️ Achievement',
+                        value: `**Score:** 6/6 Perfect!\n**Enhancement:** ${tierName}\n**Next Reset:** <t:${nextReset}:R>`,
                         inline: false
                     }
                 )
-                .setFooter({ 
-                    text: `${tierName} Enhancement Active • Marine Enhancement Division • Perfect Achievement`,
-                })
+                .setFooter({ text: `${tierName} Active • Perfect Score` })
                 .setTimestamp();
             return embed;
         }
@@ -630,32 +571,17 @@ class ProgressiveQuizSystem {
         if (isCorrect && questionNumber < 6) {
             // Correct answer, continue to next question
             const embed = new EmbedBuilder()
-                .setAuthor({ 
-                    name: '🏛️ WORLD GOVERNMENT INTELLIGENCE BUREAU'
-                })
-                .setTitle('✅ Correct Assessment - Advancement Available!')
+                .setTitle('✅ Correct!')
                 .setColor([46, 204, 113]) // Success green
-                .setDescription(`> **Excellent knowledge demonstrated!** 🎯\n> Choose your strategy: advance for higher tier or secure current progress.`)
+                .setDescription(`**${tierName}** secured! Continue or claim?`)
                 .addFields(
                     {
-                        name: '📚 Assessment Result',
-                        value: `**Question:** ${questionData.question.substring(0, 80)}${questionData.question.length > 80 ? '...' : ''}\n**Your Answer:** ${questionData.answer} ✅\n**Difficulty:** ${questionData.difficulty}\n\n\`\`\`diff\n+ CORRECT RESPONSE CONFIRMED\n+ ADVANCEMENT AUTHORIZED\n\`\`\``,
-                        inline: false
-                    },
-                    {
-                        name: '🎖️ Current Achievement',
-                        value: `**Tier ${questionNumber} Secured:** ${TIER_NAMES[questionNumber]}\n${TIER_DESCRIPTIONS[questionNumber]}\n\n*This tier is now guaranteed regardless of future performance.*`,
-                        inline: false
-                    },
-                    {
-                        name: '🎯 Next Challenge Preview',
-                        value: `**Next Question:** ${questionNumber + 1}/6\n**Difficulty:** ${QUESTION_DIFFICULTY_MAP[questionNumber + 1]}\n**Target Tier:** ${TIER_NAMES[questionNumber + 1]}\n**Reward:** ${TIER_DESCRIPTIONS[questionNumber + 1]}`,
+                        name: '🎯 Choice',
+                        value: `**Next:** Question ${questionNumber + 1}/6 (${QUESTION_DIFFICULTY_MAP[questionNumber + 1]})\n**Secured:** ${tierName}`,
                         inline: false
                     }
                 )
-                .setFooter({ 
-                    text: 'Marine Intelligence • Strategic Decision Point • Choose Wisely',
-                })
+                .setFooter({ text: 'Marine Intelligence • Choose wisely' })
                 .setTimestamp();
             return embed;
         }
@@ -663,37 +589,22 @@ class ProgressiveQuizSystem {
         if (!isCorrect) {
             // Wrong answer - game over
             const embed = new EmbedBuilder()
-                .setAuthor({ 
-                    name: '🏛️ WORLD GOVERNMENT INTELLIGENCE BUREAU'
-                })
-                .setTitle(finalTier > 0 ? '❌ Assessment Failed - Previous Tier Maintained' : '❌ Assessment Failed - No Enhancement Granted')
+                .setTitle(finalTier > 0 ? '❌ Wrong Answer - Previous Tier Applied' : '❌ Quiz Failed')
                 .setColor(color)
                 .setDescription(finalTier > 0 ? 
-                    `> **Mission partially completed.** Your previous achievement is secured.\n> Enhancement **${tierName}** has been activated.` :
-                    `> **Assessment unsuccessful.** No enhancement granted for this period.\n> Study period recommended before next attempt.`)
+                    `**${tierName}** enhancement applied.` :
+                    `No enhancement earned.`)
                 .addFields(
                     {
-                        name: '📚 Final Assessment',
-                        value: `**Question:** ${questionData.question.substring(0, 80)}${questionData.question.length > 80 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty}\n\n\`\`\`ansi\n\u001b[1;31m❌ INCORRECT RESPONSE - ASSESSMENT TERMINATED\u001b[0m\n\`\`\`\n**Final Score:** ${finalTier}/6 questions correct`,
-                        inline: false
-                    },
-                    {
-                        name: finalTier > 0 ? '🎖️ Enhancement Status' : '📖 Study Recommendations',
-                        value: finalTier > 0 ? 
-                            `**${tierName}**\n${tierDescription}\n\n\`\`\`diff\n+ Enhancement Status: ACTIVE\n+ Authority Level: Tier ${finalTier}\n+ Achievement: ${finalTier} Correct Responses\n\`\`\`` :
-                            `**Recommended Focus Areas:**\n• Anime character knowledge\n• Plot understanding\n• Series terminology\n\n\`\`\`yaml\nNext Attempt: Available tomorrow\nStrategy: Enhanced preparation\nGoal: First question success\n\`\`\``,
-                        inline: false
-                    },
-                    {
-                        name: '⏰ Reset Information',
-                        value: `**Next Attempt:** <t:${nextReset}:R>\n**Reset Time:** <t:${nextReset}:f>\n${finalTier > 0 ? '**Status:** Enhancement Active' : '**Status:** Study Period'}`,
+                        name: '📊 Final Results',
+                        value: `**Score:** ${finalTier}/6\n**Correct Answer:** ${questionData.answer}\n**Next Reset:** <t:${nextReset}:R>`,
                         inline: false
                     }
                 )
                 .setFooter({ 
                     text: finalTier > 0 ? 
-                        `${tierName} Enhancement Active • Marine Enhancement Division • Partial Success` : 
-                        'Marine Intelligence • Study Division • Preparation Recommended',
+                        `${tierName} Active • Marine Intelligence` : 
+                        'Marine Intelligence • Try again tomorrow'
                 })
                 .setTimestamp();
             return embed;
@@ -701,9 +612,9 @@ class ProgressiveQuizSystem {
 
         // Fallback
         return new EmbedBuilder()
-            .setTitle('🎌 Assessment Complete')
+            .setTitle('🎌 Quiz Complete')
             .setColor([156, 163, 175]) // Gray
-            .setDescription('Assessment session concluded.')
+            .setDescription('Quiz session concluded.')
             .setTimestamp();
     }
 }
@@ -779,13 +690,13 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Ask a specific question in the progression with live timer
+    // ✅ STREAMLINED: Ask a specific question with 20s timer and cleaner interface
     async askProgressiveQuestion(interaction, userId, guildId, member, questionNumber, currentTier) {
         try {
             const difficulty = QUESTION_DIFFICULTY_MAP[questionNumber];
             const questionData = await ProgressiveQuizSystem.fetchQuestionByDifficulty(difficulty);
             
-            let timeRemaining = 30;
+            let timeRemaining = 20; // ✅ REDUCED: 20 seconds instead of 30
             
             // Create initial quiz embed and buttons
             const quizEmbed = ProgressiveQuizSystem.createProgressiveQuizEmbed(questionData, questionNumber, userId, timeRemaining);
@@ -808,9 +719,9 @@ module.exports = {
                 message = followUp;
             }
 
-            // ✅ NEW: Set up live timer updates every 5 seconds
+            // ✅ OPTIMIZED: Update timer every 4 seconds (smoother for 20s)
             const timerInterval = setInterval(async () => {
-                timeRemaining -= 5;
+                timeRemaining -= 4;
                 
                 if (timeRemaining <= 0) {
                     clearInterval(timerInterval);
@@ -833,11 +744,11 @@ module.exports = {
                     // Error updating, probably answered or deleted
                     clearInterval(timerInterval);
                 }
-            }, 5000); // Update every 5 seconds
+            }, 4000); // Update every 4 seconds for 20s timer
 
             // Set up button collector
             const collector = message.createMessageComponentCollector({ 
-                time: 30000, // 30 seconds total
+                time: 20000, // ✅ REDUCED: 20 seconds total
                 filter: (i) => i.user.id === userId && (i.customId.startsWith('progressive_quiz_') || i.customId.startsWith('progressive_stop_'))
             });
 
@@ -899,11 +810,11 @@ module.exports = {
                                 .addComponents(
                                     new ButtonBuilder()
                                         .setCustomId(`continue_quiz_${userId}_${newTier + 1}`)
-                                        .setLabel(`➡️ Continue to Question ${newTier + 1} (${QUESTION_DIFFICULTY_MAP[newTier + 1]})`)
+                                        .setLabel(`➡️ Continue to Question ${newTier + 1}`)
                                         .setStyle(ButtonStyle.Success),
                                     new ButtonBuilder()
                                         .setCustomId(`claim_tier_${userId}_${newTier}`)
-                                        .setLabel(`🛑 Claim Tier ${newTier} (${TIER_NAMES[newTier]})`)
+                                        .setLabel(`🛑 Claim Tier ${newTier}`)
                                         .setStyle(ButtonStyle.Secondary)
                                 );
                             
@@ -914,7 +825,7 @@ module.exports = {
                             
                             // Set up continue/claim collector
                             const continueCollector = buttonInteraction.message.createMessageComponentCollector({
-                                time: 60000, // 60 seconds to decide
+                                time: 30000, // 30 seconds to decide on continue/claim
                                 filter: (i) => i.user.id === userId && (i.customId.startsWith('continue_quiz_') || i.customId.startsWith('claim_tier_'))
                             });
                             
@@ -1010,17 +921,17 @@ module.exports = {
                     }
                     
                     const timeoutEmbed = new EmbedBuilder()
-                        .setColor('#FF0000')
-                        .setTitle('⏰ Challenge Timeout!')
+                        .setColor([231, 76, 60]) // Red
+                        .setTitle('⏰ Time\'s Up!')
                         .setDescription(finalTier > 0 ? 
-                            `**Time's up!** Your previous tier (${TIER_NAMES[finalTier]}) has been applied.` :
-                            `**Time's up!** No enhancement earned.`)
+                            `Your previous tier (${TIER_NAMES[finalTier]}) has been applied.` :
+                            `No enhancement earned.`)
                         .addFields({
                             name: '💡 Next Attempt',
-                            value: `Try again tomorrow at <t:${getNextResetUnixTimestamp()}:R>`,
+                            value: `<t:${getNextResetUnixTimestamp()}:R>`,
                             inline: false
                         })
-                        .setFooter({ text: 'Marine Intelligence • Answer faster next time!' })
+                        .setFooter({ text: 'Marine Intelligence' })
                         .setTimestamp();
 
                     await message.edit({
