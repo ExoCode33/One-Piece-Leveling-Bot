@@ -1,8 +1,12 @@
-// src/utils/xpTracker.js - Complete XP Tracker for One Piece Leveling Bot with Canvas Support
+// src/utils/xpTracker.js - Complete XP Tracker for One Piece Leveling Bot with Configurable Reset Time
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
 const path = require('path');
+
+// CONFIGURABLE RESET TIME (EST)
+const DAILY_RESET_HOUR_EST = parseInt(process.env.DAILY_RESET_HOUR_EST) || 3; // Default 3 AM EST
+const DAILY_RESET_MINUTE_EST = parseInt(process.env.DAILY_RESET_MINUTE_EST) || 0; // Default 0 minutes
 
 // Register custom fonts at the top of the file
 try {
@@ -22,6 +26,9 @@ class XPTracker {
         this.voiceSessions = new Map();
         this.cooldowns = new Map();
         this.dailyVoiceXP = new Map(); // Format: "userId_guildId_YYYY-MM-DD" -> total XP earned today
+        this.resetTimeouts = new Map(); // Track reset timeouts
+        
+        console.log(`[XP TRACKER] Daily reset configured for ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST`);
         
         this.loadGuildSettingsFromDatabase();
         this.initializeExistingVoiceSessions();
@@ -235,7 +242,7 @@ class XPTracker {
             // Create index for better performance
             await this.db.query('CREATE INDEX IF NOT EXISTS idx_daily_voice_xp_date ON daily_voice_xp(date)');
 
-            // Load today's data (based on EST reset at 3 AM)
+            // Load today's data (based on EST reset at configured time)
             const currentDay = this.getCurrentDay();
             const result = await this.db.query(
                 'SELECT user_id, guild_id, total_xp FROM daily_voice_xp WHERE date = $1',
@@ -256,7 +263,7 @@ class XPTracker {
                 "DELETE FROM daily_voice_xp WHERE date < CURRENT_DATE - INTERVAL '30 days'"
             );
 
-            // Set up daily reset timer for 3 AM EST
+            // Set up daily reset timer for configured time EST
             this.scheduleDailyReset();
 
         } catch (error) {
@@ -264,7 +271,7 @@ class XPTracker {
         }
     }
 
-    // Get current day based on 3 AM EST reset
+    // Get current day based on configurable EST reset time
     getCurrentDay() {
         const now = new Date();
         
@@ -272,12 +279,38 @@ class XPTracker {
         const estOffset = this.isEDT(now) ? -4 : -5; // EDT or EST
         const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
         
-        // If it's before 3 AM EST, consider it the previous day
-        if (estTime.getHours() < 3) {
+        // If it's before the configured reset time EST, consider it the previous day
+        const currentHour = estTime.getHours();
+        const currentMinute = estTime.getMinutes();
+        const resetTimeInMinutes = (DAILY_RESET_HOUR_EST * 60) + DAILY_RESET_MINUTE_EST;
+        const currentTimeInMinutes = (currentHour * 60) + currentMinute;
+        
+        if (currentTimeInMinutes < resetTimeInMinutes) {
             estTime.setDate(estTime.getDate() - 1);
         }
         
         return estTime.toISOString().split('T')[0]; // YYYY-MM-DD format
+    }
+
+    // Get previous day helper method
+    getPreviousDay() {
+        const now = new Date();
+        const estOffset = this.isEDT(now) ? -4 : -5;
+        const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        
+        // Get previous day
+        estTime.setDate(estTime.getDate() - 1);
+        
+        const currentHour = estTime.getHours();
+        const currentMinute = estTime.getMinutes();
+        const resetTimeInMinutes = (DAILY_RESET_HOUR_EST * 60) + DAILY_RESET_MINUTE_EST;
+        const currentTimeInMinutes = (currentHour * 60) + currentMinute;
+        
+        if (currentTimeInMinutes < resetTimeInMinutes) {
+            estTime.setDate(estTime.getDate() - 1);
+        }
+        
+        return estTime.toISOString().split('T')[0];
     }
 
     // Check if date is in Eastern Daylight Time (EDT)
@@ -295,39 +328,510 @@ class XPTracker {
         return date >= marchSecondSunday && date < novemberFirstSunday;
     }
 
-    // Schedule daily reset at 3 AM EST
+    // Enhanced schedule daily reset with configurable time and better logging
     scheduleDailyReset() {
         const scheduleNext = () => {
             const now = new Date();
-            const tomorrow = new Date(now);
-            tomorrow.setDate(tomorrow.getDate() + 1);
             
-            // Set to 3 AM EST
-            const estOffset = this.isEDT(tomorrow) ? -4 : -5;
-            const resetTime = new Date(tomorrow.toISOString().split('T')[0] + 'T03:00:00.000Z');
-            resetTime.setHours(resetTime.getHours() - estOffset); // Convert to UTC
+            // Get current EST time
+            const estOffset = this.isEDT(now) ? -4 : -5;
+            const estNow = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
             
-            const timeUntilReset = resetTime.getTime() - now.getTime();
+            console.log(`[DAILY RESET] Current EST time: ${estNow.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+            console.log(`[DAILY RESET] Current hour EST: ${estNow.getHours()}:${estNow.getMinutes().toString().padStart(2, '0')}`);
             
-            console.log(`[DAILY CAP] Next reset scheduled for: ${resetTime.toISOString()} (in ${Math.round(timeUntilReset / 1000 / 60)} minutes)`);
+            // Calculate next reset time EST
+            let nextReset = new Date(estNow);
+            nextReset.setHours(DAILY_RESET_HOUR_EST, DAILY_RESET_MINUTE_EST, 0, 0);
             
-            setTimeout(async () => {
+            // If it's already past reset time today, schedule for tomorrow
+            const currentTimeInMinutes = (estNow.getHours() * 60) + estNow.getMinutes();
+            const resetTimeInMinutes = (DAILY_RESET_HOUR_EST * 60) + DAILY_RESET_MINUTE_EST;
+            
+            if (currentTimeInMinutes >= resetTimeInMinutes) {
+                nextReset.setDate(nextReset.getDate() + 1);
+            }
+            
+            // Convert back to UTC for setTimeout
+            const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+            const timeUntilReset = utcReset.getTime() - now.getTime();
+            
+            const hoursUntil = Math.floor(timeUntilReset / (1000 * 60 * 60));
+            const minutesUntil = Math.floor((timeUntilReset % (1000 * 60 * 60)) / (1000 * 60));
+            
+            console.log(`[DAILY RESET] Next reset scheduled for: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST on ${nextReset.toDateString()}`);
+            console.log(`[DAILY RESET] Time until reset: ${hoursUntil}h ${minutesUntil}m`);
+            console.log(`[DAILY RESET] UTC reset time: ${utcReset.toISOString()}`);
+            
+            // Clear any existing timeout
+            if (this.resetTimeouts.has('daily')) {
+                clearTimeout(this.resetTimeouts.get('daily'));
+            }
+            
+            // Set timeout
+            const timeoutId = setTimeout(async () => {
+                console.log(`[DAILY RESET] 🚨 AUTOMATIC DAILY RESET TRIGGERED AT ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST 🚨`);
                 await this.performDailyReset();
                 scheduleNext(); // Schedule the next reset
             }, timeUntilReset);
+            
+            this.resetTimeouts.set('daily', timeoutId);
+            
+            // Also log a reminder every hour until reset
+            const reminderInterval = setInterval(() => {
+                const timeLeft = utcReset.getTime() - Date.now();
+                if (timeLeft <= 0) {
+                    clearInterval(reminderInterval);
+                    return roleReward;
+
+        } catch (error) {
+            console.error('Error awarding level roles:', error);
+            return null;
+        }
+    }
+
+    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
+        try {
+            const guildSettings = global.guildSettings?.get(guildId);
+            
+            const logEnabled = guildSettings?.xpLogEnabled === true;
+            if (!logEnabled) return;
+
+            let logChannelId = guildSettings?.xpLogChannel;
+            
+            if (!logChannelId) return;
+
+            const channel = await this.client.channels.fetch(logChannelId).catch(() => null);
+            if (!channel || !channel.isTextBased()) return;
+
+            const formatLevel = (level) => {
+                return level !== undefined && level !== null ? level.toString() : '0';
+            };
+
+            const formatXP = (xp) => {
+                return xp !== undefined && xp !== null ? xp.toLocaleString() : '0';
+            };
+
+            // Get daily voice XP progress for voice activities
+            let dailyProgress = '';
+            if (type === 'voice') {
+                const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000;
+                const currentDay = this.getCurrentDay();
+                const dailyXP = this.getDailyVoiceXP(user.id, guildId, currentDay);
+                const progressPercent = Math.min(100, Math.round((dailyXP / dailyCap) * 100));
+                const progressBar = '█'.repeat(Math.floor(progressPercent / 10)) + '░'.repeat(10 - Math.floor(progressPercent / 10));
+                dailyProgress = `\n- DAILY PROGRESS: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} XP (${progressPercent}%)\n- PROGRESS BAR: [${progressBar}]`;
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTimestamp()
+                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
+
+            switch (type) {
+                case 'message':
+                    embed
+                        .setAuthor({ 
+                            name: '🔴 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('🔴 MESSAGE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
+                    break;
+
+                case 'reaction':
+                    embed
+                        .setAuthor({ 
+                            name: '🔴 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('🔴 REACTION ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
+                    break;
+
+                case 'voice':
+                    embed
+                        .setAuthor({ 
+                            name: '🔴 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('🔴 VOICE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}${dailyProgress}\n\`\`\``);
+                    break;
+
+                case 'levelup':
+                    embed
+                        .setAuthor({ 
+                            name: '🔴 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user.displayAvatarURL({ size: 32 })
+                        })
+                        .setTitle('🔴 ⚠️ THREAT LEVEL INCREASED ⚠️')
+                        .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- LEVEL: ${formatLevel(additionalInfo.oldLevel)} → ${formatLevel(additionalInfo.newLevel)}\n- TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n- XP SOURCE: ${additionalInfo.xpSource || 'UNKNOWN'}\n${additionalInfo.roleReward ? `- ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\`\`\``);
+                    break;
+
+                case 'admin':
+                    embed
+                        .setAuthor({ 
+                            name: '🔴 MARINE COMMAND CENTER',
+                            iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('🔴 MANUAL XP ADJUSTMENT')
+                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username} (${user.id})\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason'}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- NEW LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
+                    break;
+            }
+
+            await channel.send({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('[XP LOG] Failed to send XP log:', error);
+        }
+    }
+
+    // Force daily reset method for manual testing
+    async forceDailyReset(triggeredBy = 'SYSTEM') {
+        try {
+            console.log(`[DAILY RESET] 🚨 FORCE RESET TRIGGERED BY ${triggeredBy} 🚨`);
+            
+            const currentDay = this.getCurrentDay();
+            const previousDay = this.getPreviousDay();
+            
+            // 1. Clear ALL memory cache entries
+            const beforeCacheSize = this.dailyVoiceXP.size;
+            this.dailyVoiceXP.clear();
+            console.log(`[DAILY CAP] ✅ Force cleared ${beforeCacheSize} voice XP cache entries`);
+
+            // 2. Force reset daily buffs
+            await this.resetDailyBuffs();
+            
+            // 3. AGGRESSIVELY clean up database records
+            try {
+                // Clean up ALL old daily buff records
+                const buffDeleteResult = await this.db.query(
+                    'DELETE FROM daily_buff_rolls WHERE date < $1',
+                    [currentDay]
+                );
+                console.log(`[DAILY BUFF] Force deleted ${buffDeleteResult.rowCount} old daily buff records`);
+                
+                // Also clean up old voice XP records
+                const voiceDeleteResult = await this.db.query(
+                    'DELETE FROM daily_voice_xp WHERE date < $1',
+                    [currentDay]
+                );
+                console.log(`[DAILY VOICE] Force deleted ${voiceDeleteResult.rowCount} old voice XP records`);
+                
+            } catch (error) {
+                console.error('[DAILY RESET] Error during force cleanup:', error);
+            }
+            
+            console.log(`[DAILY CAP] 🆕 Force reset complete: ${currentDay} (Previous: ${previousDay})`);
+            
+            // Send notification
+            await this.notifyDailyReset(currentDay, true, triggeredBy);
+            
+            return {
+                currentDay,
+                previousDay,
+                cacheCleared: beforeCacheSize,
+                success: true
+            };
+            
+        } catch (error) {
+            console.error('[DAILY CAP] ❌ Error during force daily reset:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    // Enhanced notify daily reset with force flag
+    async notifyDailyReset(newDay, isForced = false, triggeredBy = 'SYSTEM') {
+        try {
+            const { EmbedBuilder } = require('discord.js');
+            
+            for (const [guildId, guildSettings] of (global.guildSettings || new Map()).entries()) {
+                if (guildSettings.xpLogEnabled && guildSettings.xpLogChannel) {
+                    try {
+                        const channel = await this.client.channels.fetch(guildSettings.xpLogChannel);
+                        if (channel && channel.isTextBased()) {
+                            const embed = new EmbedBuilder()
+                                .setColor(isForced ? 0xFFFF00 : 0x00FF00)
+                                .setTitle(isForced ? '🚨 MANUAL DAILY RESET COMPLETE' : '🌅 DAILY RESET COMPLETE')
+                                .setDescription(`\`\`\`diff\n${isForced ? '+ MANUAL RESET TRIGGERED' : '+ Daily systems have been reset'}\n+ New tracking day: ${newDay}\n+ Reset time: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST\n${isForced ? `+ Triggered by: ${triggeredBy}\n` : ''}\`\`\``)
+                                .addFields(
+                                    {
+                                        name: '🎤 Voice XP Reset',
+                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000} XP\nStatus: All daily limits reset\n\`\`\``,
+                                        inline: true
+                                    },
+                                    {
+                                        name: '🎰 Daily Buffs Reset',
+                                        value: `\`\`\`yaml\nAll buff roles removed\nNew rolls available\nCommand: /daily-buff\n\`\`\``,
+                                        inline: true
+                                    },
+                                    {
+                                        name: '⏰ Next Reset',
+                                        value: `\`\`\`yaml\nScheduled: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST tomorrow\nConfigurable via: DAILY_RESET_HOUR_EST\n\`\`\``,
+                                        inline: false
+                                    }
+                                )
+                                .setFooter({ text: `⚓ Marine Intelligence • ${isForced ? 'Manual' : 'Automatic'} Reset System` })
+                                .setTimestamp();
+                            
+                            await channel.send({ embeds: [embed] });
+                        }
+                    } catch (error) {
+                        // Silently fail for individual guilds
+                        console.log(`[DAILY CAP] Could not notify guild ${guildId}:`, error.message);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[DAILY CAP] Error sending reset notifications:', error);
+        }
+    }
+
+    // Utility methods
+    async getLeaderboard(guildId, page = 1, limit = 10) {
+        try {
+            const offset = (page - 1) * limit;
+            
+            const result = await this.db.query(`
+                SELECT user_id, total_xp, level, messages, reactions, voice_time
+                FROM user_levels 
+                WHERE guild_id = $1 
+                ORDER BY total_xp DESC 
+                LIMIT $2 OFFSET $3
+            `, [guildId, limit, offset]);
+
+            const countResult = await this.db.query(
+                'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
+                [guildId]
+            );
+
+            const totalUsers = parseInt(countResult.rows[0].count);
+            const totalPages = Math.ceil(totalUsers / limit);
+
+            return {
+                users: result.rows.map((row, index) => ({
+                    userId: row.user_id,
+                    totalXP: row.total_xp,
+                    level: row.level,
+                    messages: row.messages,
+                    reactions: row.reactions,
+                    voiceTime: row.voice_time,
+                    rank: offset + index + 1
+                })),
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    totalUsers,
+                    hasNextPage: page < totalPages,
+                    hasPreviousPage: page > 1
+                }
+            };
+
+        } catch (error) {
+            console.error('Error getting leaderboard:', error);
+            throw error;
+        }
+    }
+
+    async getUserRank(userId, guildId) {
+        try {
+            const result = await this.db.query(`
+                SELECT COUNT(*) + 1 as rank
+                FROM user_levels 
+                WHERE guild_id = $1 AND total_xp > (
+                    SELECT total_xp FROM user_levels 
+                    WHERE user_id = $2 AND guild_id = $1
+                )
+            `, [guildId, userId]);
+            
+            return parseInt(result.rows[0].rank);
+        } catch (error) {
+            console.error('Error getting user rank:', error);
+            return null;
+        }
+    }
+
+    async getUserStats(userId, guildId) {
+        try {
+            const result = await this.db.query(`
+                SELECT user_id, guild_id, total_xp, level, messages, reactions, voice_time, 
+                       created_at, updated_at
+                FROM user_levels 
+                WHERE user_id = $1 AND guild_id = $2
+            `, [userId, guildId]);
+            
+            if (result.rows.length === 0) {
+                return null;
+            }
+            
+            return result.rows[0];
+        } catch (error) {
+            console.error('Error getting user stats:', error);
+            throw error;
+        }
+    }
+
+    getXPForLevel(level) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+        
+        let xpRequired;
+        
+        if (curve === 'exponential') {
+            xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
+        } else if (curve === 'linear') {
+            xpRequired = baseXP * level * multiplier;
+        } else if (curve === 'logarithmic') {
+            xpRequired = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+        } else {
+            xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
+        }
+        
+        return xpRequired;
+    }
+
+    getRandomXP(type) {
+        let min, max;
+        
+        switch (type) {
+            case 'message':
+                min = parseInt(process.env.MESSAGE_XP_MIN) || 25;
+                max = parseInt(process.env.MESSAGE_XP_MAX) || 35;
+                break;
+            case 'voice':
+                min = parseInt(process.env.VOICE_XP_MIN) || 45;
+                max = parseInt(process.env.VOICE_XP_MAX) || 55;
+                break;
+            case 'reaction':
+                min = parseInt(process.env.REACTION_XP_MIN) || 25;
+                max = parseInt(process.env.REACTION_XP_MAX) || 35;
+                break;
+            default:
+                min = 25;
+                max = 35;
+        }
+        
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    calculateLevel(totalXP) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+
+        for (let level = 1; level <= maxLevel; level++) {
+            let requiredXP;
+            
+            if (curve === 'exponential') {
+                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
+            } else if (curve === 'linear') {
+                requiredXP = baseXP * level * multiplier;
+            } else if (curve === 'logarithmic') {
+                requiredXP = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+            } else {
+                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
+            }
+
+            if (totalXP < requiredXP) {
+                return level - 1;
+            }
+        }
+
+        return maxLevel;
+    }
+
+    isOnCooldown(key, cooldownMs) {
+        const now = Date.now();
+        const lastUse = this.cooldowns.get(key);
+        return lastUse && (now - lastUse) < cooldownMs;
+    }
+
+    setCooldown(key) {
+        this.cooldowns.set(key, Date.now());
+    }
+
+    // Get next reset time as Unix timestamp for Discord formatting
+    getNextResetUnixTimestamp() {
+        const now = new Date();
+        const estOffset = this.isEDT(now) ? -4 : -5;
+        const estNow = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        
+        let nextReset = new Date(estNow);
+        nextReset.setHours(DAILY_RESET_HOUR_EST, DAILY_RESET_MINUTE_EST, 0, 0);
+        
+        // If it's already past reset time today, schedule for tomorrow
+        const currentTimeInMinutes = (estNow.getHours() * 60) + estNow.getMinutes();
+        const resetTimeInMinutes = (DAILY_RESET_HOUR_EST * 60) + DAILY_RESET_MINUTE_EST;
+        
+        if (currentTimeInMinutes >= resetTimeInMinutes) {
+            nextReset.setDate(nextReset.getDate() + 1);
+        }
+        
+        // Convert back to UTC for Discord timestamp
+        const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+        return Math.floor(utcReset.getTime() / 1000);
+    }
+
+    // Get current reset time info
+    getResetTimeInfo() {
+        const now = new Date();
+        const estOffset = this.isEDT(now) ? -4 : -5;
+        const estNow = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        
+        return {
+            resetHour: DAILY_RESET_HOUR_EST,
+            resetMinute: DAILY_RESET_MINUTE_EST,
+            resetTimeString: `${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST`,
+            currentESTTime: estNow.toLocaleString('en-US', { timeZone: 'America/New_York' }),
+            currentDay: this.getCurrentDay(),
+            nextResetUnix: this.getNextResetUnixTimestamp(),
+            isDST: this.isEDT(now)
+        };
+    }
+
+    async cleanup() {
+        // Clear all timeouts
+        for (const [key, timeoutId] of this.resetTimeouts.entries()) {
+            clearTimeout(timeoutId);
+            console.log(`[CLEANUP] Cleared timeout: ${key}`);
+        }
+        
+        this.voiceSessions.clear();
+        this.cooldowns.clear();
+        this.dailyVoiceXP.clear();
+        this.resetTimeouts.clear();
+        
+        console.log('[XP TRACKER] Cleanup complete');
+    }
+}
+
+module.exports = XPTracker;;
+                }
+                
+                const hoursLeft = Math.floor(timeLeft / (1000 * 60 * 60));
+                const minutesLeft = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+                console.log(`[DAILY RESET] ⏰ Reset reminder: ${hoursLeft}h ${minutesLeft}m until automatic daily reset at ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST`);
+            }, 60 * 60 * 1000); // Every hour
         };
         
         scheduleNext();
     }
 
-    // Perform daily reset (now includes buff reset)
+    // Enhanced daily reset with proper database cleanup
     async performDailyReset() {
         try {
-            console.log('[DAILY CAP] ⏰ Performing daily reset at 3 AM EST...');
+            console.log(`[DAILY CAP] ⏰ Performing daily reset at ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST...`);
             
             const currentDay = this.getCurrentDay();
+            const previousDay = this.getPreviousDay();
             
-            // Clear memory cache for previous day voice XP
+            // 1. Clear memory cache for previous day voice XP
             const keysToDelete = [];
             for (const [key] of this.dailyVoiceXP.entries()) {
                 if (!key.includes(currentDay)) {
@@ -336,13 +840,23 @@ class XPTracker {
             }
             
             keysToDelete.forEach(key => this.dailyVoiceXP.delete(key));
-            
             console.log(`[DAILY CAP] ✅ Voice XP reset complete - cleared ${keysToDelete.length} cached entries`);
 
-            // Reset daily buffs - remove all buff roles from all users
+            // 2. Reset daily buffs - remove all buff roles from all users
             await this.resetDailyBuffs();
             
-            console.log(`[DAILY CAP] 🆕 New day started: ${currentDay}`);
+            // 3. FIXED: Clean up database records for daily buffs
+            try {
+                const buffDeleteResult = await this.db.query(
+                    'DELETE FROM daily_buff_rolls WHERE date < $1',
+                    [currentDay]
+                );
+                console.log(`[DAILY BUFF] Cleaned up ${buffDeleteResult.rowCount} old daily buff records`);
+            } catch (error) {
+                console.error('[DAILY BUFF] Error cleaning up daily buff database:', error);
+            }
+            
+            console.log(`[DAILY CAP] 🆕 New day started: ${currentDay} (Previous: ${previousDay})`);
             
             // Optional: Send reset notification to log channels
             await this.notifyDailyReset(currentDay);
@@ -413,7 +927,7 @@ class XPTracker {
         }
     }
 
-    // Notify about daily reset in log channels (updated with buff info)
+    // Notify about daily reset in log channels (updated with configurable time and buff info)
     async notifyDailyReset(newDay) {
         try {
             const { EmbedBuilder } = require('discord.js');
@@ -426,7 +940,7 @@ class XPTracker {
                             const embed = new EmbedBuilder()
                                 .setColor(0x00FF00)
                                 .setTitle('🌅 DAILY RESET COMPLETE')
-                                .setDescription(`\`\`\`diff\n+ Daily systems have been reset\n+ New tracking day: ${newDay}\n+ Reset time: 3:00 AM EST\n\`\`\``)
+                                .setDescription(`\`\`\`diff\n+ Daily systems have been reset\n+ New tracking day: ${newDay}\n+ Reset time: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST\n\`\`\``)
                                 .addFields(
                                     {
                                         name: '🎤 Voice XP Reset',
@@ -437,6 +951,11 @@ class XPTracker {
                                         name: '🎰 Daily Buffs Reset',
                                         value: `\`\`\`yaml\nAll buff roles removed\nNew rolls available\nCommand: /daily-buff\n\`\`\``,
                                         inline: true
+                                    },
+                                    {
+                                        name: '⏰ Next Reset',
+                                        value: `\`\`\`yaml\nScheduled: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST tomorrow\nConfigurable via: DAILY_RESET_HOUR_EST\n\`\`\``,
+                                        inline: false
                                     }
                                 )
                                 .setFooter({ text: '⚓ Marine Intelligence • Daily Reset System' })
@@ -676,7 +1195,7 @@ class XPTracker {
         }
     }
 
-    // Process voice XP with proper daily cap implementation (3 AM EST reset)
+    // Process voice XP with proper daily cap implementation (configurable EST reset)
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000; // Default 1 minute
@@ -807,7 +1326,7 @@ class XPTracker {
         }
     }
 
-    // Clean up daily voice XP (now handled by automatic reset at 3 AM EST)
+    // Clean up daily voice XP (now handled by automatic reset at configurable EST time)
     async cleanupDailyVoiceXP() {
         try {
             console.log('[DAILY CAP] Manual cleanup requested...');
@@ -887,7 +1406,8 @@ class XPTracker {
                 totalXP,
                 averageXP: totalUsers > 0 ? totalXP / totalUsers : 0,
                 topUsers: result.rows.slice(0, 10), // Top 10 users by daily voice XP
-                dailyCap
+                dailyCap,
+                resetTime: `${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST`
             };
         } catch (error) {
             console.error('[DAILY CAP] Error getting guild daily voice XP stats:', error);
@@ -1197,281 +1717,4 @@ class XPTracker {
                 }
             }
 
-            return roleReward;
-
-        } catch (error) {
-            console.error('Error awarding level roles:', error);
-            return null;
-        }
-    }
-
-    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
-        try {
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            const logEnabled = guildSettings?.xpLogEnabled === true;
-            if (!logEnabled) return;
-
-            let logChannelId = guildSettings?.xpLogChannel;
-            
-            if (!logChannelId) return;
-
-            const channel = await this.client.channels.fetch(logChannelId).catch(() => null);
-            if (!channel || !channel.isTextBased()) return;
-
-            const formatLevel = (level) => {
-                return level !== undefined && level !== null ? level.toString() : '0';
-            };
-
-            const formatXP = (xp) => {
-                return xp !== undefined && xp !== null ? xp.toLocaleString() : '0';
-            };
-
-            // Get daily voice XP progress for voice activities
-            let dailyProgress = '';
-            if (type === 'voice') {
-                const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 20000;
-                const currentDay = this.getCurrentDay();
-                const dailyXP = this.getDailyVoiceXP(user.id, guildId, currentDay);
-                const progressPercent = Math.min(100, Math.round((dailyXP / dailyCap) * 100));
-                const progressBar = '█'.repeat(Math.floor(progressPercent / 10)) + '░'.repeat(10 - Math.floor(progressPercent / 10));
-                dailyProgress = `\n- DAILY PROGRESS: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} XP (${progressPercent}%)\n- PROGRESS BAR: [${progressBar}]`;
-            }
-
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTimestamp()
-                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
-
-            switch (type) {
-                case 'message':
-                    embed
-                        .setAuthor({ 
-                            name: '🔴 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('🔴 MESSAGE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
-                    break;
-
-                case 'reaction':
-                    embed
-                        .setAuthor({ 
-                            name: '🔴 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('🔴 REACTION ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
-                    break;
-
-                case 'voice':
-                    embed
-                        .setAuthor({ 
-                            name: '🔴 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('🔴 VOICE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}${dailyProgress}\n\`\`\``);
-                    break;
-
-                case 'levelup':
-                    embed
-                        .setAuthor({ 
-                            name: '🔴 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('🔴 ⚠️ THREAT LEVEL INCREASED ⚠️')
-                        .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- LEVEL: ${formatLevel(additionalInfo.oldLevel)} → ${formatLevel(additionalInfo.newLevel)}\n- TOTAL XP: ${formatXP(additionalInfo.totalXP)}\n- XP SOURCE: ${additionalInfo.xpSource || 'UNKNOWN'}\n${additionalInfo.roleReward ? `- ROLE AWARDED: ${additionalInfo.roleReward}\n` : ''}\`\`\``);
-                    break;
-
-                case 'admin':
-                    embed
-                        .setAuthor({ 
-                            name: '🔴 MARINE COMMAND CENTER',
-                            iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
-                        })
-                        .setTitle('🔴 MANUAL XP ADJUSTMENT')
-                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username} (${user.id})\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason'}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- NEW LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
-                    break;
-            }
-
-            await channel.send({ embeds: [embed] });
-
-        } catch (error) {
-            console.error('[XP LOG] Failed to send XP log:', error);
-        }
-    }
-
-    // Utility methods
-    async getLeaderboard(guildId, page = 1, limit = 10) {
-        try {
-            const offset = (page - 1) * limit;
-            
-            const result = await this.db.query(`
-                SELECT user_id, total_xp, level, messages, reactions, voice_time
-                FROM user_levels 
-                WHERE guild_id = $1 
-                ORDER BY total_xp DESC 
-                LIMIT $2 OFFSET $3
-            `, [guildId, limit, offset]);
-
-            const countResult = await this.db.query(
-                'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
-                [guildId]
-            );
-
-            const totalUsers = parseInt(countResult.rows[0].count);
-            const totalPages = Math.ceil(totalUsers / limit);
-
-            return {
-                users: result.rows.map((row, index) => ({
-                    userId: row.user_id,
-                    totalXP: row.total_xp,
-                    level: row.level,
-                    messages: row.messages,
-                    reactions: row.reactions,
-                    voiceTime: row.voice_time,
-                    rank: offset + index + 1
-                })),
-                pagination: {
-                    currentPage: page,
-                    totalPages,
-                    totalUsers,
-                    hasNextPage: page < totalPages,
-                    hasPreviousPage: page > 1
-                }
-            };
-
-        } catch (error) {
-            console.error('Error getting leaderboard:', error);
-            throw error;
-        }
-    }
-
-    async getUserRank(userId, guildId) {
-        try {
-            const result = await this.db.query(`
-                SELECT COUNT(*) + 1 as rank
-                FROM user_levels 
-                WHERE guild_id = $1 AND total_xp > (
-                    SELECT total_xp FROM user_levels 
-                    WHERE user_id = $2 AND guild_id = $1
-                )
-            `, [guildId, userId]);
-            
-            return parseInt(result.rows[0].rank);
-        } catch (error) {
-            console.error('Error getting user rank:', error);
-            return null;
-        }
-    }
-
-    async getUserStats(userId, guildId) {
-        try {
-            const result = await this.db.query(`
-                SELECT user_id, guild_id, total_xp, level, messages, reactions, voice_time, 
-                       created_at, updated_at
-                FROM user_levels 
-                WHERE user_id = $1 AND guild_id = $2
-            `, [userId, guildId]);
-            
-            if (result.rows.length === 0) {
-                return null;
-            }
-            
-            return result.rows[0];
-        } catch (error) {
-            console.error('Error getting user stats:', error);
-            throw error;
-        }
-    }
-
-    getXPForLevel(level) {
-        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
-        const curve = process.env.FORMULA_CURVE || 'exponential';
-        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
-        
-        let xpRequired;
-        
-        if (curve === 'exponential') {
-            xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
-        } else if (curve === 'linear') {
-            xpRequired = baseXP * level * multiplier;
-        } else if (curve === 'logarithmic') {
-            xpRequired = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
-        } else {
-            xpRequired = Math.floor(baseXP * Math.pow(level, multiplier));
-        }
-        
-        return xpRequired;
-    }
-
-    getRandomXP(type) {
-        let min, max;
-        
-        switch (type) {
-            case 'message':
-                min = parseInt(process.env.MESSAGE_XP_MIN) || 25;
-                max = parseInt(process.env.MESSAGE_XP_MAX) || 35;
-                break;
-            case 'voice':
-                min = parseInt(process.env.VOICE_XP_MIN) || 45;
-                max = parseInt(process.env.VOICE_XP_MAX) || 55;
-                break;
-            case 'reaction':
-                min = parseInt(process.env.REACTION_XP_MIN) || 25;
-                max = parseInt(process.env.REACTION_XP_MAX) || 35;
-                break;
-            default:
-                min = 25;
-                max = 35;
-        }
-        
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-
-    calculateLevel(totalXP) {
-        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
-        const curve = process.env.FORMULA_CURVE || 'exponential';
-        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
-        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
-
-        for (let level = 1; level <= maxLevel; level++) {
-            let requiredXP;
-            
-            if (curve === 'exponential') {
-                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
-            } else if (curve === 'linear') {
-                requiredXP = baseXP * level * multiplier;
-            } else if (curve === 'logarithmic') {
-                requiredXP = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
-            } else {
-                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
-            }
-
-            if (totalXP < requiredXP) {
-                return level - 1;
-            }
-        }
-
-        return maxLevel;
-    }
-
-    isOnCooldown(key, cooldownMs) {
-        const now = Date.now();
-        const lastUse = this.cooldowns.get(key);
-        return lastUse && (now - lastUse) < cooldownMs;
-    }
-
-    setCooldown(key) {
-        this.cooldowns.set(key, Date.now());
-    }
-
-    async cleanup() {
-        this.voiceSessions.clear();
-        this.cooldowns.clear();
-        this.dailyVoiceXP.clear();
-    }
-}
-
-module.exports = XPTracker;
+            return
