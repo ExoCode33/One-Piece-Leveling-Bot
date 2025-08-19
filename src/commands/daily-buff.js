@@ -1,7 +1,114 @@
-// src/commands/daily-buff.js - Updated with ASCII Art Animation
+// src/commands/daily-buff.js - Updated with simple animation like summon command
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const DailyBuffAsciiAnimator = require('../utils/dailyBuffAsciiArt');
+
+// Animation configuration
+const ANIMATION_CONFIG = {
+    FRAME_DELAY: 600,
+    TOTAL_FRAMES: 5
+};
+
+// Tier colors and configurations
+const TIER_COLORS = {
+    1: 0x22C55E, // Green
+    2: 0x3B82F6, // Blue  
+    3: 0x8B5CF6, // Purple
+    4: 0xF59E0B, // Gold
+    5: 0xF97316, // Orange
+    6: 0xEF4444  // Red
+};
+
+const TIER_NAMES = {
+    1: 'Marine Training',
+    2: 'Enhanced Drill', 
+    3: 'Elite Protocol',
+    4: 'Admiral Focus',
+    5: 'Fleet Command',
+    6: 'World Government Authorization'
+};
+
+const TIER_MULTIPLIERS = {
+    1: 1.1,
+    2: 1.2,
+    3: 1.3,
+    4: 1.5,
+    5: 1.7,
+    6: 2.0
+};
+
+class BuffAnimator {
+    static getRainbowPattern(frame, length = 20) {
+        const colors = ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '⬜'];
+        const pattern = [];
+        
+        for (let i = 0; i < length; i++) {
+            const colorIndex = (i + frame) % colors.length;
+            pattern.push(colors[colorIndex]);
+        }
+        
+        return pattern.join(' ');
+    }
+
+    static getRainbowColor(frame) {
+        const colors = [0xFF0000, 0xFF8000, 0xFFFF00, 0x00FF00, 0x0080FF, 0x8000FF, 0xFFFFFF];
+        return colors[frame % colors.length];
+    }
+
+    static createLoadingFrame(currentFrame, totalFrames) {
+        const progressPercent = Math.floor((currentFrame / totalFrames) * 100);
+        const frame = Math.floor(Date.now() / ANIMATION_CONFIG.FRAME_DELAY) % 7;
+        const pattern = this.getRainbowPattern(frame, 20);
+        const color = this.getRainbowColor(frame);
+        
+        const embed = new EmbedBuilder()
+            .setTitle('⚡ Marine Enhancement Scanner')
+            .setDescription(
+                `🔬 **Analyzing enhancement potential...**\n\n` +
+                `${pattern}\n\n` +
+                `📊 **Progress:** ${progressPercent}%\n` +
+                `⚡ **Status:** Scanning for enhancement matrix...\n\n` +
+                `${pattern}`
+            )
+            .setColor(color)
+            .setFooter({ text: `Processing... ${currentFrame}/${totalFrames} completed` })
+            .setTimestamp();
+        
+        return embed;
+    }
+
+    static createResultEmbed(tier, member) {
+        const tierName = TIER_NAMES[tier];
+        const multiplier = TIER_MULTIPLIERS[tier];
+        const color = TIER_COLORS[tier];
+        const nextReset = getNextResetUnixTimestamp();
+        
+        const embed = new EmbedBuilder()
+            .setTitle('✨ Marine Enhancement Acquired')
+            .setColor(color)
+            .setDescription(`**Enhancement Matrix Successfully Stabilized!**\n\n🎉 **Enhancement Complete!** 🎉`)
+            .addFields(
+                {
+                    name: '🔬 Enhancement Analysis',
+                    value: `**Classification:** ${tierName}\n**Power Amplification:** ${multiplier}x\n**Status:** Fully Crystallized`,
+                    inline: true
+                },
+                {
+                    name: '⏰ Operational Window',
+                    value: `**Activated:** Right Now\n**Duration:** Until 3:00 AM EST\n**Next Reset:** <t:${nextReset}:R>\n**Status:** ✅ Active`,
+                    inline: true
+                },
+                {
+                    name: '⚡ Enhancement Effects',
+                    value: `🚀 All XP gains boosted by **${multiplier}x**\n🔄 Stacks with other multipliers\n🛡️ Marine training protocols enhanced\n⭐ Active until daily reset`,
+                    inline: false
+                }
+            )
+            .setFooter({ text: `${tierName} Enhancement Active • Marine Enhancement Division` })
+            .setTimestamp();
+
+        return embed;
+    }
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -30,7 +137,7 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor('#FF6B6B')
-                    .setTitle('🎰 DAILY BUFF ALREADY CLAIMED')
+                    .setTitle('🎰 Daily Buff Already Claimed')
                     .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name}\n**Multiplier:** ${currentBuff.multiplier}x XP\n\n*Next reset: <t:${nextReset}:R>*`)
                     .setFooter({ text: 'Marine Intelligence • Daily Buff System' })
                     .setTimestamp();
@@ -38,9 +145,9 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the ASCII art animation sequence
+            // Start the animation sequence
             await interaction.deferReply();
-            await this.performAsciiAnimation(interaction, userId, guildId, member);
+            await this.performAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
@@ -58,88 +165,41 @@ module.exports = {
         }
     },
 
-    // ASCII art animation sequence
-    async performAsciiAnimation(interaction, userId, guildId, member) {
+    // Simple animation sequence like summon command
+    async performAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            // Create the full animation sequence
-            const animationSequence = DailyBuffAsciiAnimator.createAnimationSequence(finalResult);
+            console.log(`[DAILY BUFF] Starting animation for ${interaction.user.username}, tier ${finalResult}`);
             
-            console.log(`[DAILY BUFF] Starting ASCII animation for ${interaction.user.username}, tier ${finalResult}`);
-            
-            // Play through each frame in the sequence
-            for (let i = 0; i < animationSequence.length; i++) {
-                const sequenceItem = animationSequence[i];
+            // Play through animation frames
+            for (let i = 1; i <= ANIMATION_CONFIG.TOTAL_FRAMES; i++) {
+                const loadingEmbed = BuffAnimator.createLoadingFrame(i, ANIMATION_CONFIG.TOTAL_FRAMES);
                 
-                // Create embed for this frame
-                const embed = new EmbedBuilder()
-                    .setColor(sequenceItem.color)
-                    .setTitle('⚡ MARINE ENHANCEMENT SCANNER')
-                    .setDescription(DailyBuffAsciiAnimator.createStatusDisplay(sequenceItem, finalResult))
-                    .setFooter({ 
-                        text: `Phase ${sequenceItem.phase === 'detection' ? '1' : sequenceItem.phase === 'explosion' ? '2' : '3'}/3 • ${sequenceItem.phase === 'result' ? 'Enhancement Complete' : 'Processing...'}` 
-                    })
-                    .setTimestamp();
+                await interaction.editReply({ embeds: [loadingEmbed] });
                 
-                // Update the message
-                await interaction.editReply({ embeds: [embed] });
-                
-                // Wait for the specified delay (except for the last frame)
-                if (i < animationSequence.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, sequenceItem.delay));
+                // Wait for delay (except for the last frame)
+                if (i < ANIMATION_CONFIG.TOTAL_FRAMES) {
+                    await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FRAME_DELAY));
                 }
             }
 
             // Apply the buff role and save to database
             await this.applyBuffRole(userId, guildId, member, finalResult);
             
-            // Create final success embed with enhanced details
-            const finalEmbed = await this.createFinalSuccessEmbed(interaction, finalResult, member);
+            // Create and show final result
+            const finalEmbed = BuffAnimator.createResultEmbed(finalResult, member);
             
             // Wait a moment then show the final result
             await new Promise(resolve => setTimeout(resolve, 1000));
             await interaction.editReply({ embeds: [finalEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] ASCII animation error:', error);
+            console.error('[DAILY BUFF] Animation error:', error);
             await interaction.editReply({
                 content: '❌ **Animation Error**\n\nFailed to complete enhancement sequence. Please try again.'
             });
         }
-    },
-
-    // Create enhanced final success embed
-    async createFinalSuccessEmbed(interaction, tier, member) {
-        const config = DailyBuffAsciiAnimator.getTierConfig(tier);
-        const buffInfo = this.getBuffTiers()[tier];
-        const nextReset = getNextResetUnixTimestamp();
-        
-        const embed = new EmbedBuilder()
-            .setColor(DailyBuffAsciiAnimator.getTierColorHex(tier))
-            .setTitle('✨ MARINE ENHANCEMENT ACQUIRED')
-            .setDescription(`**Enhancement Matrix Successfully Stabilized!**\n\n\`\`\`\n${DailyBuffAsciiAnimator.createFinalResult(tier)}\n\`\`\`\n\n🎉 **Enhancement Complete!** 🎉`)
-            .addFields(
-                {
-                    name: '🔬 Enhancement Analysis',
-                    value: `**Classification:** ${config.name}\n**Type:** ${buffInfo.name}\n**Power Amplification:** ${buffInfo.multiplier}x\n**Stability:** Fully Crystallized`,
-                    inline: true
-                },
-                {
-                    name: '⏰ Operational Window',
-                    value: `**Activated:** Right Now\n**Duration:** Until 3:00 AM EST\n**Next Reset:** <t:${nextReset}:R>\n**Status:** ✅ Active`,
-                    inline: true
-                },
-                {
-                    name: '⚡ Enhancement Effects',
-                    value: `🚀 All XP gains boosted by **${buffInfo.multiplier}x**\n🔄 Stacks with other multipliers\n🛡️ Marine training protocols enhanced\n⭐ Active until daily reset`,
-                    inline: false
-                }
-            )
-            .setFooter({ text: `${buffInfo.name} Enhancement Active • Marine Enhancement Division` })
-            .setTimestamp();
-
-        return embed;
     },
 
     // Calculate which tier to roll (weighted probabilities)
@@ -173,32 +233,20 @@ module.exports = {
 
     // Get current buff for a user
     async getCurrentBuff(userId, guildId, member) {
-        const buffRoles = this.getBuffTiers();
+        const buffRoles = TIER_MULTIPLIERS;
         
         for (const tier of Object.keys(buffRoles)) {
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
             if (roleId && member.roles.cache.has(roleId)) {
                 return {
                     tier: parseInt(tier),
-                    name: buffRoles[tier].name,
-                    multiplier: buffRoles[tier].multiplier
+                    name: TIER_NAMES[tier],
+                    multiplier: TIER_MULTIPLIERS[tier]
                 };
             }
         }
 
         return { tier: 0, name: 'No Buff', multiplier: 1.0 };
-    },
-
-    // Get buff tier information
-    getBuffTiers() {
-        return {
-            1: { name: 'Marine Training', multiplier: 1.1 },
-            2: { name: 'Enhanced Drill', multiplier: 1.2 },
-            3: { name: 'Elite Protocol', multiplier: 1.3 },
-            4: { name: 'Admiral Focus', multiplier: 1.5 },
-            5: { name: 'Fleet Command', multiplier: 1.7 },
-            6: { name: 'World Government Authorization', multiplier: 2.0 }
-        };
     },
 
     // Apply the buff role to the user
