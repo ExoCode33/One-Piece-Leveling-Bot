@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Progress Bar Animation with Blinking Effect
+// src/commands/daily-buff.js - Fixed Progress Bar Animation with Enhanced Loading Effect
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
@@ -41,32 +41,45 @@ const XP_MULTIPLIERS = {
 
 class ProgressBarAnimator {
     
-    // Create enhanced progress bar visual with glowing effects
+    // ✅ FIXED: Create enhanced progress bar with smooth loading effect
     static createProgressBar(percentage) {
         const totalBars = 20;
         const filledBars = Math.floor((percentage / 100) * totalBars);
         const emptyBars = totalBars - filledBars;
         
-        // Different characters for visual appeal
-        const glowChar = '▰';      // Main filled character
-        const fadeChar = '▱';      // Fading character
-        const emptyChar = '░';     // Empty character
+        // Different opacity levels for smooth loading effect
+        const solidChar = '█';      // Fully loaded (100% opacity)
+        const mediumChar = '▓';     // 75% opacity
+        const lightChar = '▒';      // 50% opacity  
+        const emptyChar = '░';      // 25% opacity (empty)
         
         let progressBar = '';
         
-        // Add filled bars with glow effect
+        // Add fully filled bars
         for (let i = 0; i < filledBars; i++) {
-            progressBar += glowChar;
+            progressBar += solidChar;
         }
         
-        // Add a fading character at the progress edge for smooth effect
+        // Add transitional character at progress edge for smooth effect
         if (filledBars < totalBars && percentage > 0) {
-            progressBar += fadeChar;
-            emptyBars--;
+            // Calculate partial progress for smoother transition
+            const partialProgress = ((percentage / 100) * totalBars) - filledBars;
+            
+            if (partialProgress > 0.75) {
+                progressBar += mediumChar;
+            } else if (partialProgress > 0.5) {
+                progressBar += lightChar;
+            } else if (partialProgress > 0.25) {
+                progressBar += emptyChar;
+            }
+            
+            // Adjust empty bars count
+            let adjustedEmptyBars = emptyBars - 1;
+            progressBar += emptyChar.repeat(Math.max(0, adjustedEmptyBars));
+        } else {
+            // Add empty bars
+            progressBar += emptyChar.repeat(Math.max(0, emptyBars));
         }
-        
-        // Add empty bars
-        progressBar += emptyChar.repeat(Math.max(0, emptyBars));
         
         return progressBar;
     }
@@ -89,18 +102,18 @@ class ProgressBarAnimator {
         return loadingTexts[frame] || 'Completing Enhancement';
     }
     
-    // Create particles effect around progress bar
-    static createParticleEffect(percentage) {
+    // ✅ FIXED: Create subtle border effect (no emojis)
+    static createBorderEffect(percentage) {
         if (percentage < 20) {
-            return '✦ ◦ ✧ ◦ ✦';
+            return '▫ ▫ ▫ ▫ ▫ ▫ ▫ ▫ ▫ ▫';
         } else if (percentage < 40) {
-            return '✦ ✧ ⟡ ✧ ✦ ◦ ✧';
+            return '▪ ▫ ▪ ▫ ▪ ▫ ▪ ▫ ▪ ▫';
         } else if (percentage < 60) {
-            return '✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦';
+            return '▪ ▪ ▫ ▪ ▪ ▫ ▪ ▪ ▫ ▪';
         } else if (percentage < 80) {
-            return '✨ ✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦ ✨';
+            return '▪ ▪ ▪ ▫ ▪ ▪ ▪ ▫ ▪ ▪';
         } else {
-            return '✨ ⭐ ✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦ ⭐ ✨';
+            return '▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪';
         }
     }
     
@@ -108,7 +121,7 @@ class ProgressBarAnimator {
     static createLoadingEmbed(percentage, frame) {
         const progressBar = this.createProgressBar(percentage);
         const loadingText = this.getLoadingText(frame);
-        const particles = this.createParticleEffect(percentage);
+        const borderEffect = this.createBorderEffect(percentage);
         
         // Progressive color change as it loads
         let embedColor = 0x4A90E2; // Blue
@@ -120,11 +133,11 @@ class ProgressBarAnimator {
             .setTitle('⚡ Marine Enhancement Protocol')
             .setDescription(
                 `**${loadingText}...**\n\n` +
-                `${particles}\n` +
+                `${borderEffect}\n` +
                 `\`┌${'─'.repeat(22)}┐\`\n` +
                 `\`│ ${progressBar} │\` **${percentage}%**\n` +
                 `\`└${'─'.repeat(22)}┘\`\n` +
-                `${particles}`
+                `${borderEffect}`
             )
             .setColor(embedColor)
             .addFields({
@@ -143,18 +156,18 @@ class ProgressBarAnimator {
         const progressBar = this.createProgressBar(100);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
-        const particles = '✨ ⭐ ✦ ✧ ⟡ ◦ ✨ ◦ ⟡ ✧ ✦ ⭐ ✨';
+        const borderEffect = '▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪';
         
         const embed = new EmbedBuilder()
             .setTitle('⚡ Marine Enhancement Protocol')
             .setDescription(
                 `**Enhancement Complete!**\n\n` +
-                `${particles}\n` +
+                `${borderEffect}\n` +
                 `\`┌${'─'.repeat(22)}┐\`\n` +
                 `\`│ ${progressBar} │\` **100%**\n` +
                 `\`└${'─'.repeat(22)}┘\`\n` +
-                `${particles}\n\n` +
-                `${isColorPhase ? `🌟 **${tierName}** 🌟` : '⚡ **PROCESSING...** ⚡'}`
+                `${borderEffect}\n\n` +
+                `${isColorPhase ? `**${tierName}**` : '**PROCESSING...**'}`
             )
             .setColor(isColorPhase ? tierColor : 0xFFFFFF)
             .addFields({
@@ -273,7 +286,7 @@ module.exports = {
         }
     },
 
-    // ✨ Progress bar animation with blinking effect
+    // ✅ Progress bar animation with blinking effect
     async performProgressBarAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
