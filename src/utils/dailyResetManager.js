@@ -38,13 +38,21 @@ class DailyResetManager {
         return estTime.toISOString().split('T')[0];
     }
 
-    // Check if date is in Eastern Daylight Time (EDT)
+    // Check if date is in Eastern Daylight Time (EDT) - FIXED DST CALCULATION
     isEDT(date) {
         const year = date.getFullYear();
-        const marchSecondSunday = new Date(year, 2, 8);
-        marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
-        const novemberFirstSunday = new Date(year, 10, 1);
-        novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
+        
+        // Second Sunday in March at 2:00 AM
+        const marchSecondSunday = new Date(year, 2, 1); // March 1st
+        marchSecondSunday.setDate(1 + (14 - marchSecondSunday.getDay()) % 7); // First Sunday
+        marchSecondSunday.setDate(marchSecondSunday.getDate() + 7); // Second Sunday
+        marchSecondSunday.setHours(2, 0, 0, 0); // 2:00 AM
+        
+        // First Sunday in November at 2:00 AM
+        const novemberFirstSunday = new Date(year, 10, 1); // November 1st
+        novemberFirstSunday.setDate(1 + (7 - novemberFirstSunday.getDay()) % 7); // First Sunday
+        novemberFirstSunday.setHours(2, 0, 0, 0); // 2:00 AM
+        
         return date >= marchSecondSunday && date < novemberFirstSunday;
     }
 
@@ -92,14 +100,18 @@ class DailyResetManager {
         }
     }
 
-    // Schedule daily reset
+    // Schedule daily reset - FIXED TIMEZONE DISPLAY
     scheduleDailyReset() {
         const scheduleNext = () => {
             const now = new Date();
             const estOffset = this.isEDT(now) ? -4 : -5;
             const estNow = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
             
-            console.log(`[DAILY RESET] Current EST time: ${estNow.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+            // DEBUG: Show timezone calculation details
+            console.log(`[DAILY RESET] Current UTC time: ${now.toISOString()}`);
+            console.log(`[DAILY RESET] EST offset: ${estOffset} hours`);
+            console.log(`[DAILY RESET] Calculated EST time: ${estNow.toISOString().replace('T', ' ').substring(0, 19)} EST`);
+            console.log(`[DAILY RESET] Is EDT (Daylight Saving)? ${this.isEDT(now)}`);
             
             let nextReset = new Date(estNow);
             nextReset.setHours(DAILY_RESET_HOUR_EST, DAILY_RESET_MINUTE_EST, 0, 0);
@@ -118,6 +130,7 @@ class DailyResetManager {
             const minutesUntil = Math.floor((timeUntilReset % (1000 * 60 * 60)) / (1000 * 60));
             
             console.log(`[DAILY RESET] Next reset: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST (${hoursUntil}h ${minutesUntil}m)`);
+            console.log(`[DAILY RESET] Next reset UTC: ${utcReset.toISOString()}`);
             
             if (this.resetTimeouts.has('daily')) {
                 clearTimeout(this.resetTimeouts.get('daily'));
@@ -423,6 +436,47 @@ class DailyResetManager {
         this.resetTimeouts.clear();
         
         console.log('[DAILY RESET] Cleanup complete');
+    }
+
+    // 🔍 DEBUG METHOD: Check timezone calculation
+    debugTimezone() {
+        const now = new Date();
+        const estOffset = this.isEDT(now) ? -4 : -5;
+        const estNow = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+        
+        console.log('\n🔍 TIMEZONE DEBUG INFORMATION:');
+        console.log(`Server UTC time: ${now.toISOString()}`);
+        console.log(`Server local time: ${now.toString()}`);
+        console.log(`Is EDT (Daylight Saving)? ${this.isEDT(now)}`);
+        console.log(`EST offset: ${estOffset} hours`);
+        console.log(`Calculated EST time: ${estNow.toISOString().replace('T', ' ').substring(0, 19)}`);
+        console.log(`Using built-in timezone: ${now.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+        console.log(`Current day key: ${this.getCurrentDay()}`);
+        console.log(`Reset hour: ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST}`);
+        
+        // Compare with system timezone
+        const nyTime = new Date().toLocaleString('en-US', { 
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: '2-digit', 
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+        
+        console.log(`System NY time: ${nyTime}`);
+        console.log('───────────────────────────────────────\n');
+        
+        return {
+            serverUTC: now.toISOString(),
+            calculatedEST: estNow.toISOString(),
+            systemNY: nyTime,
+            isEDT: this.isEDT(now),
+            estOffset: estOffset,
+            currentDay: this.getCurrentDay()
+        };
     }
 }
 
