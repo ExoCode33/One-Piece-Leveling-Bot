@@ -673,3 +673,222 @@ class XPTracker {
         
         return Math.floor(Math.random() * (max - min + 1)) + min;
     }
+
+    calculateLevel(totalXP) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const maxLevel = parseInt(process.env.MAX_LEVEL) || 50;
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+
+        for (let level = 1; level <= maxLevel; level++) {
+            let requiredXP;
+            
+            if (curve === 'exponential') {
+                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
+            } else if (curve === 'linear') {
+                requiredXP = baseXP * level * multiplier;
+            } else if (curve === 'logarithmic') {
+                requiredXP = Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+            } else {
+                requiredXP = Math.floor(baseXP * Math.pow(level, multiplier));
+            }
+
+            if (totalXP < requiredXP) {
+                return level - 1;
+            }
+        }
+
+        return maxLevel;
+    }
+
+    getXPForLevel(level) {
+        const multiplier = parseFloat(process.env.FORMULA_MULTIPLIER) || 1.75;
+        const curve = process.env.FORMULA_CURVE || 'exponential';
+        const baseXP = parseInt(process.env.FORMULA_BASE_XP) || 500;
+
+        if (level === 0) return 0;
+
+        if (curve === 'exponential') {
+            return Math.floor(baseXP * Math.pow(level, multiplier));
+        } else if (curve === 'linear') {
+            return baseXP * level * multiplier;
+        } else if (curve === 'logarithmic') {
+            return Math.floor(baseXP * Math.log(level + 1) * multiplier * 2);
+        } else {
+            return Math.floor(baseXP * Math.pow(level, multiplier));
+        }
+    }
+
+    isOnCooldown(key, cooldownMs) {
+        const now = Date.now();
+        const lastUse = this.cooldowns.get(key);
+        return lastUse && (now - lastUse) < cooldownMs;
+    }
+
+    setCooldown(key) {
+        this.cooldowns.set(key, Date.now());
+    }
+
+    // ✅ FIXED: Enhanced XP activity logging with voice channel info
+    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
+        try {
+            const guildSettings = global.guildSettings?.get(guildId);
+            
+            if (!guildSettings?.xpLogEnabled || !guildSettings?.xpLogChannel) return;
+
+            const channel = await this.client.channels.fetch(guildSettings.xpLogChannel).catch(() => null);
+            if (!channel || !channel.isTextBased()) return;
+
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setAuthor({ 
+                    name: '🔴 MARINE INTELLIGENCE BUREAU',
+                    iconURL: user.displayAvatarURL({ size: 32 })
+                })
+                .setTimestamp()
+                .setFooter({ text: '⚓ Marine Intelligence Division' });
+
+            // Enhanced logging based on XP type
+            switch (type) {
+                case 'voice':
+                    embed
+                        .setTitle('🔴 🎤 VOICE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- SOURCE: VOICE ACTIVITY\n\`\`\``);
+                    break;
+                
+                case 'message':
+                    embed
+                        .setTitle('🔴 💬 MESSAGE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- SOURCE: MESSAGE ACTIVITY\n\`\`\``);
+                    break;
+                
+                case 'reaction':
+                    embed
+                        .setTitle('🔴 👍 REACTION ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- SOURCE: REACTION ACTIVITY\n\`\`\``);
+                    break;
+                
+                default:
+                    embed
+                        .setTitle(`🔴 ${type.toUpperCase()} ACTIVITY DETECTED`)
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- SOURCE: ${type.toUpperCase()}\n\`\`\``);
+                    break;
+            }
+
+            await channel.send({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('[XP LOG] Failed to send XP log:', error);
+        }
+    }
+
+    // Get user stats and other utility methods
+    async getUserStats(userId, guildId) {
+        try {
+            const result = await this.db.query(`
+                SELECT user_id, guild_id, total_xp, level, messages, reactions, voice_time, 
+                       created_at, updated_at
+                FROM user_levels 
+                WHERE user_id = $1 AND guild_id = $2
+            `, [userId, guildId]);
+            
+            return result.rows.length > 0 ? result.rows[0] : null;
+        } catch (error) {
+            console.error('Error getting user stats:', error);
+            return null;
+        }
+    }
+
+    async getUserRank(userId, guildId) {
+        try {
+            const result = await this.db.query(`
+                SELECT COUNT(*) + 1 as rank 
+                FROM user_levels 
+                WHERE guild_id = $1 AND total_xp > (
+                    SELECT total_xp FROM user_levels WHERE user_id = $2 AND guild_id = $1
+                )
+            `, [guildId, userId]);
+            
+            return result.rows[0]?.rank || null;
+        } catch (error) {
+            console.error('Error getting user rank:', error);
+            return null;
+        }
+    }
+
+    async getLeaderboard(guildId, page = 1, limit = 10) {
+        try {
+            const offset = (page - 1) * limit;
+            
+            const result = await this.db.query(`
+                SELECT user_id, total_xp, level, messages, reactions, voice_time
+                FROM user_levels 
+                WHERE guild_id = $1 
+                ORDER BY total_xp DESC 
+                LIMIT $2 OFFSET $3
+            `, [guildId, limit, offset]);
+
+            const countResult = await this.db.query(
+                'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1',
+                [guildId]
+            );
+
+            const totalUsers = parseInt(countResult.rows[0].count);
+            const totalPages = Math.ceil(totalUsers / limit);
+
+            return {
+                users: result.rows.map((row, index) => ({
+                    userId: row.user_id,
+                    totalXP: row.total_xp,
+                    level: row.level,
+                    messages: row.messages,
+                    reactions: row.reactions,
+                    voiceTime: row.voice_time,
+                    rank: offset + index + 1
+                })),
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    totalUsers,
+                    hasNextPage: page < totalPages,
+                    hasPreviousPage: page > 1
+                }
+            };
+
+        } catch (error) {
+            console.error('Error getting leaderboard:', error);
+            throw error;
+        }
+    }
+
+    // ✅ FIXED: Daily voice XP cleanup
+    async cleanupDailyVoiceXP() {
+        try {
+            if (this.dailyResetManager) {
+                await this.dailyResetManager.cleanupDailyVoiceXP();
+            }
+        } catch (error) {
+            console.error('[XP TRACKER] Error cleaning up daily voice XP:', error);
+        }
+    }
+
+    // Force daily reset (delegated to reset manager)
+    async forceDailyReset(triggeredBy = 'SYSTEM') {
+        return await this.dailyResetManager.forceDailyReset(triggeredBy);
+    }
+
+    async cleanup() {
+        console.log('[XP TRACKER] Starting cleanup...');
+        
+        if (this.dailyResetManager) {
+            await this.dailyResetManager.cleanup();
+        }
+        
+        this.voiceSessions.clear();
+        this.cooldowns.clear();
+        
+        console.log('[XP TRACKER] Cleanup complete');
+    }
+}
+
+module.exports = XPTracker;
