@@ -194,6 +194,9 @@ class BuffAnimator {
         const color = TIER_COLORS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
+        // Create the final explosion grid for the result
+        const finalExplosionGrid = this.createGridAnimation(10, tier); // Frame 10 = maximum explosion
+        
         // Get the actual multiplier from the role (will be set by admin in role settings)
         let powerAmplification = '1.0x'; // Default fallback
         
@@ -206,9 +209,13 @@ class BuffAnimator {
         }
         
         const embed = new EmbedBuilder()
-            .setTitle('✨ Marine Enhancement Acquired')
+            .setTitle('✨ Enhancement Complete!')
             .setColor(color)
-            .setDescription(`**${tierName} Enhancement Successfully Activated!**\n\n🎉 **Enhancement Complete!** 🎉`)
+            .setDescription(
+                `**${tierName} Enhancement Successfully Activated!**\n\n` +
+                `\`\`\`\n${finalExplosionGrid}\n\`\`\`\n\n` +
+                `🎉 **Enhancement Complete!** 🎉`
+            )
             .addFields(
                 {
                     name: '⚡ Enhancement Details',
