@@ -1,12 +1,12 @@
-// src/commands/daily-buff.js - Simple Enhanced Progress Bar
+// src/commands/daily-buff.js - Complete file with Racing Stripe Progress Bar
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-// Simple animation config
-const ANIMATION_CONFIG = {
-    PROGRESS_FRAMES: 25,      // More frames for smoother animation
-    FRAME_DELAY: 200,         // Faster frame rate
-    COMPLETION_PAUSE: 1200    // Pause when complete
+// Racing Stripe Animation Configuration
+const RACING_ANIMATION_CONFIG = {
+    PROGRESS_FRAMES: 25,      // Total frames for 0-100%
+    FRAME_DELAY: 200,         // Delay between frames
+    COMPLETION_PAUSE: 1500    // Pause when complete
 };
 
 // Tier colors and names
@@ -37,88 +37,87 @@ const XP_MULTIPLIERS = {
     6: '2.5x'
 };
 
-class ProgressBarAnimator {
+class RacingStripeProgressBar {
     
-    // Create smooth progress bar with gradient effect
-    static createProgressBar(percentage) {
-        const totalBars = 32;
-        const progress = (percentage / 100) * totalBars;
-        const filledBars = Math.floor(progress);
-        const partialProgress = progress - filledBars;
+    // Create racing stripe progress bar based on percentage
+    static createRacingStripeProgress(percentage, animationFrame = 0) {
+        const totalBars = 20;
+        const filledBars = Math.floor((percentage / 100) * totalBars);
+        
+        // Racing stripe patterns
+        const pattern1 = ['▓', '▒']; // Dark/light pattern
+        const pattern2 = ['▒', '▓']; // Inverted pattern
+        
+        // Alternate pattern based on animation frame for movement effect
+        const usePattern1 = Math.floor(animationFrame / 2) % 2 === 0;
+        const currentPattern = usePattern1 ? pattern1 : pattern2;
         
         let bar = '';
         
-        // Filled portion
-        bar += '█'.repeat(filledBars);
-        
-        // Gradient transition at the edge
-        if (filledBars < totalBars && percentage > 0) {
-            if (partialProgress > 0.8) bar += '▉';
-            else if (partialProgress > 0.6) bar += '▊';
-            else if (partialProgress > 0.4) bar += '▋';
-            else if (partialProgress > 0.2) bar += '▌';
-            else if (partialProgress > 0) bar += '▍';
-            
-            // Empty portion
-            const remaining = totalBars - bar.length;
-            bar += '░'.repeat(remaining);
-        } else if (percentage < 100) {
-            // Empty portion
-            bar += '░'.repeat(totalBars - filledBars);
+        // Fill completed portion with racing stripes
+        for (let i = 0; i < filledBars; i++) {
+            bar += currentPattern[i % currentPattern.length];
         }
+        
+        // Fill remaining with empty spaces
+        bar += '░'.repeat(totalBars - filledBars);
         
         return bar;
     }
     
-    // Create loading embed with consistent size
-    static createLoadingEmbed(percentage) {
-        const progressBar = this.createProgressBar(percentage);
+    // Create loading embed with racing stripe progress
+    static createLoadingEmbed(percentage, animationFrame = 0) {
+        const progressBar = this.createRacingStripeProgress(percentage, animationFrame);
         
-        // Color progression
+        // Color progression based on percentage
         let color = 0x6B7280; // Gray
         if (percentage >= 90) color = 0x10B981; // Green
         else if (percentage >= 70) color = 0x3B82F6; // Blue
-        else if (percentage >= 40) color = 0x8B5CF6; // Purple
+        else if (percentage >= 50) color = 0x8B5CF6; // Purple
+        else if (percentage >= 25) color = 0xF59E0B; // Orange
         
         return new EmbedBuilder()
-            .setTitle('Enhancement Protocol')
+            .setTitle('🎰 Enhancement Protocol')
             .setDescription(
                 `\`${progressBar}\` **${percentage}%**\n\n` +
-                `\u200B\n\u200B\n\u200B\n\u200B\n\u200B` // Spacers for consistent height
+                `Analyzing enhancement compatibility...\n` +
+                `Racing stripes charging energy matrix...\n` +
+                `\u200B\n\u200B` // Spacers for consistent height
             )
             .setColor(color)
             .setTimestamp();
     }
     
-    // Create completion embed 
-    static createCompletionEmbed(tier) {
-        const progressBar = this.createProgressBar(100);
+    // Create completion embed with full racing stripes
+    static createCompletionEmbed(tier, animationFrame = 0) {
+        const progressBar = this.createRacingStripeProgress(100, animationFrame);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         
         return new EmbedBuilder()
-            .setTitle('Enhancement Protocol')
+            .setTitle('🎰 Enhancement Complete!')
             .setDescription(
                 `\`${progressBar}\` **100%**\n\n` +
-                `**${tierName}**\n\n` +
-                `\u200B\n\u200B\n\u200B` // Spacers
+                `**${tierName}** Unlocked!\n` +
+                `XP Multiplier: **${XP_MULTIPLIERS[tier]}**\n` +
+                `🏁 Racing stripes at maximum velocity! 🏁`
             )
             .setColor(tierColor)
             .setTimestamp();
     }
     
-    // Create final reveal
+    // Create final reveal embed
     static createRevealEmbed(tier) {
-        const progressBar = this.createProgressBar(100);
+        const progressBar = this.createRacingStripeProgress(100, 0);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         const xpMultiplier = XP_MULTIPLIERS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
         return new EmbedBuilder()
-            .setTitle('Enhancement Complete')
+            .setTitle('🏁 Enhancement Complete - Victory!')
             .setDescription(
-                `\`${progressBar}\` **100%**\n\n` +
+                `\`${progressBar}\` **FINISHED!**\n\n` +
                 `**${tierName}**\n` +
                 `XP Multiplier: **${xpMultiplier}**\n` +
                 `Resets: <t:${nextReset}:R>`
@@ -131,7 +130,7 @@ class ProgressBarAnimator {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('Activate daily Marine Enhancement (Resets at 3:00 AM EDT)'),
+        .setDescription('🎰 Activate daily Marine Enhancement (Resets at 3:00 AM EDT)'),
 
     async execute(interaction) {
         try {
@@ -155,7 +154,7 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor(TIER_COLORS[currentBuff.tier] || 0x4A90E2)
-                    .setTitle('Enhancement Already Active')
+                    .setTitle('🏁 Enhancement Already Active')
                     .addFields(
                         {
                             name: 'Current Buff',
@@ -178,9 +177,9 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the simple animation
+            // Start the racing stripe animation
             await interaction.deferReply();
-            await this.performAnimation(interaction, userId, guildId, member);
+            await this.performRacingStripeAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error:', error);
@@ -198,39 +197,46 @@ module.exports = {
         }
     },
 
-    // Simple, smooth animation
-    async performAnimation(interaction, userId, guildId, member) {
+    // Racing stripe animation from 0% to 100%
+    async performRacingStripeAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            // Phase 1: Smooth loading animation
-            for (let frame = 0; frame <= ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
-                const percentage = Math.round((frame / ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
-                const loadingEmbed = ProgressBarAnimator.createLoadingEmbed(percentage);
+            console.log(`[DAILY BUFF] Starting racing stripe animation for tier ${finalResult}`);
+            
+            // Phase 1: Racing stripe progress from 0% to 100%
+            for (let frame = 0; frame <= RACING_ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
+                const percentage = Math.round((frame / RACING_ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
+                const loadingEmbed = RacingStripeProgressBar.createLoadingEmbed(percentage, frame);
                 
                 await interaction.editReply({ embeds: [loadingEmbed] });
                 
-                if (frame < ANIMATION_CONFIG.PROGRESS_FRAMES) {
-                    await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FRAME_DELAY));
+                if (frame < RACING_ANIMATION_CONFIG.PROGRESS_FRAMES) {
+                    await new Promise(resolve => setTimeout(resolve, RACING_ANIMATION_CONFIG.FRAME_DELAY));
                 }
             }
 
-            // Phase 2: Show completion
-            const completionEmbed = ProgressBarAnimator.createCompletionEmbed(finalResult);
-            await interaction.editReply({ embeds: [completionEmbed] });
-            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.COMPLETION_PAUSE));
+            // Phase 2: Show completion with animated racing stripes
+            for (let celebFrame = 0; celebFrame < 8; celebFrame++) {
+                const completionEmbed = RacingStripeProgressBar.createCompletionEmbed(finalResult, celebFrame);
+                await interaction.editReply({ embeds: [completionEmbed] });
+                
+                if (celebFrame < 7) {
+                    await new Promise(resolve => setTimeout(resolve, 300)); // Faster celebration animation
+                }
+            }
 
             // Apply buff
             await this.applyBuffRole(userId, guildId, member, finalResult);
             
             // Phase 3: Final reveal
-            const revealEmbed = ProgressBarAnimator.createRevealEmbed(finalResult);
+            const revealEmbed = RacingStripeProgressBar.createRevealEmbed(finalResult);
             await interaction.editReply({ embeds: [revealEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Animation error:', error);
+            console.error('[DAILY BUFF] Racing stripe animation error:', error);
             await interaction.editReply({
-                content: '❌ **Enhancement Failed**\n\nAnimation system malfunction.'
+                content: '❌ **Enhancement Failed**\n\nRacing stripe animation system malfunction.'
             });
         }
     },
