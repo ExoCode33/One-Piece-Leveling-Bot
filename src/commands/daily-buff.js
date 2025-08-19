@@ -6,9 +6,8 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const ANIMATION_CONFIG = {
     PROGRESS_FRAMES: 20,      // 20 frames for smoother progress
     FRAME_DELAY: 300,         // 0.3s per frame (slower)
-    BLINK_COUNT: 3,           // Blink 3 times
-    BLINK_DELAY: 400,         // 0.4s per blink
-    FINAL_PAUSE: 800          // 0.8s pause before reveal
+    COMPLETION_PAUSE: 1500,   // 1.5s pause to show completion
+    FINAL_PAUSE: 800          // 0.8s pause before final reveal
 };
 
 // Tier colors and names
@@ -41,12 +40,13 @@ const XP_MULTIPLIERS = {
 
 class ProgressBarAnimator {
     
-    // Create enhanced progress bar with improved shading
-    static createProgressBar(percentage) {
+    // Create enhanced progress bar with animated glow effect
+    static createProgressBar(percentage, glowPhase = 0) {
         const totalBars = 35;
         const filledBars = Math.floor((percentage / 100) * totalBars);
         
-        // Enhanced shading characters for better visual depth
+        // Enhanced shading with glow effects
+        const glowChar = '▓';       // Glowing edge
         const solidChar = '█';      // Fully loaded
         const heavyChar = '▉';      // 87.5% shade
         const mediumChar = '▊';     // 75% shade
@@ -55,12 +55,18 @@ class ProgressBarAnimator {
         const veryThinChar = '▍';   // 37.5% shade
         const barelyChar = '▎';     // 25% shade
         const emptyChar = '░';      // Empty
+        const darkChar = '▁';       // Dark empty
         
         let progressBar = '';
         
-        // Add fully filled bars
+        // Add filled bars with occasional glow effect
         for (let i = 0; i < filledBars; i++) {
-            progressBar += solidChar;
+            // Add glow effect near the leading edge
+            if (i >= filledBars - 2 && glowPhase > 0 && percentage < 100) {
+                progressBar += glowChar;
+            } else {
+                progressBar += solidChar;
+            }
         }
         
         // Add sophisticated transition at progress edge
@@ -83,21 +89,27 @@ class ProgressBarAnimator {
                 progressBar += emptyChar;
             }
             
-            // Add remaining empty bars
+            // Add remaining empty bars with varying darkness
             const remainingBars = totalBars - progressBar.length;
-            progressBar += emptyChar.repeat(Math.max(0, remainingBars));
+            for (let i = 0; i < remainingBars; i++) {
+                // Alternate between empty and dark for texture
+                progressBar += (i % 3 === 0) ? darkChar : emptyChar;
+            }
         } else {
-            // Add empty bars
+            // Add empty bars with texture
             const remainingBars = totalBars - filledBars;
-            progressBar += emptyChar.repeat(Math.max(0, remainingBars));
+            for (let i = 0; i < remainingBars; i++) {
+                progressBar += (i % 3 === 0) ? darkChar : emptyChar;
+            }
         }
         
         return progressBar;
     }
     
-    // Create loading embed with fixed size and no random text
+    // Create loading embed with glow effect
     static createLoadingEmbed(percentage, frame) {
-        const progressBar = this.createProgressBar(percentage);
+        const glowPhase = frame % 3; // Cycle glow effect
+        const progressBar = this.createProgressBar(percentage, glowPhase);
         
         // Progressive color change as it loads
         let embedColor = 0x4A90E2; // Blue
@@ -121,9 +133,9 @@ class ProgressBarAnimator {
         return embed;
     }
     
-    // Create blinking embed that maintains the progress bar
-    static createBlinkEmbed(tier, isColorPhase) {
-        const progressBar = this.createProgressBar(100);
+    // Create completion embed with pulsing effect (no flickering)
+    static createCompletionEmbed(tier) {
+        const progressBar = this.createProgressBar(100, 2); // Max glow
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         
@@ -133,11 +145,11 @@ class ProgressBarAnimator {
                 `\`┌${'─'.repeat(37)}┐\`\n` +
                 `\`│ ${progressBar} │\`\n` +
                 `\`└${'─'.repeat(37)}┘\`\n\n` +
-                `**100%**\n\n` +
-                `${isColorPhase ? `**${tierName}**` : '**PROCESSING**'}\n` +
+                `**100%** - **COMPLETE**\n\n` +
+                `**${tierName}**\n` +
                 `\u200B\n\u200B\n\u200B` // Maintain spacing
             )
-            .setColor(isColorPhase ? tierColor : 0xFFFFFF)
+            .setColor(tierColor)
             .setTimestamp();
         
         return embed;
@@ -239,14 +251,14 @@ module.exports = {
         }
     },
 
-    // ✅ Progress bar animation with blinking effect
+    // Progress bar animation with smooth completion (no flickering)
     async performProgressBarAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            console.log(`[DAILY BUFF] Starting progress bar enhancement for ${interaction.user.username}, tier ${finalResult}`);
+            console.log(`[DAILY BUFF] Starting enhanced animation for ${interaction.user.username}, tier ${finalResult}`);
             
-            // PHASE 1: Progress bar loading (0% → 100%)
+            // PHASE 1: Progress bar loading (0% → 100%) with glow effects
             for (let frame = 0; frame <= ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
                 const percentage = Math.round((frame / ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
                 const loadingEmbed = ProgressBarAnimator.createLoadingEmbed(percentage, frame);
@@ -258,33 +270,23 @@ module.exports = {
                 }
             }
 
-            // PHASE 2: Blinking effect (tier color ↔ white)
-            for (let blink = 0; blink < ANIMATION_CONFIG.BLINK_COUNT; blink++) {
-                // Show tier color
-                const colorEmbed = ProgressBarAnimator.createBlinkEmbed(finalResult, true);
-                await interaction.editReply({ embeds: [colorEmbed] });
-                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BLINK_DELAY));
-                
-                // Show white (except on last blink)
-                if (blink < ANIMATION_CONFIG.BLINK_COUNT - 1) {
-                    const whiteEmbed = ProgressBarAnimator.createBlinkEmbed(finalResult, false);
-                    await interaction.editReply({ embeds: [whiteEmbed] });
-                    await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BLINK_DELAY));
-                }
-            }
-
-            // PHASE 3: Brief pause before reveal
-            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FINAL_PAUSE));
+            // PHASE 2: Show completion with tier color (no flickering)
+            const completionEmbed = ProgressBarAnimator.createCompletionEmbed(finalResult);
+            await interaction.editReply({ embeds: [completionEmbed] });
+            
+            // Hold completion state
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.COMPLETION_PAUSE));
 
             // Apply the buff role and save to database
             await this.applyBuffRole(userId, guildId, member, finalResult);
             
-            // PHASE 4: Final minimalist reveal
+            // PHASE 3: Final reveal with all details
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FINAL_PAUSE));
             const revealEmbed = ProgressBarAnimator.createRevealEmbed(finalResult, member);
             await interaction.editReply({ embeds: [revealEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Progress bar animation error:', error);
+            console.error('[DAILY BUFF] Enhanced animation error:', error);
             await interaction.editReply({
                 content: '❌ **Enhancement Failed**\n\nAnimation system malfunction.'
             });
