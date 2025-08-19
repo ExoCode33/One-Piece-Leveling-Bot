@@ -1,234 +1,219 @@
-// Clean ASCII Art Daily Buff Animation - No Emoji Spam
-// Inspired by Fate/Night anime with elegant geometric patterns
+// Epic Braille Pattern Daily Buff Animation - Fate/Night Inspired
+// Using braille characters for smooth, detailed explosions
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-// Animation Configuration
+// Animation Configuration for Epic Braille Sequence
 const ANIMATION_CONFIG = {
-    BUILDUP_DELAY: 600,      // Buildup tension
-    EXPLOSION_DELAY: 200,    // Fast explosion
-    FINAL_PAUSE: 1500,       // Final result pause
-    BUILDUP_FRAMES: 6,       
-    EXPLOSION_FRAMES: 8,     
+    BUILDUP_DELAY: 700,      // Slow buildup for maximum tension
+    EXPLOSION_DELAY: 250,    // Fast explosion frames
+    FINAL_PAUSE: 2000,       // Long pause on final result
+    BUILDUP_FRAMES: 7,       
+    EXPLOSION_FRAMES: 12,    
     AFTERGLOW_FRAMES: 3      
 };
 
-class CleanBuffAnimator {
+class BrailleBuffAnimator {
     
-    // Get tier-specific symbols and patterns
+    // Get tier-specific configuration
     static getTierConfig(tier) {
         const configs = {
-            1: { symbol: '▓', accent: '░', name: 'COMMON', color: 'GREEN' },
-            2: { symbol: '█', accent: '▓', name: 'RARE', color: 'BLUE' },
-            3: { symbol: '▀', accent: '▄', name: 'EPIC', color: 'PURPLE' },
-            4: { symbol: '◆', accent: '◇', name: 'LEGENDARY', color: 'GOLD' },
-            5: { symbol: '★', accent: '☆', name: 'MYTHICAL', color: 'ORANGE' },
-            6: { symbol: '◈', accent: '◊', name: 'DIVINE', color: 'RED' }
+            1: { name: 'COMMON', color: 'GREEN', intensity: '⣿' },
+            2: { name: 'RARE', color: 'BLUE', intensity: '⣿' },
+            3: { name: 'EPIC', color: 'PURPLE', intensity: '⣿' },
+            4: { name: 'LEGENDARY', color: 'GOLD', intensity: '⣿' },
+            5: { name: 'MYTHICAL', color: 'ORANGE', intensity: '⣿' },
+            6: { name: 'DIVINE', color: 'RED', intensity: '⣿' }
         };
         return configs[tier] || configs[1];
     }
 
-    // PHASE 1: Scanning and Detection
-    static createScanningFrame(frame) {
-        const scanLines = [
-            "│                    │",
-            "│ ░░░░░░░░░░░░░░░░░░ │",
-            "│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │",
-            "│ ████████████████████ │",
-            "│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │",
-            "│ ░░░░░░░░░░░░░░░░░░ │",
+    // PHASE 1: Initial Energy Detection
+    static createDetectionFrame(frame) {
+        const frames = [
+            // Frame 0: Empty space
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 1: Tiny spark
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 2: Small glow
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⢄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 3: Growing energy
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣾⡆⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 4: Energy expanding
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣪⣷⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⣽⣻⣾⡆⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣯⣿⡷⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠂⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 5: Pre-explosion buildup
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⣪⣷⣿⣾⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣽⣻⣿⣻⣾⡆⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣯⣿⣿⣿⣿⡷⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣯⣿⣿⣿⡷⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⠛⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 6: Critical mass
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠀⡀⢀⠀⢠⠀⠀⠀⠀⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⢠⢤⣀⠀⠀⠈⣆⢧⠈⡆⢸⠀⠀⠀⢰⢡⠇⠀⠀⠀⠀⡀⠀⠀⠀⠀\n" +
+            "⠀⠀⢀⠀⣯⢀⣨⠃⠀⠀⠸⡜⣄⣣⢸⠀⠀⠀⡜⡌⠀⠀⠀⢀⡜⡁⠀⠀⠀⠀\n" +
+            "⠀⠙⢮⡳⢄⠈⠁⠀⢠⠴⠍⣛⣚⣣⢳⢽⡀⣏⣲⣀⢧⡥⠤⠶⢤⣠⢎⠜⠁⠀\n" +
+            "⠠⣀⠀⠙⢦⡑⢄⢀⣾⣧⡎⠁⠀⠙⡎⡇⡇⡇⠹⢪⣀⡓⣦⢀⣼⣵⠋⢀⠴⣊\n" +
+            "⠀⠈⠑⢦⣀⠙⣲⣝⢭⡚⠃⠀⠀⠀⠸⠸⣹⠁⠀⠀⠀⠉⣹⣪⣎⡸⢞⡵⠊⠁\n" +
+            "⠀⠀⠀⠀⠈⣷⢯⣨⠷⣝⠦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠵⣪⢶⣙⡤⠖⢉"
         ];
         
-        const scanLine = Math.min(frame, scanLines.length - 1);
-        
-        return "```ansi\n" +
-               "┌────────────────────┐\n" +
-               "│   ENHANCEMENT      │\n" +
-               "│     SCANNER        │\n" +
-               "├────────────────────┤\n" +
-               scanLines[scanLine] + "\n" +
-               "│                    │\n" +
-               "│  [ANALYZING...]    │\n" +
-               "└────────────────────┘\n" +
-               "```";
+        return frames[Math.min(frame, frames.length - 1)] || frames[0];
     }
 
-    // PHASE 2: Energy Buildup
-    static createBuildupFrame(frame, tier) {
-        const config = this.getTierConfig(tier);
-        const intensity = Math.min(frame + 1, 6);
-        
-        let center = "";
-        let ring1 = "";
-        let ring2 = "";
-        
-        // Build from center outward based on intensity
-        if (intensity >= 1) center = config.symbol;
-        if (intensity >= 2) center = config.symbol + config.symbol + config.symbol;
-        if (intensity >= 3) {
-            ring1 = config.accent.repeat(5);
-            center = config.accent + config.symbol + config.symbol + config.symbol + config.accent;
-        }
-        if (intensity >= 4) {
-            ring2 = config.accent.repeat(7);
-            ring1 = config.symbol.repeat(5);
-        }
-        if (intensity >= 5) {
-            ring2 = config.symbol.repeat(7);
-        }
-        if (intensity >= 6) {
-            ring2 = config.symbol.repeat(9);
-            ring1 = config.symbol.repeat(7);
-            center = config.symbol.repeat(5);
-        }
-
-        return "```ansi\n" +
-               "╔════════════════════╗\n" +
-               "║   ENERGY BUILDUP   ║\n" +
-               "╠════════════════════╣\n" +
-               "║                    ║\n" +
-               `║    ${ring2.padStart(9).padEnd(9)}    ║\n` +
-               `║     ${ring1.padStart(7).padEnd(7)}     ║\n` +
-               `║      ${center.padStart(5).padEnd(5)}      ║\n` +
-               `║     ${ring1.padStart(7).padEnd(7)}     ║\n` +
-               `║    ${ring2.padStart(9).padEnd(9)}    ║\n` +
-               "║                    ║\n" +
-               `║    POWER: ${intensity}/6     ║\n` +
-               "╚════════════════════╝\n" +
-               "```";
-    }
-
-    // PHASE 3: Epic Explosion Sequence
-    static createExplosionFrame(frame, tier) {
-        const config = this.getTierConfig(tier);
+    // PHASE 2: Massive Explosion Sequence
+    static createExplosionFrame(frame) {
         const explosionFrames = [
             // Frame 0: Initial burst
-            {
-                pattern: [
-                    "        ╬╬╬        ",
-                    "        ╬█╬        ",
-                    "    ╬╬╬╬█████╬╬╬╬    ",
-                    "    ╬█████████████╬    ",
-                    "╬╬╬╬█████████████████╬╬╬╬",
-                    "╬███████████████████████╬",
-                    "╬╬╬╬█████████████████╬╬╬╬",
-                    "    ╬█████████████╬    ",
-                    "    ╬╬╬╬█████╬╬╬╬    ",
-                    "        ╬█╬        ",
-                    "        ╬╬╬        "
-                ]
-            },
+            "⠀⠀⠀⠀⠀⠀⠀⢠⠀⡀⢀⠀⢠⠀⠀⠀⠀⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⢠⢤⣀⠀⠈⣆⢧⠈⡆⢸⠀⠀⠀⢰⢡⠇⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀\n" +
+            "⠀⢀⠀⣯⢀⣨⠃⠀⠸⡜⣄⣣⢸⠀⠀⠀⡜⡌⠀⠀⠀⠀⢀⡜⡁⠀⠀⠀⠀⠀\n" +
+            "⠙⢮⡳⢄⠈⠁⠀⢠⠴⠍⣛⣚⣣⢳⢽⡀⣏⣲⣀⢧⡥⠤⠶⢤⣠⢎⠜⠁⠀⠀\n" +
+            "⠠⣀⠙⢦⡑⢄⢀⣾⣧⡎⠁⠀⠙⡎⡇⡇⡇⠹⢪⣀⡓⣦⢀⣼⣵⠋⢀⠴⣊⠔\n" +
+            "⠀⠈⠑⢦⣀⠙⣲⣝⢭⡚⠃⠀⠀⠸⠸⣹⠁⠀⠀⠀⠉⣹⣪⣎⡸⢞⡵⠊⠁⣀\n" +
+            "⠀⠀⠀⠀⠈⣷⢯⣨⠷⣝⠦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠵⣪⢶⣙⡤⠖⢉⣀",
+
             // Frame 1: Cross explosion
-            {
-                pattern: [
-                    "          █          ",
-                    "          █          ",
-                    "          █          ",
-                    "          █          ",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "          █          ",
-                    "          █          ",
-                    "          █          ",
-                    "          █          "
-                ]
-            },
-            // Frame 2: Star burst
-            {
-                pattern: [
-                    "    ╲     █     ╱    ",
-                    "      ╲   █   ╱      ",
-                    "        ╲ █ ╱        ",
-                    "          █          ",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "          █          ",
-                    "        ╱ █ ╲        ",
-                    "      ╱   █   ╲      ",
-                    "    ╱     █     ╲    "
-                ]
-            },
-            // Frame 3: Full expansion
-            {
-                pattern: [
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████"
-                ]
-            },
-            // Frame 4: Crystallization
-            {
-                pattern: [
-                    "     ◆◆◆◆◆◆◆◆◆     ",
-                    "   ◆◆◆◆◆◆◆◆◆◆◆◆◆   ",
-                    " ◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆ ",
-                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
-                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
-                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
-                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
-                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
-                    " ◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆ ",
-                    "   ◆◆◆◆◆◆◆◆◆◆◆◆◆   ",
-                    "     ◆◆◆◆◆◆◆◆◆     "
-                ]
-            },
-            // Frame 5: Energy waves
-            {
-                pattern: [
-                    "░░░░░░░░░░░░░░░░░░░░░",
-                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
-                    "░░░░░░░░░░░░░░░░░░░░░",
-                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "██████████████████████",
-                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
-                    "░░░░░░░░░░░░░░░░░░░░░",
-                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
-                    "░░░░░░░░░░░░░░░░░░░░░"
-                ]
-            },
-            // Frame 6-7: Final stabilization
-            {
-                pattern: [
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21),
-                    config.symbol.repeat(21)
-                ]
-            }
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
+
+            // Frame 2: Star burst pattern
+            "⠀⠀⠀⣀⠀⠀⠀⠀⣰⣿⣿⣿⣿⣿⣷⡀⠀⠀⠀⠀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⣰⣿⣷⡀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⢀⣾⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⣰⣿⣿⣿⣿⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀",
+
+            // Frame 3: Massive expansion
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
+
+            // Frame 4: Energy waves rippling outward
+            "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤\n" +
+            "⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒\n" +
+            "⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+            "⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿\n" +
+            "⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒\n" +
+            "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤",
+
+            // Frame 5: Crystallization pattern
+            "⠀⠀⠀⠀⠀⠀⠀⢸⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠇⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⢸⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀\n" +
+            "⣀⣀⣀⣀⣸⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀⣀⣀\n" +
+            "⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⠟⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⣿⡿⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⢿⣿⣿⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⢿⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⡿⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 6: Diamond burst pattern
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣸⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⣿⣿⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 7: Spiral energy pattern
+            "⠀⠀⠀⠀⠀⣀⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀\n" +
+            "⢀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀\n" +
+            "⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇⠀⠀⠀⠀\n" +
+            "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀",
+
+            // Frame 8: Multiple ring explosions
+            "⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡀\n" +
+            "⣿⣿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⣿⣿\n" +
+            "⣿⠏⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡀⠀⠹⣿\n" +
+            "⡿⠀⣠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣄⠀⢿⡇\n" +
+            "⡇⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⢸⡇\n" +
+            "⣿⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⣿⡇\n" +
+            "⣿⣄⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠏⣠⣿⡇",
+
+            // Frame 9: Swirling vortex
+            "⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣶⣶⣶⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀",
+
+            // Frame 10: Lightning cracks
+            "⠀⢀⠤⢒⡭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⢭⡒⠤⡀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⡠⠊⡴⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⢌⠢⡀⠀⠀⠀⠀⠀⠀\n" +
+            "⢡⡜⠁⠀⢀⡠⠔⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠢⠄⡀⠈⢜⡄⠀⠀⠀⠀⠀\n" +
+            "⡼⠀⡠⠊⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠢⡘⡆⠀⠀⠀⠀\n" +
+            "⡇⡜⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⡸⡄⠀⠀⠀\n" +
+            "⢣⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡜⠀⠀⠀\n" +
+            "⠈⠳⢄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀⠀⠀",
+
+            // Frame 11: Final stabilization pattern
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⣶⣦⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀\n" +
+            "⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀"
         ];
-
-        const explosionIndex = Math.min(frame, explosionFrames.length - 1);
-        const explosion = explosionFrames[explosionIndex];
-
-        return "```ansi\n" +
-               "╔══════════════════════╗\n" +
-               "║   ENHANCEMENT BURST   ║\n" +
-               "╠══════════════════════╣\n" +
-               explosion.pattern.map(line => `║${line}║`).join('\n') + "\n" +
-               "╚══════════════════════╝\n" +
-               "```";
+        
+        return explosionFrames[Math.min(frame, explosionFrames.length - 1)] || explosionFrames[0];
     }
 
-    // PHASE 4: Final Result with Clean Formatting
+    // PHASE 3: Final Result with Tier-Specific Pattern
     static createFinalResult(tier) {
         const config = this.getTierConfig(tier);
         const buffTiers = {
@@ -241,25 +226,50 @@ class CleanBuffAnimator {
         };
 
         const buff = buffTiers[tier];
-        const border = config.symbol.repeat(25);
+        
+        // Create tier-specific final patterns
+        const patterns = {
+            1: "⠀⠀⠀⠀⢀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⠀⠀⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⠀⠀⠀⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⠀⠀⠀⠀⠀⠉⠛⠛⠛⠛⠛⠛⠛⠛⠛⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+            
+            2: "⠀⠀⠀⢀⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀\n" +
+               "⠀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀\n" +
+               "⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀\n" +
+               "⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠀⠀⠀⠀\n" +
+               "⠀⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠋⠀⠀⠀⠀⠀⠀",
+            
+            6: "⢠⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⡄\n" +
+               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+               "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n" +
+               "⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿"
+        };
 
-        return "```ansi\n" +
-               "╔═════════════════════════╗\n" +
-               "║  ENHANCEMENT COMPLETE   ║\n" +
-               "╠═════════════════════════╣\n" +
-               `║ ${border} ║\n` +
-               `║ ${config.symbol}                       ${config.symbol} ║\n` +
-               `║ ${config.symbol}   ${config.name.padEnd(15)}   ${config.symbol} ║\n` +
-               `║ ${config.symbol}   ${buff.name.padEnd(15)}   ${config.symbol} ║\n` +
-               `║ ${config.symbol}                       ${config.symbol} ║\n` +
-               `║ ${config.symbol}   MULTIPLIER: ${buff.multiplier}x    ${config.symbol} ║\n` +
-               `║ ${config.symbol}                       ${config.symbol} ║\n` +
-               `║ ${border} ║\n` +
-               "╚═════════════════════════╝\n" +
-               "```";
+        const pattern = patterns[tier] || patterns[1];
+        
+        return `╔═══════════════════════════════════╗\n` +
+               `║        ENHANCEMENT MATRIX         ║\n` +
+               `╠═══════════════════════════════════╣\n` +
+               `║                                   ║\n` +
+               pattern.split('\n').map(line => `║ ${line} ║`).join('\n') + '\n' +
+               `║                                   ║\n` +
+               `║  ${config.name} ENHANCEMENT      ║\n` +
+               `║  ${buff.name.padEnd(29)} ║\n` +
+               `║  MULTIPLIER: ${buff.multiplier}x${' '.repeat(18)} ║\n` +
+               `║                                   ║\n` +
+               `╚═══════════════════════════════════╝`;
     }
 
-    // Get hex color for embed
+    // Get hex color for embeds
     static getTierColorHex(tier) {
         const colors = {
             1: 0x22C55E, // Green
@@ -308,9 +318,9 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the enhanced animation sequence
+            // Start the epic braille animation sequence
             await interaction.deferReply();
-            await this.performEpicBuffAnimation(interaction, userId, guildId, member);
+            await this.performEpicBrailleAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
@@ -328,80 +338,70 @@ module.exports = {
         }
     },
 
-    // Epic animation sequence
-    async performEpicBuffAnimation(interaction, userId, guildId, member) {
+    // Epic braille animation sequence inspired by Fate/Night
+    async performEpicBrailleAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
-        const config = CleanBuffAnimator.getTierConfig(finalResult);
+        const config = BrailleBuffAnimator.getTierConfig(finalResult);
         
         try {
-            // Phase 1: Scanning (6 frames)
+            // Phase 1: Energy Detection & Buildup (7 frames)
             for (let frame = 0; frame < ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
                 const embed = new EmbedBuilder()
                     .setColor(0x4A90E2)
-                    .setTitle('MARINE ENHANCEMENT SCANNER')
+                    .setTitle('⚡ MARINE ENHANCEMENT SCANNER')
                     .setDescription(
-                        `**Detecting enhancement signature...**\n\n${CleanBuffAnimator.createScanningFrame(frame)}\n\n**Progress:** ${Math.round(((frame + 1) / ANIMATION_CONFIG.BUILDUP_FRAMES) * 100)}%`
+                        `**Detecting mystical enhancement signature...**\n\n\`\`\`\n${BrailleBuffAnimator.createDetectionFrame(frame)}\n\`\`\`\n\n**Energy Reading:** ${Math.round(((frame + 1) / ANIMATION_CONFIG.BUILDUP_FRAMES) * 100)}%\n**Status:** ${frame < 3 ? 'Scanning...' : frame < 5 ? 'Energy detected!' : 'Critical mass approaching!'}`
                     )
-                    .setFooter({ text: 'Scanning for compatible enhancement...' })
+                    .setFooter({ text: `Phase 1/3 • Detecting ${config.name} enhancement pattern...` })
                     .setTimestamp();
                 
                 await interaction.editReply({ embeds: [embed] });
                 await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BUILDUP_DELAY));
             }
 
-            // Phase 2: Energy Buildup (6 frames)
-            for (let frame = 0; frame < ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
-                const embed = new EmbedBuilder()
-                    .setColor(CleanBuffAnimator.getTierColorHex(finalResult))
-                    .setTitle('ENERGY CONCENTRATION')
-                    .setDescription(
-                        `**Enhancement core charging...**\n\n${CleanBuffAnimator.createBuildupFrame(frame, finalResult)}\n\n**Status:** Gathering ${config.name} energy...`
-                    )
-                    .setFooter({ text: `Building ${config.name} enhancement matrix...` })
-                    .setTimestamp();
-                
-                await interaction.editReply({ embeds: [embed] });
-                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BUILDUP_DELAY));
-            }
-
-            // Phase 3: Epic Explosion (8 frames)
+            // Phase 2: Epic Explosion Sequence (12 frames)
             for (let frame = 0; frame < ANIMATION_CONFIG.EXPLOSION_FRAMES; frame++) {
                 const embed = new EmbedBuilder()
-                    .setColor(CleanBuffAnimator.getTierColorHex(finalResult))
-                    .setTitle('ENHANCEMENT MATERIALIZATION')
+                    .setColor(BrailleBuffAnimator.getTierColorHex(finalResult))
+                    .setTitle('💥 ENHANCEMENT MATERIALIZATION')
                     .setDescription(
-                        `**Power burst in progress...**\n\n${CleanBuffAnimator.createExplosionFrame(frame, finalResult)}\n\n**WARNING:** High energy discharge detected!`
+                        `**${config.name} POWER BURST IN PROGRESS!**\n\n\`\`\`\n${BrailleBuffAnimator.createExplosionFrame(frame)}\n\`\`\`\n\n**⚠️ WARNING:** Massive energy discharge detected!\n**Matrix Status:** ${frame < 4 ? 'Initial burst...' : frame < 8 ? 'Full expansion!' : 'Crystallizing...'}`
                     )
-                    .setFooter({ text: 'Enhancement matrix crystallizing...' })
+                    .setFooter({ text: `Phase 2/3 • ${config.name} enhancement materializing...` })
                     .setTimestamp();
                 
                 await interaction.editReply({ embeds: [embed] });
                 await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.EXPLOSION_DELAY));
             }
 
-            // Phase 4: Final Result
+            // Phase 3: Final Result with Epic Reveal
             const buffInfo = this.getBuffTiers()[finalResult];
             const nextReset = getNextResetUnixTimestamp();
             
             const finalEmbed = new EmbedBuilder()
-                .setColor(CleanBuffAnimator.getTierColorHex(finalResult))
-                .setTitle('MARINE ENHANCEMENT ACQUIRED')
+                .setColor(BrailleBuffAnimator.getTierColorHex(finalResult))
+                .setTitle('✨ MARINE ENHANCEMENT ACQUIRED')
                 .setDescription(
-                    `${CleanBuffAnimator.createFinalResult(finalResult)}\n\n**Classification:** ${config.name}\n**Enhancement:** ${buffInfo.name}\n**Power Level:** ${buffInfo.multiplier}x Multiplier`
+                    `**Enhancement Matrix Successfully Stabilized!**\n\n\`\`\`\n${BrailleBuffAnimator.createFinalResult(finalResult)}\n\`\`\`\n\n🎉 **Enhancement Complete!** 🎉`
                 )
                 .addFields(
                     {
-                        name: 'Operational Status',
-                        value: `**Activated:** Now\n**Expires:** <t:${nextReset}:R>\n**Reset Time:** 3:00 AM EST`,
+                        name: '🔬 Enhancement Analysis',
+                        value: `**Classification:** ${config.name}\n**Type:** ${buffInfo.name}\n**Power Amplification:** ${buffInfo.multiplier}x\n**Stability:** Fully Crystallized`,
                         inline: true
                     },
                     {
-                        name: 'Enhancement Effects',
-                        value: `All XP generation increased by **${buffInfo.multiplier}x**\nEnhancement remains active until reset\nStacks with other XP modifiers`,
+                        name: '⏰ Operational Window',
+                        value: `**Activated:** Right Now\n**Duration:** Until 3:00 AM EST\n**Next Reset:** <t:${nextReset}:R>\n**Status:** ✅ Active`,
                         inline: true
+                    },
+                    {
+                        name: '⚡ Enhancement Effects',
+                        value: `🚀 All XP gains boosted by **${buffInfo.multiplier}x**\n🔄 Stacks with other multipliers\n🛡️ Marine training protocols enhanced\n⭐ Active until daily reset`,
+                        inline: false
                     }
                 )
-                .setFooter({ text: `Marine Enhancement Division • ${buffInfo.name} Protocol Active` })
+                .setFooter({ text: `Phase 3/3 Complete • ${buffInfo.name} Enhancement Active • Marine Enhancement Division` })
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [finalEmbed] });
@@ -410,7 +410,7 @@ module.exports = {
             await this.applyBuffRole(userId, guildId, member, finalResult);
 
         } catch (error) {
-            console.error('[DAILY BUFF] Animation error:', error);
+            console.error('[DAILY BUFF] Braille animation error:', error);
             await interaction.editReply({
                 content: '❌ **Animation Error**\n\nFailed to complete enhancement sequence. Please try again.'
             });
@@ -550,7 +550,7 @@ module.exports = {
     }
 };
 
-// Helper functions
+// Helper functions for timezone handling
 function getCurrentDayKey() {
     const now = new Date();
     const estOffset = isESTDaylightSaving(now) ? -4 : -5;
