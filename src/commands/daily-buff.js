@@ -1,12 +1,12 @@
-// src/commands/daily-buff.js - Updated with grid explosion animation
+// src/commands/daily-buff.js - FIXED role granting and database issues
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation configuration
 const ANIMATION_CONFIG = {
     FRAME_DELAY: 700,
-    TOTAL_FRAMES: 10, // Increased for better explosion
-    GRID_WIDTH: 19, // Changed from 18 to 19
+    TOTAL_FRAMES: 10,
+    GRID_WIDTH: 19,
     GRID_HEIGHT: 9
 };
 
@@ -43,35 +43,34 @@ class BuffAnimator {
     static createGridAnimation(frame, finalTier) {
         const width = ANIMATION_CONFIG.GRID_WIDTH;
         const height = ANIMATION_CONFIG.GRID_HEIGHT;
-        const centerX = 9; // Position 10 (1-indexed) = index 9 (0-indexed)
-        const centerY = Math.floor(height / 2); // Still 4 for height 9
+        const centerX = 9;
+        const centerY = Math.floor(height / 2);
         
         // Create the grid
         const grid = [];
         for (let y = 0; y < height; y++) {
             const row = [];
             for (let x = 0; x < width; x++) {
-                row.push('⬛'); // Black square
+                row.push('⬛');
             }
             grid.push(row);
         }
         
         if (frame <= 2) {
             // Frames 1-2: All black, just starting
-            // Grid stays all black
         } else if (frame <= 4) {
             // Frames 3-4: Small light at center
             grid[centerY][centerX] = '⬜';
         } else if (frame <= 6) {
             // Frames 5-6: Light expanding outward
-            const radius = (frame - 4) * 1.5; // Gradual expansion
+            const radius = (frame - 4) * 1.5;
             
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
                     const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
                     
                     if (distance <= radius) {
-                        grid[y][x] = '⬜'; // White light
+                        grid[y][x] = '⬜';
                     }
                 }
             }
@@ -87,7 +86,7 @@ class BuffAnimator {
                     if (distance <= explosionRadius) {
                         grid[y][x] = tierEmoji;
                     } else if (distance <= explosionRadius + 1.5) {
-                        grid[y][x] = '⬜'; // White around explosion
+                        grid[y][x] = '⬜';
                     }
                 }
             }
@@ -124,12 +123,12 @@ class BuffAnimator {
                 }
             }
         } else {
-            // Frame 10: COMPLETE GRID EXPLOSION - entire grid becomes rarity color
+            // Frame 10: COMPLETE GRID EXPLOSION
             const tierEmoji = TIER_EMOJIS[finalTier];
             
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
-                    grid[y][x] = tierEmoji; // Fill entire grid with rarity color
+                    grid[y][x] = tierEmoji;
                 }
             }
         }
@@ -148,17 +147,17 @@ class BuffAnimator {
         const gridAnimation = this.createGridAnimation(currentFrame, finalTier);
         
         let statusMessage = '';
-        let color = 0x4A90E2; // Default blue
+        let color = 0x4A90E2;
         
         if (currentFrame <= 2) {
             statusMessage = '🔬 **Initializing enhancement matrix...**';
-            color = 0x808080; // Gray
+            color = 0x808080;
         } else if (currentFrame <= 4) {
             statusMessage = '⚡ **Energy core igniting...**';
-            color = 0xFFFF00; // Yellow
+            color = 0xFFFF00;
         } else if (currentFrame <= 6) {
             statusMessage = '🌟 **Power wave expanding...**';
-            color = 0xFFFFFF; // White
+            color = 0xFFFFFF;
         } else if (currentFrame <= 8) {
             statusMessage = '💥 **Enhancement explosion initiated...**';
             color = TIER_COLORS[finalTier];
@@ -187,17 +186,6 @@ class BuffAnimator {
         const color = TIER_COLORS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
-        // Get the actual multiplier from the role (will be set by admin in role settings)
-        let powerAmplification = '1.0x'; // Default fallback
-        
-        // Try to get the role and check if it has XP boost settings
-        const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-        if (roleId && global.xpBoostManager && member.guild) {
-            // This will be handled asynchronously, but we'll show default for now
-            // The actual multiplier will come from the role's XP boost settings
-            powerAmplification = 'Loading...'; // Will be updated by admin settings
-        }
-        
         const embed = new EmbedBuilder()
             .setTitle('✨ Enhancement Complete!')
             .setColor(color)
@@ -205,7 +193,7 @@ class BuffAnimator {
             .addFields(
                 {
                     name: '⚡ Enhancement Details',
-                    value: `**Status:** Active\n**Next Reset:** <t:${nextReset}:R>\n**Power Amplification:** ${powerAmplification}`,
+                    value: `**Status:** Active\n**Next Reset:** <t:${nextReset}:R>\n**Tier:** ${tier}`,
                     inline: false
                 }
             )
@@ -244,7 +232,7 @@ module.exports = {
                 const embed = new EmbedBuilder()
                     .setColor('#FF6B6B')
                     .setTitle('🎰 Daily Buff Already Claimed')
-                    .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name}\n**Multiplier:** ${currentBuff.multiplier}x XP\n\n*Next reset: <t:${nextReset}:R>*`)
+                    .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name}\n**Tier:** ${currentBuff.tier}\n\n*Next reset: <t:${nextReset}:R>*`)
                     .setFooter({ text: 'Marine Intelligence • Daily Buff System' })
                     .setTimestamp();
 
@@ -271,20 +259,19 @@ module.exports = {
         }
     },
 
-    // Simple animation sequence with grid explosion
+    // Animation sequence
     async performAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            console.log(`[DAILY BUFF] Starting grid animation for ${interaction.user.username}, tier ${finalResult}`);
+            console.log(`[DAILY BUFF] Starting animation for ${interaction.user.username}, tier ${finalResult}`);
             
-            // Play through animation frames with grid animation
+            // Play through animation frames
             for (let i = 1; i <= ANIMATION_CONFIG.TOTAL_FRAMES; i++) {
                 const loadingEmbed = BuffAnimator.createLoadingFrame(i, ANIMATION_CONFIG.TOTAL_FRAMES, finalResult);
                 
                 await interaction.editReply({ embeds: [loadingEmbed] });
                 
-                // Wait for delay (except for the last frame)
                 if (i < ANIMATION_CONFIG.TOTAL_FRAMES) {
                     await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FRAME_DELAY));
                 }
@@ -296,7 +283,6 @@ module.exports = {
             // Create and show final result
             const finalEmbed = BuffAnimator.createResultEmbed(finalResult, member);
             
-            // Wait a moment then show the final result
             await new Promise(resolve => setTimeout(resolve, 1000));
             await interaction.editReply({ embeds: [finalEmbed] });
 
@@ -320,85 +306,172 @@ module.exports = {
         else return 6;                    // 1% - Divine
     },
 
-    // Check if user has already rolled today
+    // ✅ FIXED: Check if user has already rolled today with better error handling
     async checkDailyRoll(userId, guildId) {
         try {
+            // Ensure table exists
+            await global.xpTracker.db.query(`
+                CREATE TABLE IF NOT EXISTS daily_buff_rolls (
+                    user_id VARCHAR(20) NOT NULL,
+                    guild_id VARCHAR(20) NOT NULL,
+                    date DATE NOT NULL,
+                    tier INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, guild_id, date)
+                )
+            `);
+
             const currentDay = getCurrentDayKey();
+            console.log(`[DAILY BUFF] Checking roll for ${userId} on ${currentDay}`);
             
             const result = await global.xpTracker.db.query(
                 'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
                 [userId, guildId, currentDay]
             );
 
-            return result.rows.length > 0;
+            const hasRolled = result.rows.length > 0;
+            console.log(`[DAILY BUFF] User ${userId} has rolled today: ${hasRolled}`);
+            
+            return hasRolled;
         } catch (error) {
             console.error('[DAILY BUFF] Error checking daily roll:', error);
             return false;
         }
     },
 
-    // Get current buff for a user
+    // ✅ FIXED: Get current buff with proper role checking
     async getCurrentBuff(userId, guildId, member) {
-        for (let tier = 1; tier <= 6; tier++) {
-            const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-            if (roleId && member.roles.cache.has(roleId)) {
+        try {
+            // Check database first
+            const currentDay = getCurrentDayKey();
+            const dbResult = await global.xpTracker.db.query(
+                'SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                [userId, guildId, currentDay]
+            );
+
+            if (dbResult.rows.length > 0) {
+                const tier = dbResult.rows[0].tier;
                 return {
                     tier: tier,
-                    name: TIER_NAMES[tier],
-                    multiplier: 'From Settings' // Will be from role XP boost settings
+                    name: TIER_NAMES[tier] || `Tier ${tier}`,
+                    multiplier: 'From Role Settings'
                 };
             }
-        }
 
-        return { tier: 0, name: 'No Buff', multiplier: 1.0 };
+            // Fallback: check roles
+            for (let tier = 1; tier <= 6; tier++) {
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
+                if (roleId && roleId !== `role_id_${tier}` && member.roles.cache.has(roleId)) {
+                    return {
+                        tier: tier,
+                        name: TIER_NAMES[tier] || `Tier ${tier}`,
+                        multiplier: 'From Role Settings'
+                    };
+                }
+            }
+
+            return { tier: 0, name: 'No Buff', multiplier: 1.0 };
+        } catch (error) {
+            console.error('[DAILY BUFF] Error getting current buff:', error);
+            return { tier: 0, name: 'No Buff', multiplier: 1.0 };
+        }
     },
 
-    // Apply the buff role to the user
+    // ✅ FIXED: Apply buff role with detailed logging and error handling
     async applyBuffRole(userId, guildId, member, tier) {
         try {
+            console.log(`[DAILY BUFF] 🎯 Applying tier ${tier} buff to ${member.user.username}`);
+
             // Remove any existing buff roles first
             await this.removeAllBuffRoles(member);
 
-            // Add the new buff role
+            // Get the role ID for this tier
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
-            if (roleId) {
-                const role = member.guild.roles.cache.get(roleId);
-                if (role) {
-                    await member.roles.add(role);
-                    console.log(`[DAILY BUFF] ✅ Awarded ${role.name} to ${member.user.username}`);
-                } else {
-                    console.error(`[DAILY BUFF] ❌ Role not found: ${roleId}`);
+            console.log(`[DAILY BUFF] Environment variable DAILY_XP_BUFF_TIER_${tier}_ROLE = ${roleId}`);
+
+            if (!roleId || roleId === `role_id_${tier}`) {
+                console.error(`[DAILY BUFF] ❌ No valid role ID configured for tier ${tier} (found: ${roleId})`);
+                console.log('[DAILY BUFF] Available environment variables:');
+                for (let i = 1; i <= 6; i++) {
+                    const envVar = `DAILY_XP_BUFF_TIER_${i}_ROLE`;
+                    const envValue = process.env[envVar];
+                    console.log(`[DAILY BUFF]   ${envVar} = ${envValue}`);
                 }
-            } else {
-                console.warn(`[DAILY BUFF] ⚠️ No role ID configured for tier ${tier}`);
+                throw new Error(`No role configured for tier ${tier}`);
             }
+
+            // Try to find the role
+            const role = member.guild.roles.cache.get(roleId);
+            if (!role) {
+                console.error(`[DAILY BUFF] ❌ Role not found in guild: ${roleId}`);
+                console.log('[DAILY BUFF] Available roles in guild:');
+                member.guild.roles.cache.forEach(r => {
+                    console.log(`[DAILY BUFF]   ${r.name} (${r.id})`);
+                });
+                throw new Error(`Role ${roleId} not found in guild`);
+            }
+
+            console.log(`[DAILY BUFF] 🎯 Found role: ${role.name} (${role.id})`);
+
+            // Check bot permissions
+            const botMember = member.guild.members.me;
+            if (!botMember.permissions.has('ManageRoles')) {
+                console.error('[DAILY BUFF] ❌ Bot missing "Manage Roles" permission');
+                throw new Error('Bot missing "Manage Roles" permission');
+            }
+
+            // Check role hierarchy
+            if (role.position >= botMember.roles.highest.position) {
+                console.error(`[DAILY BUFF] ❌ Role ${role.name} is higher than bot's highest role`);
+                throw new Error(`Cannot manage role ${role.name} - role hierarchy issue`);
+            }
+
+            // Add the role
+            await member.roles.add(role, `Daily buff tier ${tier} awarded`);
+            console.log(`[DAILY BUFF] ✅ Successfully awarded ${role.name} to ${member.user.username}`);
 
             // Save to database
             await this.saveBuffRoll(userId, guildId, tier);
 
         } catch (error) {
             console.error('[DAILY BUFF] ❌ Error applying buff role:', error);
+            throw error; // Re-throw so the command can handle it
         }
     },
 
-    // Remove all buff roles from user
+    // ✅ FIXED: Remove all buff roles with better error handling
     async removeAllBuffRoles(member) {
-        for (let i = 1; i <= 6; i++) {
-            const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-            if (roleId && member.roles.cache.has(roleId)) {
-                const role = member.guild.roles.cache.get(roleId);
-                if (role) {
-                    await member.roles.remove(role);
-                    console.log(`[DAILY BUFF] Removed ${role.name} from ${member.user.username}`);
+        try {
+            console.log(`[DAILY BUFF] 🧹 Removing existing buff roles from ${member.user.username}`);
+            
+            let removedCount = 0;
+            for (let i = 1; i <= 6; i++) {
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                    const role = member.guild.roles.cache.get(roleId);
+                    if (role) {
+                        await member.roles.remove(role, 'Removing old daily buff');
+                        console.log(`[DAILY BUFF] ✅ Removed ${role.name} from ${member.user.username}`);
+                        removedCount++;
+                    }
                 }
             }
+            
+            if (removedCount === 0) {
+                console.log(`[DAILY BUFF] ℹ️ No existing buff roles to remove from ${member.user.username}`);
+            } else {
+                console.log(`[DAILY BUFF] ✅ Removed ${removedCount} buff roles from ${member.user.username}`);
+            }
+        } catch (error) {
+            console.error('[DAILY BUFF] ❌ Error removing buff roles:', error);
+            // Don't throw - this is not critical enough to fail the whole command
         }
     },
 
-    // Save the buff roll to database
+    // ✅ FIXED: Save buff roll with better table management
     async saveBuffRoll(userId, guildId, tier) {
         try {
-            // Create table if it doesn't exist
+            // Ensure table exists with proper structure
             await global.xpTracker.db.query(`
                 CREATE TABLE IF NOT EXISTS daily_buff_rolls (
                     user_id VARCHAR(20) NOT NULL,
@@ -412,17 +485,20 @@ module.exports = {
 
             const currentDay = getCurrentDayKey();
             
-            await global.xpTracker.db.query(`
+            const result = await global.xpTracker.db.query(`
                 INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (user_id, guild_id, date)
                 DO UPDATE SET tier = $4
+                RETURNING *
             `, [userId, guildId, currentDay, tier]);
 
             console.log(`[DAILY BUFF] ✅ Saved tier ${tier} roll for ${userId} on ${currentDay}`);
+            console.log(`[DAILY BUFF] Database result:`, result.rows[0]);
 
         } catch (error) {
             console.error('[DAILY BUFF] ❌ Error saving buff roll:', error);
+            throw error;
         }
     }
 };
