@@ -207,7 +207,7 @@ class BuffAnimator {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎰 Spin the daily XP buff wheel! Resets at 3:00 AM EST'),
+        .setDescription('🎰 Spin the daily XP buff wheel! Resets at 3:00 AM EDT'),
 
     async execute(interaction) {
         try {
@@ -330,12 +330,134 @@ module.exports = {
             );
 
             const hasRolled = result.rows.length > 0;
-            console.log(`[DAILY BUFF] User ${userId} has rolled today: ${hasRolled}`);
+            console.log(`[DAILY BUFF] User ${userId} has rolled today: ${hasRolled} (found ${result.rows.length} records)`);
+            
+            if (hasRolled) {
+                console.log(`[DAILY BUFF] Database record:`, result.rows[0]);
+            }
             
             return hasRolled;
         } catch (error) {
             console.error('[DAILY BUFF] Error checking daily roll:', error);
             return false;
+        }
+    },
+
+    // ✅ NEW: Check daily buff status (for admin command)
+    async checkDailyBuffStatus(userId, guildId) {
+        try {
+            const currentDay = getCurrentDayKey();
+            
+            // Check database first
+            const dbResult = await global.xpTracker.db.query(
+                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                [userId, guildId, currentDay]
+            );
+            
+            const hasDBRecord = dbResult.rows.length > 0;
+            const dbTier = hasDBRecord ? dbResult.rows[0].tier : null;
+            
+            // Check what roles user actually has
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
+            const currentRoles = [];
+            if (member) {
+                for (let i = 1; i <= 6; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = member.guild.roles.cache.get(roleId);
+                        currentRoles.push({
+                            tier: i,
+                            roleId: roleId,
+                            roleName: role ? role.name : 'Unknown Role'
+                        });
+                    }
+                }
+            }
+            
+            return {
+                hasDBRecord,
+                dbTier,
+                currentDay,
+                currentRoles,
+                member
+            };
+            
+        } catch (error) {
+            console.error('[DAILY BUFF] Error checking buff status:', error);
+            return {
+                hasDBRecord: false,
+                dbTier: null,
+                currentDay: getCurrentDayKey(),
+                currentRoles: [],
+                member: null,
+                error: error.message
+            };
+        }
+    },
+
+    // ✅ NEW: Force remove daily buff (for admin command)
+    async forceRemoveDailyBuff(userId, guildId, reason = 'Admin removal') {
+        try {
+            console.log(`[DAILY BUFF ADMIN] 🗑️ Force removing daily buff for user ${userId}`);
+            
+            const currentDay = getCurrentDayKey();
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
+            let removedRoles = [];
+            let dbRecordsRemoved = 0;
+            
+            // Remove all buff roles
+            if (member) {
+                for (let i = 1; i <= 6; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = member.guild.roles.cache.get(roleId);
+                        if (role) {
+                            try {
+                                await member.roles.remove(role, reason);
+                                removedRoles.push(`${role.name} (Tier ${i})`);
+                                console.log(`[DAILY BUFF ADMIN] ✅ Removed role ${role.name} from ${member.user.username}`);
+                            } catch (error) {
+                                console.error(`[DAILY BUFF ADMIN] ❌ Failed to remove role ${role.name}:`, error.message);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Remove from database (current day)
+            const deleteResult = await global.xpTracker.db.query(
+                'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 RETURNING *',
+                [userId, guildId, currentDay]
+            );
+            
+            dbRecordsRemoved = deleteResult.rowCount;
+            console.log(`[DAILY BUFF ADMIN] 🗄️ Removed ${dbRecordsRemoved} database records for ${userId} on ${currentDay}`);
+            
+            if (deleteResult.rows.length > 0) {
+                console.log(`[DAILY BUFF ADMIN] Deleted record:`, deleteResult.rows[0]);
+            }
+            
+            return {
+                success: true,
+                removedRoles,
+                dbRecordsRemoved,
+                currentDay,
+                userId,
+                guildId
+            };
+            
+        } catch (error) {
+            console.error('[DAILY BUFF ADMIN] ❌ Error force removing daily buff:', error);
+            return {
+                success: false,
+                error: error.message,
+                removedRoles: [],
+                dbRecordsRemoved: 0
+            };
         }
     },
 
@@ -506,17 +628,17 @@ module.exports = {
 // Helper functions for timezone handling
 function getCurrentDayKey() {
     const now = new Date();
-    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
-    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+    const edtOffset = isEDTDaylightSaving(now) ? -4 : -5;
+    const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
     
-    if (estTime.getHours() < 3) {
-        estTime.setDate(estTime.getDate() - 1);
+    if (edtTime.getHours() < 3) {
+        edtTime.setDate(edtTime.getDate() - 1);
     }
     
-    return estTime.toISOString().split('T')[0];
+    return edtTime.toISOString().split('T')[0];
 }
 
-function isESTDaylightSaving(date) {
+function isEDTDaylightSaving(date) {
     const year = date.getFullYear();
     const march = new Date(year, 2, 1);
     const november = new Date(year, 10, 1);
@@ -529,16 +651,16 @@ function isESTDaylightSaving(date) {
 
 function getNextResetUnixTimestamp() {
     const now = new Date();
-    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
-    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+    const edtOffset = isEDTDaylightSaving(now) ? -4 : -5;
+    const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
     
-    const nextReset = new Date(estTime);
+    const nextReset = new Date(edtTime);
     nextReset.setHours(3, 0, 0, 0);
     
-    if (estTime.getHours() >= 3) {
+    if (edtTime.getHours() >= 3) {
         nextReset.setDate(nextReset.getDate() + 1);
     }
     
-    const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+    const utcReset = new Date(nextReset.getTime() - (edtOffset * 60 * 60 * 1000));
     return Math.floor(utcReset.getTime() / 1000);
 }
