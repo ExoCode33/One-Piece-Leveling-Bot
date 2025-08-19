@@ -173,13 +173,12 @@ class DailyResetManager {
                 console.error('[DAILY BUFF] Error cleaning up daily buff database:', error);
             }
             
-            // ✅ FIXED: Clean up old voice XP records but don't delete current day
+            // ✅ FIXED: For automatic daily reset, delete ALL voice XP records to ensure complete reset
             try {
                 const voiceDeleteResult = await this.db.query(
-                    'DELETE FROM daily_voice_xp WHERE date < $1',
-                    [currentDay]
+                    'DELETE FROM daily_voice_xp'
                 );
-                console.log(`[DAILY CAP] Cleaned up ${voiceDeleteResult.rowCount} old voice XP records`);
+                console.log(`[DAILY CAP] ✅ AUTO-RESET: Deleted ALL ${voiceDeleteResult.rowCount} voice XP records for fresh start`);
             } catch (error) {
                 console.error('[DAILY CAP] Error cleaning up voice XP database:', error);
             }
@@ -311,7 +310,7 @@ class DailyResetManager {
         }
     }
 
-    // ✅ FIXED: Force daily reset with complete cache clearing
+    // ✅ FIXED: Force daily reset with complete cache AND database clearing
     async forceDailyReset(triggeredBy = 'SYSTEM') {
         try {
             console.log(`[DAILY RESET] 🚨 FORCE RESET TRIGGERED BY ${triggeredBy} 🚨`);
@@ -334,12 +333,11 @@ class DailyResetManager {
                 );
                 console.log(`[DAILY BUFF] Force deleted ${buffDeleteResult.rowCount} old daily buff records`);
                 
-                // ✅ FIXED: Don't delete current day voice XP, only old records
+                // ✅ FIXED: Delete ALL daily voice XP records for fresh start
                 const voiceDeleteResult = await this.db.query(
-                    'DELETE FROM daily_voice_xp WHERE date < $1',
-                    [currentDay]
+                    'DELETE FROM daily_voice_xp'
                 );
-                console.log(`[DAILY CAP] Force deleted ${voiceDeleteResult.rowCount} old voice XP records`);
+                console.log(`[DAILY CAP] ✅ FORCE DELETED ALL ${voiceDeleteResult.rowCount} voice XP records for complete reset`);
                 
             } catch (error) {
                 console.error('[DAILY RESET] Error during force cleanup:', error);
@@ -350,6 +348,7 @@ class DailyResetManager {
             return {
                 currentDay,
                 cacheCleared: beforeCacheSize,
+                voiceXPRecordsDeleted: true,
                 success: true
             };
             
