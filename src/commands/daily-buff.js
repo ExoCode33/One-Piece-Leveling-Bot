@@ -40,14 +40,20 @@ const QUESTION_DIFFICULTY_MAP = {
     6: 'Hard'     // Question 6 - Hard
 };
 
-// ✅ ENHANCED: API Configuration with better error handling and validation
+// ✅ ENHANCED: Multiple API sources for better reliability
 const QUIZ_APIS = [
     {
         name: 'AniQuizAPI',
         url: 'https://aniquizapi.vercel.app/api/quiz',
         parser: (data) => {
             // ✅ ENHANCED: Better validation and error handling
-            console.log('[API DEBUG] Raw API response:', JSON.stringify(data, null, 2));
+            console.log('[API DEBUG] Raw AniQuizAPI response:', JSON.stringify(data, null, 2));
+            
+            // Check if this is metadata instead of quiz data
+            if (data.creator || data.github || data.message) {
+                console.log('[API DEBUG] Received metadata instead of quiz data');
+                throw new Error('API returned metadata instead of quiz data');
+            }
             
             // Handle different possible response structures
             let question, options, answer, difficulty;
@@ -105,7 +111,7 @@ const QUIZ_APIS = [
                 options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
             }
             
-            console.log('[API DEBUG] Parsed question:', { question: question.substring(0, 50) + '...', optionsCount: options.length, answer, difficulty });
+            console.log('[API DEBUG] Parsed AniQuizAPI question:', { question: question.substring(0, 50) + '...', optionsCount: options.length, answer, difficulty });
             
             return {
                 question: question.trim(),
@@ -113,6 +119,30 @@ const QUIZ_APIS = [
                 answer: answer.trim(),
                 difficulty: difficulty
             };
+        }
+    },
+    // ✅ NEW: Additional backup API sources
+    {
+        name: 'Anime Facts API',
+        url: 'https://anime-facts-rest-api.herokuapp.com/api/v1',
+        parser: (data) => {
+            console.log('[API DEBUG] Raw Anime Facts API response:', JSON.stringify(data, null, 2));
+            
+            // This API might need different parsing logic
+            if (data.data && data.data.fact) {
+                // Create a simple true/false question from anime facts
+                const fact = data.data.fact;
+                const anime = data.data.anime_name || 'Unknown Anime';
+                
+                return {
+                    question: `True or False: ${fact}`,
+                    options: ['True', 'False', 'Maybe', 'Unknown'],
+                    answer: 'True', // Since these are facts, they're true
+                    difficulty: 'Medium'
+                };
+            }
+            
+            throw new Error('Invalid Anime Facts API response');
         }
     }
 ];
