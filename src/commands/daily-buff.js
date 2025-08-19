@@ -4,11 +4,11 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Progress Bar Animation Configuration
 const ANIMATION_CONFIG = {
-    PROGRESS_FRAMES: 10,      // 10 frames for smooth progress
-    FRAME_DELAY: 400,         // 0.4s per frame
+    PROGRESS_FRAMES: 20,      // 20 frames for smoother progress
+    FRAME_DELAY: 300,         // 0.3s per frame (slower)
     BLINK_COUNT: 3,           // Blink 3 times
-    BLINK_DELAY: 300,         // 0.3s per blink
-    FINAL_PAUSE: 1000         // 1s pause before reveal
+    BLINK_DELAY: 400,         // 0.4s per blink
+    FINAL_PAUSE: 800          // 0.8s pause before reveal
 };
 
 // Tier colors and names
@@ -41,16 +41,20 @@ const XP_MULTIPLIERS = {
 
 class ProgressBarAnimator {
     
-    // Create enhanced progress bar with smooth loading effect - LONGER BAR
+    // Create enhanced progress bar with improved shading
     static createProgressBar(percentage) {
-        const totalBars = 35; // Increased from 20 to 35 for longer bar
+        const totalBars = 35;
         const filledBars = Math.floor((percentage / 100) * totalBars);
         
-        // Different opacity levels for smooth loading effect
-        const solidChar = '█';      // Fully loaded (100% opacity)
-        const mediumChar = '▓';     // 75% opacity
-        const lightChar = '▒';      // 50% opacity  
-        const emptyChar = '░';      // 25% opacity (empty)
+        // Enhanced shading characters for better visual depth
+        const solidChar = '█';      // Fully loaded
+        const heavyChar = '▉';      // 87.5% shade
+        const mediumChar = '▊';     // 75% shade
+        const lightChar = '▋';      // 62.5% shade
+        const thinChar = '▌';       // 50% shade
+        const veryThinChar = '▍';   // 37.5% shade
+        const barelyChar = '▎';     // 25% shade
+        const emptyChar = '░';      // Empty
         
         let progressBar = '';
         
@@ -59,16 +63,23 @@ class ProgressBarAnimator {
             progressBar += solidChar;
         }
         
-        // Add transitional character at progress edge for smooth effect
+        // Add sophisticated transition at progress edge
         if (filledBars < totalBars && percentage > 0) {
-            // Calculate partial progress for smoother transition
             const partialProgress = ((percentage / 100) * totalBars) - filledBars;
             
-            if (partialProgress > 0.75) {
+            if (partialProgress >= 0.875) {
+                progressBar += heavyChar;
+            } else if (partialProgress >= 0.75) {
                 progressBar += mediumChar;
-            } else if (partialProgress > 0.5) {
+            } else if (partialProgress >= 0.625) {
                 progressBar += lightChar;
-            } else if (partialProgress > 0.25) {
+            } else if (partialProgress >= 0.5) {
+                progressBar += thinChar;
+            } else if (partialProgress >= 0.375) {
+                progressBar += veryThinChar;
+            } else if (partialProgress >= 0.25) {
+                progressBar += barelyChar;
+            } else if (partialProgress > 0) {
                 progressBar += emptyChar;
             }
             
@@ -84,28 +95,9 @@ class ProgressBarAnimator {
         return progressBar;
     }
     
-    // Simplified loading text
-    static getLoadingText(frame) {
-        const loadingTexts = [
-            'Initializing',
-            'Scanning',
-            'Analyzing', 
-            'Calculating',
-            'Processing',
-            'Calibrating',
-            'Optimizing',
-            'Finalizing',
-            'Activating',
-            'Complete'
-        ];
-        
-        return loadingTexts[frame] || 'Processing';
-    }
-    
-    // Create loading embed with minimal text
+    // Create loading embed with fixed size and no random text
     static createLoadingEmbed(percentage, frame) {
         const progressBar = this.createProgressBar(percentage);
-        const loadingText = this.getLoadingText(frame);
         
         // Progressive color change as it loads
         let embedColor = 0x4A90E2; // Blue
@@ -116,11 +108,12 @@ class ProgressBarAnimator {
         const embed = new EmbedBuilder()
             .setTitle('Enhancement Protocol')
             .setDescription(
-                `**${loadingText}**\n\n` +
                 `\`┌${'─'.repeat(37)}┐\`\n` +
                 `\`│ ${progressBar} │\`\n` +
-                `\`└${'─'.repeat(37)}┘\`\n` +
-                `**${percentage}%**`
+                `\`└${'─'.repeat(37)}┘\`\n\n` +
+                `**${percentage}%**\n\n` +
+                // Fixed spacing to maintain embed size
+                `\u200B\n\u200B\n\u200B\n\u200B` // Invisible characters for spacing
             )
             .setColor(embedColor)
             .setTimestamp();
@@ -128,7 +121,7 @@ class ProgressBarAnimator {
         return embed;
     }
     
-    // Create blinking embed with enhanced effects
+    // Create blinking embed that maintains the progress bar
     static createBlinkEmbed(tier, isColorPhase) {
         const progressBar = this.createProgressBar(100);
         const tierColor = TIER_COLORS[tier];
@@ -137,11 +130,12 @@ class ProgressBarAnimator {
         const embed = new EmbedBuilder()
             .setTitle('Enhancement Protocol')
             .setDescription(
-                `**${isColorPhase ? tierName : 'PROCESSING'}**\n\n` +
                 `\`┌${'─'.repeat(37)}┐\`\n` +
                 `\`│ ${progressBar} │\`\n` +
-                `\`└${'─'.repeat(37)}┘\`\n` +
-                `**100%**`
+                `\`└${'─'.repeat(37)}┘\`\n\n` +
+                `**100%**\n\n` +
+                `${isColorPhase ? `**${tierName}**` : '**PROCESSING**'}\n` +
+                `\u200B\n\u200B\n\u200B` // Maintain spacing
             )
             .setColor(isColorPhase ? tierColor : 0xFFFFFF)
             .setTimestamp();
@@ -149,33 +143,26 @@ class ProgressBarAnimator {
         return embed;
     }
     
-    // Create final minimalist reveal embed
+    // Create final reveal with progress bar still visible and details below
     static createRevealEmbed(tier, member) {
+        const progressBar = this.createProgressBar(100);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         const xpMultiplier = XP_MULTIPLIERS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
         const embed = new EmbedBuilder()
-            .setTitle('Enhancement Active')
-            .setColor(tierColor)
-            .addFields(
-                {
-                    name: 'Buff Tier',
-                    value: `**${tierName}**`,
-                    inline: true
-                },
-                {
-                    name: 'XP Multiplier',
-                    value: `**${xpMultiplier}**`,
-                    inline: true
-                },
-                {
-                    name: 'Resets In',
-                    value: `<t:${nextReset}:R>`,
-                    inline: true
-                }
+            .setTitle('Enhancement Protocol')
+            .setDescription(
+                `\`┌${'─'.repeat(37)}┐\`\n` +
+                `\`│ ${progressBar} │\`\n` +
+                `\`└${'─'.repeat(37)}┘\`\n\n` +
+                `**100%** - **COMPLETE**\n\n` +
+                `**${tierName}**\n` +
+                `XP Multiplier: **${xpMultiplier}**\n` +
+                `Resets: <t:${nextReset}:R>`
             )
+            .setColor(tierColor)
             .setTimestamp();
         
         return embed;
