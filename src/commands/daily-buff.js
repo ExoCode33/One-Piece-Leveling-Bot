@@ -41,11 +41,10 @@ const XP_MULTIPLIERS = {
 
 class ProgressBarAnimator {
     
-    // ✅ FIXED: Create enhanced progress bar with smooth loading effect
+    // Create enhanced progress bar with smooth loading effect - LONGER BAR
     static createProgressBar(percentage) {
-        const totalBars = 20;
+        const totalBars = 35; // Increased from 20 to 35 for longer bar
         const filledBars = Math.floor((percentage / 100) * totalBars);
-        const emptyBars = totalBars - filledBars;
         
         // Different opacity levels for smooth loading effect
         const solidChar = '█';      // Fully loaded (100% opacity)
@@ -73,55 +72,40 @@ class ProgressBarAnimator {
                 progressBar += emptyChar;
             }
             
-            // Adjust empty bars count
-            let adjustedEmptyBars = emptyBars - 1;
-            progressBar += emptyChar.repeat(Math.max(0, adjustedEmptyBars));
+            // Add remaining empty bars
+            const remainingBars = totalBars - progressBar.length;
+            progressBar += emptyChar.repeat(Math.max(0, remainingBars));
         } else {
             // Add empty bars
-            progressBar += emptyChar.repeat(Math.max(0, emptyBars));
+            const remainingBars = totalBars - filledBars;
+            progressBar += emptyChar.repeat(Math.max(0, remainingBars));
         }
         
         return progressBar;
     }
     
-    // Create animated loading text
+    // Simplified loading text
     static getLoadingText(frame) {
         const loadingTexts = [
-            'Initializing Enhancement Protocol',
-            'Scanning Marine Database',
-            'Analyzing Combat Potential', 
-            'Calculating Enhancement Matrix',
-            'Syncing Power Levels',
-            'Calibrating Enhancement Field',
-            'Processing Enhancement Data',
-            'Finalizing Enhancement Protocol',
-            'Activating Enhancement Systems',
-            'Enhancement Ready for Deployment'
+            'Initializing',
+            'Scanning',
+            'Analyzing', 
+            'Calculating',
+            'Processing',
+            'Calibrating',
+            'Optimizing',
+            'Finalizing',
+            'Activating',
+            'Complete'
         ];
         
-        return loadingTexts[frame] || 'Completing Enhancement';
+        return loadingTexts[frame] || 'Processing';
     }
     
-    // ✅ FIXED: Create subtle border effect (no emojis)
-    static createBorderEffect(percentage) {
-        if (percentage < 20) {
-            return '▫ ▫ ▫ ▫ ▫ ▫ ▫ ▫ ▫ ▫';
-        } else if (percentage < 40) {
-            return '▪ ▫ ▪ ▫ ▪ ▫ ▪ ▫ ▪ ▫';
-        } else if (percentage < 60) {
-            return '▪ ▪ ▫ ▪ ▪ ▫ ▪ ▪ ▫ ▪';
-        } else if (percentage < 80) {
-            return '▪ ▪ ▪ ▫ ▪ ▪ ▪ ▫ ▪ ▪';
-        } else {
-            return '▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪';
-        }
-    }
-    
-    // Create loading embed with enhanced visuals
+    // Create loading embed with minimal text
     static createLoadingEmbed(percentage, frame) {
         const progressBar = this.createProgressBar(percentage);
         const loadingText = this.getLoadingText(frame);
-        const borderEffect = this.createBorderEffect(percentage);
         
         // Progressive color change as it loads
         let embedColor = 0x4A90E2; // Blue
@@ -130,22 +114,15 @@ class ProgressBarAnimator {
         else if (percentage >= 40) embedColor = 0x8B5CF6; // Purple
         
         const embed = new EmbedBuilder()
-            .setTitle('⚡ Marine Enhancement Protocol')
+            .setTitle('Enhancement Protocol')
             .setDescription(
-                `**${loadingText}...**\n\n` +
-                `${borderEffect}\n` +
-                `\`┌${'─'.repeat(22)}┐\`\n` +
-                `\`│ ${progressBar} │\` **${percentage}%**\n` +
-                `\`└${'─'.repeat(22)}┘\`\n` +
-                `${borderEffect}`
+                `**${loadingText}**\n\n` +
+                `\`┌${'─'.repeat(37)}┐\`\n` +
+                `\`│ ${progressBar} │\`\n` +
+                `\`└${'─'.repeat(37)}┘\`\n` +
+                `**${percentage}%**`
             )
             .setColor(embedColor)
-            .addFields({
-                name: '📊 System Status',
-                value: `\`\`\`yaml\nEnhancement Level: ${Math.floor(percentage / 10)}/10\nPower Stability: ${percentage < 100 ? 'BUILDING' : 'OPTIMAL'}\nThreat Assessment: ${percentage < 50 ? 'LOW' : percentage < 80 ? 'MODERATE' : 'HIGH'}\nProtocol Status: ${percentage < 100 ? 'IN PROGRESS' : 'COMPLETE'}\n\`\`\``,
-                inline: false
-            })
-            .setFooter({ text: `Marine Enhancement Division • ${percentage < 100 ? 'Processing' : 'Complete'}...` })
             .setTimestamp();
         
         return embed;
@@ -156,26 +133,17 @@ class ProgressBarAnimator {
         const progressBar = this.createProgressBar(100);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
-        const borderEffect = '▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪ ▪';
         
         const embed = new EmbedBuilder()
-            .setTitle('⚡ Marine Enhancement Protocol')
+            .setTitle('Enhancement Protocol')
             .setDescription(
-                `**Enhancement Complete!**\n\n` +
-                `${borderEffect}\n` +
-                `\`┌${'─'.repeat(22)}┐\`\n` +
-                `\`│ ${progressBar} │\` **100%**\n` +
-                `\`└${'─'.repeat(22)}┘\`\n` +
-                `${borderEffect}\n\n` +
-                `${isColorPhase ? `**${tierName}**` : '**PROCESSING...**'}`
+                `**${isColorPhase ? tierName : 'PROCESSING'}**\n\n` +
+                `\`┌${'─'.repeat(37)}┐\`\n` +
+                `\`│ ${progressBar} │\`\n` +
+                `\`└${'─'.repeat(37)}┘\`\n` +
+                `**100%**`
             )
             .setColor(isColorPhase ? tierColor : 0xFFFFFF)
-            .addFields({
-                name: '📊 System Status',
-                value: `\`\`\`yaml\nEnhancement Level: 10/10\nPower Stability: OPTIMAL\nThreat Assessment: MAXIMUM\nProtocol Status: ${isColorPhase ? 'ACTIVATED' : 'FINALIZING'}\n\`\`\``,
-                inline: false
-            })
-            .setFooter({ text: `Marine Enhancement Division • ${isColorPhase ? 'Enhancement Active!' : 'Finalizing...'}` })
             .setTimestamp();
         
         return embed;
@@ -189,26 +157,25 @@ class ProgressBarAnimator {
         const nextReset = getNextResetUnixTimestamp();
         
         const embed = new EmbedBuilder()
-            .setTitle('✨ Enhancement Active')
+            .setTitle('Enhancement Active')
             .setColor(tierColor)
             .addFields(
                 {
-                    name: '🎯 Buff Tier',
+                    name: 'Buff Tier',
                     value: `**${tierName}**`,
                     inline: true
                 },
                 {
-                    name: '⚡ XP Multiplier',
+                    name: 'XP Multiplier',
                     value: `**${xpMultiplier}**`,
                     inline: true
                 },
                 {
-                    name: '⏰ Resets In',
+                    name: 'Resets In',
                     value: `<t:${nextReset}:R>`,
                     inline: true
                 }
             )
-            .setFooter({ text: 'Marine Enhancement Division' })
             .setTimestamp();
         
         return embed;
@@ -242,25 +209,24 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor(TIER_COLORS[currentBuff.tier] || 0x4A90E2)
-                    .setTitle('✨ Enhancement Already Active')
+                    .setTitle('Enhancement Already Active')
                     .addFields(
                         {
-                            name: '🎯 Current Buff',
+                            name: 'Current Buff',
                             value: `**${currentBuff.name}**`,
                             inline: true
                         },
                         {
-                            name: '⚡ XP Multiplier',
+                            name: 'XP Multiplier',
                             value: `**${XP_MULTIPLIERS[currentBuff.tier] || '1.0x'}**`,
                             inline: true
                         },
                         {
-                            name: '⏰ Resets In',
+                            name: 'Resets In',
                             value: `<t:${nextReset}:R>`,
                             inline: true
                         }
                     )
-                    .setFooter({ text: 'Marine Enhancement Division' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], flags: 64 });
