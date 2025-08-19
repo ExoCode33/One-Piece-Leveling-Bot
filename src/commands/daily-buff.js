@@ -1,340 +1,118 @@
-// src/commands/daily-buff.js - IMPRESSIVE Cinematic Animation System
+// src/commands/daily-buff.js - Progress Bar Animation with Blinking Effect
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-// ✨ CINEMATIC Animation Configuration
+// Progress Bar Animation Configuration
 const ANIMATION_CONFIG = {
-    INTRO_FRAMES: 3,          // Build-up frames
-    CORE_FRAMES: 4,           // Main animation frames  
-    REVEAL_FRAMES: 2,         // Result reveal frames
-    FRAME_DELAY: 900,         // 0.9 seconds per frame
-    FINAL_PAUSE: 1500,        // 1.5 second dramatic pause
-    PARTICLE_DENSITY: 25      // Particle effects density
+    PROGRESS_FRAMES: 10,      // 10 frames for smooth progress
+    FRAME_DELAY: 400,         // 0.4s per frame
+    BLINK_COUNT: 3,           // Blink 3 times
+    BLINK_DELAY: 300,         // 0.3s per blink
+    FINAL_PAUSE: 1000         // 1s pause before reveal
 };
 
-// Enhanced tier colors and rarity names
+// Tier colors and names
 const TIER_COLORS = {
-    1: 0x22C55E, // Emerald
-    2: 0x3B82F6, // Sapphire
-    3: 0x8B5CF6, // Amethyst
-    4: 0xF59E0B, // Topaz
-    5: 0xF97316, // Ruby
-    6: 0xEF4444  // Diamond
+    1: 0x22C55E, // Green - Common
+    2: 0x3B82F6, // Blue - Rare
+    3: 0x8B5CF6, // Purple - Epic
+    4: 0xF59E0B, // Gold - Legendary
+    5: 0xF97316, // Orange - Mythical
+    6: 0xEF4444  // Red - Transcendent
 };
 
 const TIER_NAMES = {
-    1: 'Marine Combat Enhancement',
-    2: 'Elite Operations Protocol', 
-    3: 'Admiral Authority Matrix',
-    4: 'Fleet Command Synchronization',
-    5: 'World Government Authorization',
-    6: 'Legendary Marine Ascension'
+    1: 'Common Enhancement',
+    2: 'Rare Enhancement',
+    3: 'Epic Enhancement',
+    4: 'Legendary Enhancement',
+    5: 'Mythical Enhancement',
+    6: 'Transcendent Enhancement'
 };
 
-const TIER_RARITIES = {
-    1: 'COMMON',
-    2: 'RARE',
-    3: 'EPIC', 
-    4: 'LEGENDARY',
-    5: 'MYTHICAL',
-    6: 'TRANSCENDENT'
+const XP_MULTIPLIERS = {
+    1: '1.2x',
+    2: '1.4x',
+    3: '1.6x',
+    4: '1.8x',
+    5: '2.0x',
+    6: '2.5x'
 };
 
-class CinematicAnimator {
+class ProgressBarAnimator {
     
-    // ✨ Create particle field effects
-    static generateParticleField(density, pattern = 'scatter') {
-        const particles = [];
-        const chars = ['✦', '✧', '⟡', '◦', '∘', '◯', '⬡', '⬢'];
+    // Create progress bar visual
+    static createProgressBar(percentage) {
+        const totalBars = 20;
+        const filledBars = Math.floor((percentage / 100) * totalBars);
+        const emptyBars = totalBars - filledBars;
         
-        for (let i = 0; i < density; i++) {
-            const char = chars[Math.floor(Math.random() * chars.length)];
-            particles.push(char);
-        }
+        const filled = '█'.repeat(filledBars);
+        const empty = '░'.repeat(emptyBars);
         
-        if (pattern === 'spiral') {
-            return this.createSpiralPattern(particles);
-        } else if (pattern === 'wave') {
-            return this.createWavePattern(particles);
-        } else if (pattern === 'burst') {
-            return this.createBurstPattern(particles);
-        }
-        
-        return particles.join(' ');
+        return filled + empty;
     }
     
-    static createSpiralPattern(particles) {
-        const lines = [];
-        const center = Math.floor(particles.length / 3);
+    // Create loading embed
+    static createLoadingEmbed(percentage) {
+        const progressBar = this.createProgressBar(percentage);
         
-        lines.push(particles.slice(0, center).join(' '));
-        lines.push('    ' + particles.slice(center, center * 2).join('  ') + '    ');
-        lines.push(particles.slice(center * 2).join(' '));
-        
-        return lines.join('\n');
-    }
-    
-    static createWavePattern(particles) {
-        const lines = [];
-        const third = Math.floor(particles.length / 3);
-        
-        lines.push('  ' + particles.slice(0, third).join('   '));
-        lines.push(particles.slice(third, third * 2).join('  '));
-        lines.push('    ' + particles.slice(third * 2).join('   '));
-        
-        return lines.join('\n');
-    }
-    
-    static createBurstPattern(particles) {
-        const center = '    ◉    ';
-        const ring1 = particles.slice(0, 8).join(' ');
-        const ring2 = particles.slice(8, 16).join(' ');
-        const ring3 = particles.slice(16).join(' ');
-        
-        return `${ring3}\n  ${ring2}  \n${ring1}\n${center}\n${ring1}\n  ${ring2}  \n${ring3}`;
-    }
-    
-    // ✨ Create energy matrix visualization
-    static createEnergyMatrix(intensity, pattern = 'default') {
-        const width = 12;
-        const height = 6;
-        const matrix = [];
-        
-        const energyChars = ['▓', '▒', '░', '█'];
-        const selectedChar = energyChars[Math.min(intensity - 1, energyChars.length - 1)];
-        
-        for (let y = 0; y < height; y++) {
-            const row = [];
-            for (let x = 0; x < width; x++) {
-                if (pattern === 'diamond') {
-                    const centerX = width / 2;
-                    const centerY = height / 2;
-                    const distance = Math.abs(x - centerX) + Math.abs(y - centerY);
-                    
-                    if (distance <= intensity) {
-                        row.push(selectedChar);
-                    } else {
-                        row.push('░');
-                    }
-                } else if (pattern === 'wave') {
-                    const wave = Math.sin((x + y + intensity) * 0.5) > 0;
-                    row.push(wave ? selectedChar : '░');
-                } else {
-                    // Default expanding pattern
-                    const shouldFill = Math.random() < (intensity / 10);
-                    row.push(shouldFill ? selectedChar : '░');
-                }
-            }
-            matrix.push(row.join(''));
-        }
-        
-        return matrix.join('\n');
-    }
-    
-    // ✨ IMPRESSIVE: Create cinematic animation frames
-    static createCinematicFrame(frameNumber, totalFrames, finalTier) {
-        const progress = frameNumber / totalFrames;
-        const tierColor = TIER_COLORS[finalTier];
-        const tierRarity = TIER_RARITIES[finalTier];
-        
-        // Phase determination
-        let phase, title, description, visualEffect, embedColor;
-        
-        if (frameNumber <= ANIMATION_CONFIG.INTRO_FRAMES) {
-            // INTRO PHASE: Build anticipation
-            phase = 'INITIALIZATION';
-            embedColor = 0x4A90E2;
-            
-            if (frameNumber === 1) {
-                title = '⚡ MARINE ENHANCEMENT PROTOCOL';
-                description = '```ansi\n\u001b[1;34m◆ ACCESSING WORLD GOVERNMENT DATABASES ◆\u001b[0m\n```';
-                visualEffect = this.generateParticleField(15, 'scatter');
-            } else if (frameNumber === 2) {
-                title = '🔐 SECURITY CLEARANCE VERIFICATION';
-                description = '```ansi\n\u001b[1;33m◆ QUANTUM ENCRYPTION PROTOCOLS ACTIVE ◆\u001b[0m\n```';
-                visualEffect = this.createEnergyMatrix(2, 'wave');
-            } else {
-                title = '🎯 ENHANCEMENT MATRIX CALIBRATION';
-                description = '```ansi\n\u001b[1;35m◆ DIMENSIONAL HARMONICS STABILIZING ◆\u001b[0m\n```';
-                visualEffect = this.generateParticleField(20, 'spiral');
-            }
-            
-        } else if (frameNumber <= ANIMATION_CONFIG.INTRO_FRAMES + ANIMATION_CONFIG.CORE_FRAMES) {
-            // CORE PHASE: Main animation
-            phase = 'ENHANCEMENT';
-            embedColor = 0xF59E0B;
-            const coreFrame = frameNumber - ANIMATION_CONFIG.INTRO_FRAMES;
-            
-            if (coreFrame === 1) {
-                title = '⚡ ENHANCEMENT FIELD GENERATION';
-                description = '```ansi\n\u001b[1;36m◆ REALITY DISTORTION FIELD EXPANDING ◆\u001b[0m\n```';
-                visualEffect = this.createEnergyMatrix(4, 'diamond');
-            } else if (coreFrame === 2) {
-                title = '🌟 QUANTUM ENHANCEMENT CASCADE';
-                description = '```ansi\n\u001b[1;32m◆ TEMPORAL FLUX STABILIZATION IN PROGRESS ◆\u001b[0m\n```';
-                visualEffect = this.generateParticleField(30, 'burst');
-            } else if (coreFrame === 3) {
-                title = '💫 MULTIDIMENSIONAL SYNCHRONIZATION';
-                description = '```ansi\n\u001b[1;31m◆ PARALLEL UNIVERSE CONVERGENCE DETECTED ◆\u001b[0m\n```';
-                visualEffect = this.createEnergyMatrix(6, 'wave');
-            } else {
-                title = '🔥 ENHANCEMENT MATRIX OVERLOAD';
-                description = '```ansi\n\u001b[1;37m◆ POWER LEVELS EXCEEDING SAFE PARAMETERS ◆\u001b[0m\n```';
-                visualEffect = this.generateParticleField(35, 'spiral');
-            }
-            
-        } else {
-            // REVEAL PHASE: Dramatic revelation
-            phase = 'REVELATION';
-            embedColor = tierColor;
-            
-            if (frameNumber === totalFrames - 1) {
-                title = '✨ ENHANCEMENT PROTOCOL CULMINATION';
-                description = `\`\`\`ansi\n\u001b[1;33m◆ RARITY CLASSIFICATION: ${tierRarity} ◆\u001b[0m\n\`\`\``;
-                visualEffect = this.createTierRevealEffect(finalTier);
-            } else {
-                title = '🎆 LEGENDARY ENHANCEMENT AWAKENING';
-                description = `\`\`\`ansi\n\u001b[1;35m◆ ${TIER_NAMES[finalTier].toUpperCase()} ACTIVATED ◆\u001b[0m\n\`\`\``;
-                visualEffect = this.createFinalBurstEffect(finalTier);
-            }
-        }
-        
-        return {
-            title,
-            description,
-            visualEffect,
-            phase,
-            progress: Math.round(progress * 100),
-            embedColor,
-            frameNumber,
-            totalFrames
-        };
-    }
-    
-    // ✨ Create tier-specific reveal effect
-    static createTierRevealEffect(tier) {
-        const raritySymbols = {
-            1: '🟢', 2: '🔵', 3: '🟣', 4: '🟡', 5: '🟠', 6: '🔴'
-        };
-        
-        const symbol = raritySymbols[tier];
-        const pattern = `
-    ${symbol}     ${symbol}     ${symbol}
-      ${symbol} ✦ ${symbol} ✦ ${symbol}
-        ${symbol}   ${symbol}   ${symbol}
-    ✦     ${symbol} ◉ ${symbol}     ✦
-        ${symbol}   ${symbol}   ${symbol}
-      ${symbol} ✦ ${symbol} ✦ ${symbol}
-    ${symbol}     ${symbol}     ${symbol}`;
-        
-        return pattern;
-    }
-    
-    // ✨ Create final burst effect
-    static createFinalBurstEffect(tier) {
-        const intensity = tier;
-        const effects = [];
-        
-        for (let i = 0; i < intensity; i++) {
-            effects.push('◇'.repeat(intensity * 2));
-        }
-        
-        const centerLine = '◆'.repeat(intensity) + ' ◉ ' + '◆'.repeat(intensity);
-        effects.splice(Math.floor(effects.length / 2), 0, centerLine);
-        
-        return effects.join('\n');
-    }
-    
-    // ✨ Create impressive loading embed
-    static createImpressiveEmbed(frameData, finalTier) {
         const embed = new EmbedBuilder()
-            .setTitle(frameData.title)
-            .setColor(frameData.embedColor)
-            .setDescription(frameData.description);
-        
-        // Add visual effect field
-        embed.addFields({
-            name: '◇ ◆ ENHANCEMENT MATRIX ◆ ◇',
-            value: `\`\`\`\n${frameData.visualEffect}\n\`\`\``,
-            inline: false
-        });
-        
-        // Add progress information
-        embed.addFields(
-            {
-                name: '📊 PROTOCOL STATUS',
-                value: `\`\`\`yaml\nPhase: ${frameData.phase}\nProgress: ${frameData.progress}%\nFrame: ${frameData.frameNumber}/${frameData.totalFrames}\nClassification: RESTRICTED\n\`\`\``,
-                inline: true
-            },
-            {
-                name: '⚡ ENERGY READINGS',
-                value: `\`\`\`yaml\nPower Level: ${frameData.frameNumber * 1337}\nStability: ${frameData.progress > 50 ? 'CRITICAL' : 'NOMINAL'}\nThreat Level: MAXIMUM\nAuthorization: CLASSIFIED\n\`\`\``,
-                inline: true
-            }
-        );
-        
-        // Add dramatic footer
-        embed.setFooter({ 
-            text: `Marine Enhancement Division • Phase ${frameData.phase} • ${frameData.progress}% Complete` 
-        })
-        .setTimestamp();
+            .setTitle('⚡ Marine Enhancement Protocol')
+            .setDescription(`**Scanning Enhancement Matrix...**\n\n\`${progressBar}\` ${percentage}%`)
+            .setColor(0xFFFFFF) // White color during loading
+            .setFooter({ text: 'Marine Enhancement Division • Processing...' })
+            .setTimestamp();
         
         return embed;
     }
     
-    // ✨ Create epic result embed
-    static createEpicResultEmbed(tier, member) {
+    // Create blinking embed (alternates between tier color and white)
+    static createBlinkEmbed(tier, isColorPhase) {
+        const progressBar = this.createProgressBar(100);
+        const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
-        const tierRarity = TIER_RARITIES[tier];
-        const color = TIER_COLORS[tier];
-        const nextReset = getNextResetUnixTimestamp();
-        
-        // Epic descriptions based on tier
-        const epicDescriptions = {
-            1: 'Basic enhancement protocols have awakened within your neural pathways. Your combat efficiency has increased by 15%.',
-            2: 'Rare enhancement matrices are now synchronized with your biological systems. Enhanced reflexes and tactical awareness online.',
-            3: 'Epic-grade enhancement protocols have fundamentally altered your combat capabilities. You now operate beyond human limitations.',
-            4: 'Legendary enhancement systems have integrated with your very essence. Reality bends slightly around your presence.',
-            5: 'Mythical enhancement protocols have transcended the boundaries of conventional enhancement. You have become a living weapon.',
-            6: 'Transcendent enhancement has elevated you beyond mortal comprehension. You are now a force of nature itself.'
-        };
         
         const embed = new EmbedBuilder()
-            .setTitle('🌟 LEGENDARY ENHANCEMENT COMPLETE 🌟')
-            .setColor(color)
-            .setDescription(`**${tierRarity} ENHANCEMENT ACHIEVED**\n\n*${epicDescriptions[tier]}*`);
+            .setTitle('⚡ Marine Enhancement Protocol')
+            .setDescription(`**Enhancement Complete!**\n\n\`${progressBar}\` 100%\n\n✨ **${tierName}** ✨`)
+            .setColor(isColorPhase ? tierColor : 0xFFFFFF) // Alternate between tier color and white
+            .setFooter({ text: 'Marine Enhancement Division • Complete!' })
+            .setTimestamp();
         
-        // Add dramatic tier announcement
-        embed.addFields({
-            name: '✨ ENHANCEMENT DETAILS ✨',
-            value: `\`\`\`ansi\n\u001b[1;33m◆ CLASSIFICATION: ${tierRarity}\u001b[0m\n\u001b[1;36m◆ DESIGNATION: ${tierName}\u001b[0m\n\u001b[1;35m◆ TIER LEVEL: ${tier}/6\u001b[0m\n\u001b[1;32m◆ STATUS: FULLY OPERATIONAL\u001b[0m\n\`\`\``,
-            inline: false
-        });
+        return embed;
+    }
+    
+    // Create final minimalist reveal embed
+    static createRevealEmbed(tier, member) {
+        const tierColor = TIER_COLORS[tier];
+        const tierName = TIER_NAMES[tier];
+        const xpMultiplier = XP_MULTIPLIERS[tier];
+        const nextReset = getNextResetUnixTimestamp();
         
-        // Add power metrics
-        embed.addFields(
-            {
-                name: '⚡ POWER ANALYSIS',
-                value: `\`\`\`yaml\nEnhancement Tier: ${tier}\nPower Multiplier: CLASSIFIED\nDuration: Until Reset\nStability: 100%\n\`\`\``,
-                inline: true
-            },
-            {
-                name: '🎯 OPERATIONAL STATUS',
-                value: `\`\`\`yaml\nProtocol: ACTIVE\nEfficiency: MAXIMIZED\nThreat Level: ELEVATED\nClearance: AUTHORIZED\n\`\`\``,
-                inline: true
-            }
-        );
+        const embed = new EmbedBuilder()
+            .setTitle('✨ Enhancement Active')
+            .setColor(tierColor)
+            .addFields(
+                {
+                    name: '🎯 Buff Tier',
+                    value: `**${tierName}**`,
+                    inline: true
+                },
+                {
+                    name: '⚡ XP Multiplier',
+                    value: `**${xpMultiplier}**`,
+                    inline: true
+                },
+                {
+                    name: '⏰ Resets In',
+                    value: `<t:${nextReset}:R>`,
+                    inline: true
+                }
+            )
+            .setFooter({ text: 'Marine Enhancement Division' })
+            .setTimestamp();
         
-        // Add reset information
-        embed.addFields({
-            name: '🔄 ENHANCEMENT CYCLE',
-            value: `Enhancement protocols undergo daily recalibration at **3:00 AM EDT**\n\nNext recalibration: <t:${nextReset}:R>\n\n*"With great power comes great responsibility."*`,
-            inline: false
-        });
-        
-        embed.setFooter({ text: `${tierRarity} Enhancement • Marine Enhancement Division • ${tierName}` })
-             .setTimestamp();
-
         return embed;
     }
 }
@@ -342,7 +120,7 @@ class CinematicAnimator {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('⚡ Initiate Marine Enhancement Protocol (Resets at 3:00 AM EDT)'),
+        .setDescription('⚡ Activate daily Marine Enhancement (Resets at 3:00 AM EDT)'),
 
     async execute(interaction) {
         try {
@@ -353,7 +131,7 @@ module.exports = {
             // Check if XP tracker is available
             if (!global.xpTracker || !global.xpTracker.db) {
                 return await interaction.reply({
-                    content: '❌ **Enhancement Matrix Offline**\n\nMarine Enhancement Protocol not available.',
+                    content: '❌ **Enhancement System Offline**\n\nMarine Enhancement Protocol not available.',
                     flags: 64
                 });
             }
@@ -365,92 +143,99 @@ module.exports = {
                 const nextReset = getNextResetUnixTimestamp();
                 
                 const embed = new EmbedBuilder()
-                    .setColor(TIER_COLORS[currentBuff.tier] || '#4A90E2')
-                    .setTitle('⚡ Enhancement Protocol Already Active')
-                    .setDescription(`Your daily Marine Enhancement is currently operational.`)
+                    .setColor(TIER_COLORS[currentBuff.tier] || 0x4A90E2)
+                    .setTitle('✨ Enhancement Already Active')
                     .addFields(
                         {
-                            name: '🎯 Active Enhancement',
-                            value: `\`\`\`yaml\nProtocol: ${currentBuff.name}\nClassification: ${TIER_RARITIES[currentBuff.tier] || 'UNKNOWN'}\nTier: ${currentBuff.tier}/6\nStatus: OPERATIONAL\n\`\`\``,
+                            name: '🎯 Current Buff',
+                            value: `**${currentBuff.name}**`,
                             inline: true
                         },
                         {
-                            name: '🔄 Next Protocol',
+                            name: '⚡ XP Multiplier',
+                            value: `**${XP_MULTIPLIERS[currentBuff.tier] || '1.0x'}**`,
+                            inline: true
+                        },
+                        {
+                            name: '⏰ Resets In',
                             value: `<t:${nextReset}:R>`,
                             inline: true
                         }
                     )
-                    .setFooter({ text: 'Marine Enhancement Division • Protocol Active' })
+                    .setFooter({ text: 'Marine Enhancement Division' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the IMPRESSIVE cinematic animation sequence
+            // Start the progress bar animation
             await interaction.deferReply();
-            await this.performCinematicAnimation(interaction, userId, guildId, member);
+            await this.performProgressBarAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
             
             if (interaction.deferred) {
                 await interaction.editReply({
-                    content: '❌ **Enhancement Protocol Failed**\n\nCritical error in Marine Enhancement Matrix.'
+                    content: '❌ **Enhancement Protocol Failed**\n\nSystem error occurred.'
                 });
             } else {
                 await interaction.reply({
-                    content: '❌ **Enhancement Protocol Failed**\n\nCritical error in Marine Enhancement Matrix.',
+                    content: '❌ **Enhancement Protocol Failed**\n\nSystem error occurred.',
                     flags: 64
                 });
             }
         }
     },
 
-    // ✨ IMPRESSIVE: Cinematic animation sequence with dramatic timing
-    async performCinematicAnimation(interaction, userId, guildId, member) {
+    // ✨ Progress bar animation with blinking effect
+    async performProgressBarAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
-        const totalFrames = ANIMATION_CONFIG.INTRO_FRAMES + ANIMATION_CONFIG.CORE_FRAMES + ANIMATION_CONFIG.REVEAL_FRAMES;
         
         try {
-            console.log(`[DAILY BUFF] Starting CINEMATIC enhancement for ${interaction.user.username}, tier ${finalResult}`);
+            console.log(`[DAILY BUFF] Starting progress bar enhancement for ${interaction.user.username}, tier ${finalResult}`);
             
-            // Epic cinematic sequence with varying timing for dramatic effect
-            for (let frame = 1; frame <= totalFrames; frame++) {
-                const frameData = CinematicAnimator.createCinematicFrame(frame, totalFrames, finalResult);
-                const impressiveEmbed = CinematicAnimator.createImpressiveEmbed(frameData, finalResult);
+            // PHASE 1: Progress bar loading (0% → 100%)
+            for (let frame = 0; frame <= ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
+                const percentage = Math.round((frame / ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
+                const loadingEmbed = ProgressBarAnimator.createLoadingEmbed(percentage);
                 
-                await interaction.editReply({ embeds: [impressiveEmbed] });
+                await interaction.editReply({ embeds: [loadingEmbed] });
                 
-                // Dynamic timing for maximum impact
-                if (frame < totalFrames) {
-                    let delay = ANIMATION_CONFIG.FRAME_DELAY;
-                    
-                    // Slower on dramatic moments
-                    if (frame === ANIMATION_CONFIG.INTRO_FRAMES || frame === totalFrames - 1) {
-                        delay += 500; // Extra dramatic pause
-                    }
-                    
-                    // Add slight randomness for natural feel
-                    delay += Math.random() * 200 - 100;
-                    
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                if (frame < ANIMATION_CONFIG.PROGRESS_FRAMES) {
+                    await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FRAME_DELAY));
                 }
             }
 
-            // DRAMATIC PAUSE before final reveal
+            // PHASE 2: Blinking effect (tier color ↔ white)
+            for (let blink = 0; blink < ANIMATION_CONFIG.BLINK_COUNT; blink++) {
+                // Show tier color
+                const colorEmbed = ProgressBarAnimator.createBlinkEmbed(finalResult, true);
+                await interaction.editReply({ embeds: [colorEmbed] });
+                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BLINK_DELAY));
+                
+                // Show white (except on last blink)
+                if (blink < ANIMATION_CONFIG.BLINK_COUNT - 1) {
+                    const whiteEmbed = ProgressBarAnimator.createBlinkEmbed(finalResult, false);
+                    await interaction.editReply({ embeds: [whiteEmbed] });
+                    await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BLINK_DELAY));
+                }
+            }
+
+            // PHASE 3: Brief pause before reveal
             await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.FINAL_PAUSE));
 
             // Apply the buff role and save to database
             await this.applyBuffRole(userId, guildId, member, finalResult);
             
-            // Show EPIC final result
-            const epicEmbed = CinematicAnimator.createEpicResultEmbed(finalResult, member);
-            await interaction.editReply({ embeds: [epicEmbed] });
+            // PHASE 4: Final minimalist reveal
+            const revealEmbed = ProgressBarAnimator.createRevealEmbed(finalResult, member);
+            await interaction.editReply({ embeds: [revealEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Cinematic animation error:', error);
+            console.error('[DAILY BUFF] Progress bar animation error:', error);
             await interaction.editReply({
-                content: '❌ **Enhancement Protocol Failure**\n\nCritical system malfunction detected.'
+                content: '❌ **Enhancement Failed**\n\nAnimation system malfunction.'
             });
         }
     },
@@ -507,14 +292,14 @@ module.exports = {
                 return {
                     tier: tier,
                     name: TIER_NAMES[tier] || `Tier ${tier}`,
-                    multiplier: 'From Role Settings'
+                    multiplier: XP_MULTIPLIERS[tier] || '1.0x'
                 };
             }
 
-            return { tier: 0, name: 'No Enhancement', multiplier: 1.0 };
+            return { tier: 0, name: 'No Enhancement', multiplier: '1.0x' };
         } catch (error) {
             console.error('[DAILY BUFF] Error getting current buff:', error);
-            return { tier: 0, name: 'No Enhancement', multiplier: 1.0 };
+            return { tier: 0, name: 'No Enhancement', multiplier: '1.0x' };
         }
     },
 
@@ -529,13 +314,19 @@ module.exports = {
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
 
             if (!roleId || roleId === `role_id_${tier}`) {
-                throw new Error(`No role configured for tier ${tier}`);
+                console.warn(`[DAILY BUFF] No role configured for tier ${tier}`);
+                // Still save to database even if no role
+                await this.saveBuffRoll(userId, guildId, tier);
+                return;
             }
 
             // Try to find the role
             const role = member.guild.roles.cache.get(roleId);
             if (!role) {
-                throw new Error(`Role ${roleId} not found in guild`);
+                console.warn(`[DAILY BUFF] Role ${roleId} not found in guild`);
+                // Still save to database even if role not found
+                await this.saveBuffRoll(userId, guildId, tier);
+                return;
             }
 
             // Add the role
@@ -547,7 +338,12 @@ module.exports = {
 
         } catch (error) {
             console.error('[DAILY BUFF] ❌ Error applying buff role:', error);
-            throw error;
+            // Still try to save to database
+            try {
+                await this.saveBuffRoll(userId, guildId, tier);
+            } catch (saveError) {
+                console.error('[DAILY BUFF] ❌ Failed to save to database:', saveError);
+            }
         }
     },
 
