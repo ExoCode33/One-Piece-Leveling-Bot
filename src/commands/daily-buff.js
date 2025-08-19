@@ -467,7 +467,7 @@ module.exports = {
         else return 6;                    // 1% - Transcendent
     },
 
-    // [Keep all other existing methods: checkDailyRoll, getCurrentBuff, etc.]
+    // Check if user has already rolled today
     async checkDailyRoll(userId, guildId) {
         try {
             await global.xpTracker.db.query(`
@@ -676,6 +676,17 @@ module.exports = {
             dbRecordsRemoved = deleteResult.rowCount;
             
             return {
+                success: true,
+                removedRoles,
+                dbRecordsRemoved,
+                currentDay,
+                userId,
+                guildId
+            };
+            
+        } catch (error) {
+            console.error('[DAILY BUFF ADMIN] Error force removing daily buff:', error);
+            return {
                 success: false,
                 error: error.message,
                 removedRoles: [],
@@ -723,15 +734,4 @@ function getNextResetUnixTimestamp() {
     
     const utcReset = new Date(nextReset.getTime() - (edtOffset * 60 * 60 * 1000));
     return Math.floor(utcReset.getTime() / 1000);
-} true,
-                removedRoles,
-                dbRecordsRemoved,
-                currentDay,
-                userId,
-                guildId
-            };
-            
-        } catch (error) {
-            console.error('[DAILY BUFF ADMIN] Error force removing daily buff:', error);
-            return {
-                success:
+}
