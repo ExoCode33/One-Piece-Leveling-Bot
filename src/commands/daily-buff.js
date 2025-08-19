@@ -109,7 +109,7 @@ class BuffAnimator {
             }
         } else if (frame === 9) {
             // Frame 9: Large explosion
-            const explosionRadius = 5;
+            const explosionRadius = 6;
             const tierEmoji = TIER_EMOJIS[finalTier];
             
             for (let y = 0; y < height; y++) {
@@ -118,25 +118,18 @@ class BuffAnimator {
                     
                     if (distance <= explosionRadius) {
                         grid[y][x] = tierEmoji;
-                    } else if (distance <= explosionRadius + 2.5) {
+                    } else if (distance <= explosionRadius + 1.5) {
                         grid[y][x] = '⬜';
                     }
                 }
             }
         } else {
-            // Frame 10: Maximum explosion - fills most of the grid
-            const explosionRadius = 7;
+            // Frame 10: COMPLETE GRID EXPLOSION - entire grid becomes rarity color
             const tierEmoji = TIER_EMOJIS[finalTier];
             
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
-                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
-                    
-                    if (distance <= explosionRadius) {
-                        grid[y][x] = tierEmoji;
-                    } else if (distance <= explosionRadius + 1) {
-                        grid[y][x] = '⬜';
-                    }
+                    grid[y][x] = tierEmoji; // Fill entire grid with rarity color
                 }
             }
         }
@@ -194,9 +187,6 @@ class BuffAnimator {
         const color = TIER_COLORS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
-        // Create the final explosion grid for the result
-        const finalExplosionGrid = this.createGridAnimation(10, tier); // Frame 10 = maximum explosion
-        
         // Get the actual multiplier from the role (will be set by admin in role settings)
         let powerAmplification = '1.0x'; // Default fallback
         
@@ -211,11 +201,7 @@ class BuffAnimator {
         const embed = new EmbedBuilder()
             .setTitle('✨ Enhancement Complete!')
             .setColor(color)
-            .setDescription(
-                `**${tierName} Enhancement Successfully Activated!**\n\n` +
-                `\`\`\`\n${finalExplosionGrid}\n\`\`\`\n\n` +
-                `🎉 **Enhancement Complete!** 🎉`
-            )
+            .setDescription(`**${tierName} Enhancement Successfully Activated!**\n\n🎉 **Enhancement Complete!** 🎉`)
             .addFields(
                 {
                     name: '⚡ Enhancement Details',
