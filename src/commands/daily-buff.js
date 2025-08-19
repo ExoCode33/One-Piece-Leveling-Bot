@@ -6,7 +6,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const ANIMATION_CONFIG = {
     FRAME_DELAY: 700,
     TOTAL_FRAMES: 10, // Increased for better explosion
-    GRID_WIDTH: 18,
+    GRID_WIDTH: 19, // Changed from 18 to 19
     GRID_HEIGHT: 9
 };
 
@@ -44,8 +44,8 @@ class BuffAnimator {
     static createGridAnimation(frame, finalTier) {
         const width = ANIMATION_CONFIG.GRID_WIDTH;
         const height = ANIMATION_CONFIG.GRID_HEIGHT;
-        const centerX = Math.floor(width / 2);
-        const centerY = Math.floor(height / 2);
+        const centerX = 9; // Position 10 (1-indexed) = index 9 (0-indexed)
+        const centerY = Math.floor(height / 2); // Still 4 for height 9
         
         // Create the grid
         const grid = [];
