@@ -37,12 +37,11 @@ const XP_MULTIPLIERS = {
     6: '2.5x'
 };
 
-class RacingStripeProgressBar {
+class MovingRacingStripeBar {
     
-    // Create racing stripe progress bar based on percentage
-    static createRacingStripeProgress(percentage, animationFrame = 0) {
+    // Create racing stripe bar that moves from left to right (always 100% filled)
+    static createMovingRacingStripe(animationFrame = 0) {
         const totalBars = 20;
-        const filledBars = Math.floor((percentage / 100) * totalBars);
         
         // Racing stripe patterns
         const pattern1 = ['▓', '▒']; // Dark/light pattern
@@ -54,53 +53,48 @@ class RacingStripeProgressBar {
         
         let bar = '';
         
-        // Fill completed portion with racing stripes
-        for (let i = 0; i < filledBars; i++) {
-            bar += currentPattern[i % currentPattern.length];
+        // Create full bar with racing stripes that shift position
+        for (let i = 0; i < totalBars; i++) {
+            const patternIndex = (i + animationFrame) % currentPattern.length;
+            bar += currentPattern[patternIndex];
         }
-        
-        // Fill remaining with empty spaces
-        bar += '░'.repeat(totalBars - filledBars);
         
         return bar;
     }
     
-    // Create loading embed with racing stripe progress
-    static createLoadingEmbed(percentage, animationFrame = 0) {
-        const progressBar = this.createRacingStripeProgress(percentage, animationFrame);
+    // Create loading embed with moving racing stripes
+    static createLoadingEmbed(animationFrame = 0) {
+        const progressBar = this.createMovingRacingStripe(animationFrame);
         
-        // Color progression based on percentage
-        let color = 0x6B7280; // Gray
-        if (percentage >= 90) color = 0x10B981; // Green
-        else if (percentage >= 70) color = 0x3B82F6; // Blue
-        else if (percentage >= 50) color = 0x8B5CF6; // Purple
-        else if (percentage >= 25) color = 0xF59E0B; // Orange
+        // Cycle through colors for visual appeal
+        const colors = [0x6B7280, 0x3B82F6, 0x8B5CF6, 0xF59E0B, 0x10B981];
+        const color = colors[Math.floor(animationFrame / 5) % colors.length];
         
         return new EmbedBuilder()
-            .setTitle('🎰 Enhancement Protocol')
+            .setTitle('⚡ Enhancement Protocol')
             .setDescription(
-                `\`${progressBar}\` **${percentage}%**\n\n` +
-                `Analyzing enhancement compatibility...\n` +
-                `Racing stripes charging energy matrix...\n` +
+                `\`${progressBar}\` **Analyzing...**\n\n` +
+                `Scanning enhancement compatibility...\n` +
+                `Energy matrix stabilizing...\n` +
                 `\u200B\n\u200B` // Spacers for consistent height
             )
             .setColor(color)
             .setTimestamp();
     }
     
-    // Create completion embed with full racing stripes
+    // Create completion embed
     static createCompletionEmbed(tier, animationFrame = 0) {
-        const progressBar = this.createRacingStripeProgress(100, animationFrame);
+        const progressBar = this.createMovingRacingStripe(animationFrame);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         
         return new EmbedBuilder()
-            .setTitle('🎰 Enhancement Complete!')
+            .setTitle('⚡ Enhancement Complete!')
             .setDescription(
-                `\`${progressBar}\` **100%**\n\n` +
+                `\`${progressBar}\` **Complete!**\n\n` +
                 `**${tierName}** Unlocked!\n` +
                 `XP Multiplier: **${XP_MULTIPLIERS[tier]}**\n` +
-                `🏁 Racing stripes at maximum velocity! 🏁`
+                `Energy matrix fully charged!`
             )
             .setColor(tierColor)
             .setTimestamp();
@@ -108,16 +102,16 @@ class RacingStripeProgressBar {
     
     // Create final reveal embed
     static createRevealEmbed(tier) {
-        const progressBar = this.createRacingStripeProgress(100, 0);
+        const progressBar = this.createMovingRacingStripe(0);
         const tierColor = TIER_COLORS[tier];
         const tierName = TIER_NAMES[tier];
         const xpMultiplier = XP_MULTIPLIERS[tier];
         const nextReset = getNextResetUnixTimestamp();
         
         return new EmbedBuilder()
-            .setTitle('🏁 Enhancement Complete - Victory!')
+            .setTitle('✨ Enhancement Complete')
             .setDescription(
-                `\`${progressBar}\` **FINISHED!**\n\n` +
+                `\`${progressBar}\` **Success!**\n\n` +
                 `**${tierName}**\n` +
                 `XP Multiplier: **${xpMultiplier}**\n` +
                 `Resets: <t:${nextReset}:R>`
@@ -154,7 +148,7 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor(TIER_COLORS[currentBuff.tier] || 0x4A90E2)
-                    .setTitle('🏁 Enhancement Already Active')
+                    .setTitle('⚡ Enhancement Already Active')
                     .addFields(
                         {
                             name: 'Current Buff',
@@ -197,28 +191,27 @@ module.exports = {
         }
     },
 
-    // Racing stripe animation from 0% to 100%
+    // Moving racing stripe animation (bar always 100% filled but patterns move)
     async performRacingStripeAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            console.log(`[DAILY BUFF] Starting racing stripe animation for tier ${finalResult}`);
+            console.log(`[DAILY BUFF] Starting moving racing stripe animation for tier ${finalResult}`);
             
-            // Phase 1: Racing stripe progress from 0% to 100%
-            for (let frame = 0; frame <= RACING_ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
-                const percentage = Math.round((frame / RACING_ANIMATION_CONFIG.PROGRESS_FRAMES) * 100);
-                const loadingEmbed = RacingStripeProgressBar.createLoadingEmbed(percentage, frame);
+            // Phase 1: Moving racing stripe animation
+            for (let frame = 0; frame < RACING_ANIMATION_CONFIG.PROGRESS_FRAMES; frame++) {
+                const loadingEmbed = MovingRacingStripeBar.createLoadingEmbed(frame);
                 
                 await interaction.editReply({ embeds: [loadingEmbed] });
                 
-                if (frame < RACING_ANIMATION_CONFIG.PROGRESS_FRAMES) {
+                if (frame < RACING_ANIMATION_CONFIG.PROGRESS_FRAMES - 1) {
                     await new Promise(resolve => setTimeout(resolve, RACING_ANIMATION_CONFIG.FRAME_DELAY));
                 }
             }
 
-            // Phase 2: Show completion with animated racing stripes
+            // Phase 2: Show completion with continued animation
             for (let celebFrame = 0; celebFrame < 8; celebFrame++) {
-                const completionEmbed = RacingStripeProgressBar.createCompletionEmbed(finalResult, celebFrame);
+                const completionEmbed = MovingRacingStripeBar.createCompletionEmbed(finalResult, celebFrame);
                 await interaction.editReply({ embeds: [completionEmbed] });
                 
                 if (celebFrame < 7) {
@@ -230,13 +223,13 @@ module.exports = {
             await this.applyBuffRole(userId, guildId, member, finalResult);
             
             // Phase 3: Final reveal
-            const revealEmbed = RacingStripeProgressBar.createRevealEmbed(finalResult);
+            const revealEmbed = MovingRacingStripeBar.createRevealEmbed(finalResult);
             await interaction.editReply({ embeds: [revealEmbed] });
 
         } catch (error) {
-            console.error('[DAILY BUFF] Racing stripe animation error:', error);
+            console.error('[DAILY BUFF] Moving racing stripe animation error:', error);
             await interaction.editReply({
-                content: '❌ **Enhancement Failed**\n\nRacing stripe animation system malfunction.'
+                content: '❌ **Enhancement Failed**\n\nAnimation system malfunction.'
             });
         }
     },
