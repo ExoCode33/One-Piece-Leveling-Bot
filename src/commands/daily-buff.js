@@ -40,21 +40,84 @@ const QUESTION_DIFFICULTY_MAP = {
     6: 'Hard'     // Question 6 - Hard
 };
 
-// API Configuration
+// ✅ ENHANCED: API Configuration with better error handling and validation
 const QUIZ_APIS = [
     {
         name: 'AniQuizAPI',
         url: 'https://aniquizapi.vercel.app/api/quiz',
-        parser: (data) => ({
-            question: data.question,
-            options: data.options,
-            answer: data.answer,
-            difficulty: data.difficulty || 'Medium'
-        })
+        parser: (data) => {
+            // ✅ ENHANCED: Better validation and error handling
+            console.log('[API DEBUG] Raw API response:', JSON.stringify(data, null, 2));
+            
+            // Handle different possible response structures
+            let question, options, answer, difficulty;
+            
+            if (data.question && data.options && data.answer) {
+                // Standard format
+                question = data.question;
+                options = Array.isArray(data.options) ? data.options : [];
+                answer = data.answer;
+                difficulty = data.difficulty || 'Medium';
+            } else if (data.data && data.data.question) {
+                // Nested data format
+                question = data.data.question;
+                options = Array.isArray(data.data.options) ? data.data.options : [];
+                answer = data.data.answer;
+                difficulty = data.data.difficulty || 'Medium';
+            } else if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+                // Results array format
+                const result = data.results[0];
+                question = result.question;
+                options = Array.isArray(result.options) ? result.options : [];
+                answer = result.answer;
+                difficulty = result.difficulty || 'Medium';
+            } else {
+                console.log('[API DEBUG] Unrecognized API response format');
+                throw new Error('Invalid API response format');
+            }
+            
+            // Validate required fields
+            if (!question || !question.trim()) {
+                throw new Error('Missing or empty question');
+            }
+            
+            if (!Array.isArray(options) || options.length < 2) {
+                throw new Error('Invalid or insufficient options');
+            }
+            
+            if (!answer || !answer.trim()) {
+                throw new Error('Missing or empty answer');
+            }
+            
+            // Ensure answer is in options
+            if (!options.includes(answer)) {
+                console.log('[API DEBUG] Answer not found in options, adding it');
+                // If answer not in options, replace last option with correct answer
+                options[options.length - 1] = answer;
+            }
+            
+            // Limit to 4 options max
+            if (options.length > 4) {
+                // Keep correct answer and 3 random others
+                const correctIndex = options.indexOf(answer);
+                const otherOptions = options.filter((opt, index) => index !== correctIndex);
+                const randomOthers = otherOptions.sort(() => 0.5 - Math.random()).slice(0, 3);
+                options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
+            }
+            
+            console.log('[API DEBUG] Parsed question:', { question: question.substring(0, 50) + '...', optionsCount: options.length, answer, difficulty });
+            
+            return {
+                question: question.trim(),
+                options: options.filter(opt => opt && opt.trim()),
+                answer: answer.trim(),
+                difficulty: difficulty
+            };
+        }
     }
 ];
 
-// ✅ NEW: Difficulty-Categorized Fallback Questions
+// ✅ ENHANCED: Difficulty-Categorized Fallback Questions with more variety
 const FALLBACK_QUESTIONS = {
     'Easy': [
         {
@@ -85,6 +148,24 @@ const FALLBACK_QUESTIONS = {
             question: "What is the name of the hero school in My Hero Academia?",
             options: ["U.A. High School", "Shiketsu High", "Ketsubutsu Academy", "Seiai Academy"],
             answer: "U.A. High School",
+            difficulty: "Easy"
+        },
+        {
+            question: "What type of creature is Pikachu?",
+            options: ["Electric Mouse", "Fire Lizard", "Water Turtle", "Grass Frog"],
+            answer: "Electric Mouse",
+            difficulty: "Easy"
+        },
+        {
+            question: "Who is the main character of Dragon Ball?",
+            options: ["Goku", "Vegeta", "Piccolo", "Gohan"],
+            answer: "Goku",
+            difficulty: "Easy"
+        },
+        {
+            question: "What is the name of the giant creatures in Attack on Titan?",
+            options: ["Titans", "Giants", "Colossi", "Behemoths"],
+            answer: "Titans",
             difficulty: "Easy"
         }
     ],
@@ -124,6 +205,18 @@ const FALLBACK_QUESTIONS = {
             options: ["Ryomen Sukuna", "Satoru Gojo", "Yuji Itadori", "Megumi Fushiguro"],
             answer: "Ryomen Sukuna",
             difficulty: "Medium"
+        },
+        {
+            question: "Who is the Survey Corps commander in Attack on Titan Season 1-3?",
+            options: ["Erwin Smith", "Levi Ackerman", "Hange Zoe", "Keith Shadis"],
+            answer: "Erwin Smith",
+            difficulty: "Medium"
+        },
+        {
+            question: "In One Piece, what is the name of Luffy's Devil Fruit?",
+            options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"],
+            answer: "Gomu Gomu no Mi",
+            difficulty: "Medium"
         }
     ],
     'Hard': [
@@ -146,12 +239,6 @@ const FALLBACK_QUESTIONS = {
             difficulty: "Hard"
         },
         {
-            question: "What is the real name of the character known as 'Kira' in Death Note?",
-            options: ["Light Yagami", "L Lawliet", "Misa Amane", "Near"],
-            answer: "Light Yagami",
-            difficulty: "Hard"
-        },
-        {
             question: "In Monster, what is the name of the children's book that plays a crucial role in the story?",
             options: ["The Nameless Monster", "The God of Peace", "The Devil's Child", "The Quiet Room"],
             answer: "The Nameless Monster",
@@ -162,51 +249,118 @@ const FALLBACK_QUESTIONS = {
             options: ["Internet/Collective Unconscious", "Virtual Reality", "Computer Network", "Alien Communication"],
             answer: "Internet/Collective Unconscious",
             difficulty: "Hard"
+        },
+        {
+            question: "What is the real identity of the character known as 'John Doe' in Monster?",
+            options: ["Johan Liebert", "Wolfgang Grimmer", "Kenzo Tenma", "Heinrich Lunge"],
+            answer: "Johan Liebert",
+            difficulty: "Hard"
+        },
+        {
+            question: "In Psycho-Pass, what is the Sibyl System primarily composed of?",
+            options: ["Criminally Asymptomatic Brains", "Advanced AI Algorithms", "Quantum Computers", "Neural Networks"],
+            answer: "Criminally Asymptomatic Brains",
+            difficulty: "Hard"
+        },
+        {
+            question: "In Legend of the Galactic Heroes, what is the name of Yang Wen-li's flagship?",
+            options: ["Hyperion", "Brunhild", "Triglav", "Barbarossa"],
+            answer: "Hyperion",
+            difficulty: "Hard"
+        },
+        {
+            question: "In Perfect Blue, what is Mima's profession before becoming an idol?",
+            options: ["She was always an idol", "Actress", "Singer", "Voice Actor"],
+            answer: "She was always an idol",
+            difficulty: "Hard"
+        },
+        {
+            question: "In Paranoia Agent, what is the real identity of Lil' Slugger?",
+            options: ["Collective unconscious manifestation", "Makoto Kozuka", "Tsukiko Sagi", "Keiichi Ikari"],
+            answer: "Collective unconscious manifestation",
+            difficulty: "Hard"
         }
     ]
 };
 
 class ProgressiveQuizSystem {
-    // ✅ NEW: Fetch question by specific difficulty
+    // ✅ ENHANCED: Fetch question by specific difficulty with better error handling
     static async fetchQuestionByDifficulty(difficulty) {
         console.log(`[PROGRESSIVE QUIZ] Fetching ${difficulty} question...`);
         
-        // Try API first
+        // Try API first with multiple attempts
         for (const api of QUIZ_APIS) {
-            try {
-                console.log(`[PROGRESSIVE QUIZ] Trying ${api.name} for ${difficulty} question...`);
-                
-                const response = await fetch(api.url, {
-                    method: 'GET',
-                    headers: {
-                        'User-Agent': 'DiscordBot-AnimeQuiz/1.0',
-                        'Accept': 'application/json'
-                    },
-                    timeout: 5000
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const parsedQuestion = api.parser(data);
+            let attempts = 0;
+            const maxAttempts = 3;
+            
+            while (attempts < maxAttempts) {
+                try {
+                    attempts++;
+                    console.log(`[PROGRESSIVE QUIZ] Trying ${api.name} for ${difficulty} question... (Attempt ${attempts}/${maxAttempts})`);
                     
-                    if (parsedQuestion && parsedQuestion.question && parsedQuestion.options && parsedQuestion.answer) {
-                        // Override API difficulty with our required difficulty
-                        parsedQuestion.difficulty = difficulty;
-                        console.log(`[PROGRESSIVE QUIZ] ✅ Successfully fetched from ${api.name}`);
-                        return parsedQuestion;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+                    
+                    const response = await fetch(api.url, {
+                        method: 'GET',
+                        headers: {
+                            'User-Agent': 'DiscordBot-AnimeQuiz/1.0',
+                            'Accept': 'application/json'
+                        },
+                        signal: controller.signal
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        try {
+                            const parsedQuestion = api.parser(data);
+                            
+                            if (parsedQuestion && parsedQuestion.question && parsedQuestion.options && parsedQuestion.answer) {
+                                // ✅ Override API difficulty with our required difficulty
+                                parsedQuestion.difficulty = difficulty;
+                                console.log(`[PROGRESSIVE QUIZ] ✅ Successfully fetched from ${api.name} (attempt ${attempts})`);
+                                return parsedQuestion;
+                            } else {
+                                console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} parser returned invalid question (attempt ${attempts})`);
+                            }
+                        } catch (parseError) {
+                            console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} parser error (attempt ${attempts}):`, parseError.message);
+                        }
+                    } else {
+                        console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} HTTP error: ${response.status} (attempt ${attempts})`);
+                    }
+                    
+                } catch (error) {
+                    console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} request failed (attempt ${attempts}):`, error.message);
+                    
+                    // Wait before retry (except on last attempt)
+                    if (attempts < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, 1000 * attempts)); // Progressive delay
                     }
                 }
-                
-                console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} returned invalid data`);
-            } catch (error) {
-                console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} failed:`, error.message);
             }
+            
+            console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} exhausted all ${maxAttempts} attempts`);
         }
 
-        // Use fallback questions by difficulty
-        console.log(`[PROGRESSIVE QUIZ] 🛡️ Using fallback ${difficulty} question`);
-        const difficultyQuestions = FALLBACK_QUESTIONS[difficulty] || FALLBACK_QUESTIONS['Medium'];
+        // ✅ ENHANCED: Use fallback questions by difficulty with better selection
+        console.log(`[PROGRESSIVE QUIZ] 🛡️ All APIs failed, using fallback ${difficulty} question`);
+        const difficultyQuestions = FALLBACK_QUESTIONS[difficulty];
+        
+        if (!difficultyQuestions || difficultyQuestions.length === 0) {
+            console.log(`[PROGRESSIVE QUIZ] ⚠️ No fallback questions for ${difficulty}, using Medium`);
+            const fallbackDifficulty = 'Medium';
+            const fallbackQuestions = FALLBACK_QUESTIONS[fallbackDifficulty];
+            const fallbackQuestion = fallbackQuestions[Math.floor(Math.random() * fallbackQuestions.length)];
+            fallbackQuestion.difficulty = difficulty; // Override display difficulty
+            return fallbackQuestion;
+        }
+        
         const fallbackQuestion = difficultyQuestions[Math.floor(Math.random() * difficultyQuestions.length)];
+        console.log(`[PROGRESSIVE QUIZ] ✅ Using fallback question: "${fallbackQuestion.question.substring(0, 50)}..."`);
         return fallbackQuestion;
     }
 
