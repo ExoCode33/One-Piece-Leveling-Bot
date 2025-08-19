@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Core XP Tracker with FIXED voice XP logging and level up canvas
+// src/utils/xpTracker.js - Complete Enhanced XP Tracker with Daily Cap Logging
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
@@ -242,7 +242,7 @@ class XPTracker {
                 [newLevel, userId, guildId]
             );
 
-            // ✅ FIXED: Log ALL XP activity including voice XP
+            // ✅ ENHANCED: Log ALL XP activity including voice XP with daily cap info
             await this.logXPActivity(source, user, guildId, actualXP, {
                 totalXP: newTotalXP,
                 currentLevel: newLevel,
@@ -729,7 +729,19 @@ class XPTracker {
         this.cooldowns.set(key, Date.now());
     }
 
-    // ✅ FIXED: Enhanced XP activity logging with voice channel info
+    // ✅ NEW: Helper method to create progress bars
+    createProgressBar(current, max, length = 20) {
+        const percentage = Math.max(0, Math.min(1, current / max));
+        const filled = Math.round(percentage * length);
+        const empty = length - filled;
+        
+        const filledChar = '█';
+        const emptyChar = '░';
+        
+        return filledChar.repeat(filled) + emptyChar.repeat(empty);
+    }
+
+    // ✅ ENHANCED: XP activity logging with daily cap information for voice XP
     async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
         try {
             const guildSettings = global.guildSettings?.get(guildId);
@@ -751,9 +763,32 @@ class XPTracker {
             // Enhanced logging based on XP type
             switch (type) {
                 case 'voice':
+                    // ✅ NEW: Get daily voice XP information
+                    const dailyCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+                    const currentDay = this.dailyResetManager ? this.dailyResetManager.getCurrentDay() : 'Unknown';
+                    const dailyXP = this.dailyResetManager ? 
+                        this.dailyResetManager.getDailyVoiceXP(user.id, guildId, currentDay) : 0;
+                    const remainingXP = Math.max(0, dailyCap - dailyXP);
+                    const capPercentage = Math.round((dailyXP / dailyCap) * 100);
+                    
+                    // Create progress bar
+                    const progressBar = this.createProgressBar(dailyXP, dailyCap, 20);
+                    
                     embed
                         .setTitle('🔴 🎤 VOICE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- SOURCE: VOICE ACTIVITY\n\`\`\``);
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- SOURCE: VOICE ACTIVITY\n\`\`\``)
+                        .addFields(
+                            {
+                                name: '📊 Daily Voice XP Progress',
+                                value: `\`\`\`yaml\nDaily XP: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} (${capPercentage}%)\nRemaining: ${remainingXP.toLocaleString()} XP\nReset Day: ${currentDay}\n\`\`\``,
+                                inline: true
+                            },
+                            {
+                                name: '📈 Progress Bar',
+                                value: `\`${progressBar}\`\n${dailyXP >= dailyCap ? '🚨 **DAILY CAP REACHED**' : `⏱️ ${remainingXP} XP until cap`}`,
+                                inline: true
+                            }
+                        );
                     break;
                 
                 case 'message':
