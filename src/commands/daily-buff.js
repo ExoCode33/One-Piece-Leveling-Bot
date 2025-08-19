@@ -40,30 +40,27 @@ const QUESTION_DIFFICULTY_MAP = {
     6: 'Hard'     // Question 6 - Hard
 };
 
-// ✅ ENHANCED: Multiple API sources for better reliability
+// ✅ PRODUCTION: API configuration that handles AniQuizAPI's metadata format
 const QUIZ_APIS = [
     {
         name: 'AniQuizAPI',
         url: 'https://aniquizapi.vercel.app/api/quiz',
         parser: (data) => {
-            // ✅ ENHANCED: Better validation and error handling
             console.log('[API DEBUG] Raw AniQuizAPI response:', JSON.stringify(data, null, 2));
             
-            // Check if this is metadata instead of quiz data
-            if (data.creator || data.github || data.message) {
-                console.log('[API DEBUG] Received metadata instead of quiz data');
-                throw new Error('API returned metadata instead of quiz data');
-            }
-            
-            // Handle different possible response structures
+            // ✅ FIXED: AniQuizAPI ALWAYS includes metadata alongside quiz data
+            // We need to extract the quiz fields while ignoring the metadata
             let question, options, answer, difficulty;
             
+            // Check if this response has quiz data (even with metadata)
             if (data.question && data.options && data.answer) {
-                // Standard format
+                // Standard format - extract quiz data, ignore metadata
                 question = data.question;
                 options = Array.isArray(data.options) ? data.options : [];
                 answer = data.answer;
                 difficulty = data.difficulty || 'Medium';
+                
+                console.log('[API DEBUG] Successfully extracted quiz data from AniQuizAPI (ignoring metadata)');
             } else if (data.data && data.data.question) {
                 // Nested data format
                 question = data.data.question;
@@ -78,8 +75,9 @@ const QUIZ_APIS = [
                 answer = result.answer;
                 difficulty = result.difficulty || 'Medium';
             } else {
-                console.log('[API DEBUG] Unrecognized API response format');
-                throw new Error('Invalid API response format');
+                // ✅ FIXED: Better error message for truly invalid responses
+                console.log('[API DEBUG] No valid quiz data found in AniQuizAPI response');
+                throw new Error('No quiz data found in API response');
             }
             
             // Validate required fields
@@ -88,7 +86,7 @@ const QUIZ_APIS = [
             }
             
             if (!Array.isArray(options) || options.length < 2) {
-                throw new Error('Invalid or insufficient options');
+                throw new Error(`Invalid or insufficient options (found ${options?.length || 0}, need at least 2)`);
             }
             
             if (!answer || !answer.trim()) {
@@ -99,10 +97,14 @@ const QUIZ_APIS = [
             if (!options.includes(answer)) {
                 console.log('[API DEBUG] Answer not found in options, adding it');
                 // If answer not in options, replace last option with correct answer
-                options[options.length - 1] = answer;
+                if (options.length > 0) {
+                    options[options.length - 1] = answer;
+                } else {
+                    options = [answer, 'Option 2', 'Option 3', 'Option 4'];
+                }
             }
             
-            // Limit to 4 options max
+            // Limit to 4 options max and ensure variety
             if (options.length > 4) {
                 // Keep correct answer and 3 random others
                 const correctIndex = options.indexOf(answer);
@@ -111,40 +113,27 @@ const QUIZ_APIS = [
                 options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
             }
             
-            console.log('[API DEBUG] Parsed AniQuizAPI question:', { question: question.substring(0, 50) + '...', optionsCount: options.length, answer, difficulty });
+            // Clean up options
+            const cleanOptions = options.filter(opt => opt && opt.trim()).slice(0, 4);
+            
+            console.log('[API DEBUG] ✅ Successfully parsed AniQuizAPI question:', { 
+                question: question.substring(0, 50) + '...', 
+                optionsCount: cleanOptions.length, 
+                answer, 
+                difficulty,
+                hasMetadata: !!(data.creator || data.github) // Log if metadata was present
+            });
             
             return {
                 question: question.trim(),
-                options: options.filter(opt => opt && opt.trim()),
+                options: cleanOptions,
                 answer: answer.trim(),
                 difficulty: difficulty
             };
         }
-    },
-    // ✅ NEW: Additional backup API sources
-    {
-        name: 'Anime Facts API',
-        url: 'https://anime-facts-rest-api.herokuapp.com/api/v1',
-        parser: (data) => {
-            console.log('[API DEBUG] Raw Anime Facts API response:', JSON.stringify(data, null, 2));
-            
-            // This API might need different parsing logic
-            if (data.data && data.data.fact) {
-                // Create a simple true/false question from anime facts
-                const fact = data.data.fact;
-                const anime = data.data.anime_name || 'Unknown Anime';
-                
-                return {
-                    question: `True or False: ${fact}`,
-                    options: ['True', 'False', 'Maybe', 'Unknown'],
-                    answer: 'True', // Since these are facts, they're true
-                    difficulty: 'Medium'
-                };
-            }
-            
-            throw new Error('Invalid Anime Facts API response');
-        }
     }
+    // ✅ You can add more APIs here when you find them
+    // The fallback system ensures your quiz always works
 ];
 
 // ✅ ENHANCED: Difficulty-Categorized Fallback Questions with more variety
