@@ -4,8 +4,10 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation configuration
 const ANIMATION_CONFIG = {
-    FRAME_DELAY: 600,
-    TOTAL_FRAMES: 5
+    FRAME_DELAY: 700,
+    TOTAL_FRAMES: 8,
+    GRID_WIDTH: 18,
+    GRID_HEIGHT: 9
 };
 
 // Tier colors and configurations
@@ -16,6 +18,15 @@ const TIER_COLORS = {
     4: 0xF59E0B, // Gold
     5: 0xF97316, // Orange
     6: 0xEF4444  // Red
+};
+
+const TIER_EMOJIS = {
+    1: '🟢', // Green
+    2: '🔵', // Blue
+    3: '🟣', // Purple
+    4: '🟡', // Gold/Yellow
+    5: '🟠', // Orange
+    6: '🔴'  // Red
 };
 
 const TIER_NAMES = {
@@ -37,37 +48,109 @@ const TIER_MULTIPLIERS = {
 };
 
 class BuffAnimator {
-    static getRainbowPattern(frame, length = 20) {
-        const colors = ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '⬜'];
-        const pattern = [];
+    // Create a grid animation showing light emanating from center
+    static createGridAnimation(frame, finalTier) {
+        const width = ANIMATION_CONFIG.GRID_WIDTH;
+        const height = ANIMATION_CONFIG.GRID_HEIGHT;
+        const centerX = Math.floor(width / 2);
+        const centerY = Math.floor(height / 2);
         
-        for (let i = 0; i < length; i++) {
-            const colorIndex = (i + frame) % colors.length;
-            pattern.push(colors[colorIndex]);
+        // Create the grid
+        const grid = [];
+        for (let y = 0; y < height; y++) {
+            const row = [];
+            for (let x = 0; x < width; x++) {
+                row.push('⬛'); // Black square
+            }
+            grid.push(row);
         }
         
-        return pattern.join(' ');
+        if (frame <= 6) {
+            // Frames 1-6: Light expanding outward from center
+            const radius = frame * 1.2; // Expand radius each frame
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    
+                    if (distance <= radius) {
+                        grid[y][x] = '⬜'; // White light
+                    }
+                }
+            }
+        } else if (frame === 7) {
+            // Frame 7: Small explosion with rarity color
+            const explosionRadius = 2;
+            const tierEmoji = TIER_EMOJIS[finalTier];
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    
+                    if (distance <= explosionRadius) {
+                        grid[y][x] = tierEmoji;
+                    } else if (distance <= explosionRadius + 1.5) {
+                        grid[y][x] = '⬜'; // White around explosion
+                    }
+                }
+            }
+        } else {
+            // Frame 8: Full explosion
+            const tierEmoji = TIER_EMOJIS[finalTier];
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    
+                    if (distance <= 4) {
+                        grid[y][x] = tierEmoji;
+                    } else if (distance <= 6) {
+                        grid[y][x] = '⬜';
+                    }
+                }
+            }
+        }
+        
+        // Convert grid to string
+        let gridString = '';
+        for (let y = 0; y < height; y++) {
+            gridString += grid[y].join('') + '\n';
+        }
+        
+        return gridString.trim();
     }
 
-    static getRainbowColor(frame) {
-        const colors = [0xFF0000, 0xFF8000, 0xFFFF00, 0x00FF00, 0x0080FF, 0x8000FF, 0xFFFFFF];
-        return colors[frame % colors.length];
-    }
-
-    static createLoadingFrame(currentFrame, totalFrames) {
+    static createLoadingFrame(currentFrame, totalFrames, finalTier) {
         const progressPercent = Math.floor((currentFrame / totalFrames) * 100);
-        const frame = Math.floor(Date.now() / ANIMATION_CONFIG.FRAME_DELAY) % 7;
-        const pattern = this.getRainbowPattern(frame, 20);
-        const color = this.getRainbowColor(frame);
+        const gridAnimation = this.createGridAnimation(currentFrame, finalTier);
+        
+        let statusMessage = '';
+        let color = 0x4A90E2; // Default blue
+        
+        if (currentFrame <= 2) {
+            statusMessage = '🔬 **Initializing enhancement matrix...**';
+            color = 0x808080; // Gray
+        } else if (currentFrame <= 4) {
+            statusMessage = '⚡ **Energy building from core...**';
+            color = 0xFFFF00; // Yellow
+        } else if (currentFrame <= 6) {
+            statusMessage = '🌟 **Power emanating outward...**';
+            color = 0xFFFFFF; // White
+        } else if (currentFrame === 7) {
+            statusMessage = '💥 **Enhancement crystallizing...**';
+            color = TIER_COLORS[finalTier];
+        } else {
+            statusMessage = '✨ **Enhancement complete!**';
+            color = TIER_COLORS[finalTier];
+        }
         
         const embed = new EmbedBuilder()
             .setTitle('⚡ Marine Enhancement Scanner')
             .setDescription(
-                `🔬 **Analyzing enhancement potential...**\n\n` +
-                `${pattern}\n\n` +
+                `${statusMessage}\n\n` +
+                `\`\`\`\n${gridAnimation}\n\`\`\`\n\n` +
                 `📊 **Progress:** ${progressPercent}%\n` +
-                `⚡ **Status:** Scanning for enhancement matrix...\n\n` +
-                `${pattern}`
+                `⚡ **Status:** ${currentFrame >= 7 ? 'Enhancement stabilizing...' : 'Energy matrix expanding...'}`
             )
             .setColor(color)
             .setFooter({ text: `Processing... ${currentFrame}/${totalFrames} completed` })
@@ -165,16 +248,16 @@ module.exports = {
         }
     },
 
-    // Simple animation sequence like summon command
+    // Simple animation sequence with grid explosion
     async performAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
         
         try {
-            console.log(`[DAILY BUFF] Starting animation for ${interaction.user.username}, tier ${finalResult}`);
+            console.log(`[DAILY BUFF] Starting grid animation for ${interaction.user.username}, tier ${finalResult}`);
             
-            // Play through animation frames
+            // Play through animation frames with grid animation
             for (let i = 1; i <= ANIMATION_CONFIG.TOTAL_FRAMES; i++) {
-                const loadingEmbed = BuffAnimator.createLoadingFrame(i, ANIMATION_CONFIG.TOTAL_FRAMES);
+                const loadingEmbed = BuffAnimator.createLoadingFrame(i, ANIMATION_CONFIG.TOTAL_FRAMES, finalResult);
                 
                 await interaction.editReply({ embeds: [loadingEmbed] });
                 
