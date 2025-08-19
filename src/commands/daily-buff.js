@@ -1,216 +1,265 @@
-// src/commands/daily-buff.js - FIXED: Added missing getTierIntensity method
+// Clean ASCII Art Daily Buff Animation - No Emoji Spam
+// Inspired by Fate/Night anime with elegant geometric patterns
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Animation Configuration
 const ANIMATION_CONFIG = {
-    RAINBOW_DELAY: 180,  // Even faster for dramatic impact
-    BUILDUP_FRAMES: 6,   // Shorter buildup
-    EXPLOSION_FRAMES: 15, // Longer explosion for full effect
-    FINAL_PAUSE: 300
+    BUILDUP_DELAY: 600,      // Buildup tension
+    EXPLOSION_DELAY: 200,    // Fast explosion
+    FINAL_PAUSE: 1500,       // Final result pause
+    BUILDUP_FRAMES: 6,       
+    EXPLOSION_FRAMES: 8,     
+    AFTERGLOW_FRAMES: 3      
 };
 
-class BuffAnimator {
-    static createGrid(width = 18, height = 9, fillColor = '⬛') {
-        const grid = [];
-        for (let row = 0; row < height; row++) {
-            const rowArray = [];
-            for (let col = 0; col < width; col++) {
-                rowArray.push(fillColor);
-            }
-            grid.push(rowArray);
-        }
-        return grid;
-    }
-
-    static getSquareDistanceFromCenter(x, y, centerX, centerY) {
-        // Chebyshev distance for square wave pattern
-        return Math.max(Math.abs(x - centerX), Math.abs(y - centerY));
-    }
-
-    static getRainbowColors() {
-        return ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪'];
-    }
-
-    static getTierColor(tier) {
-        const tierColors = {
-            1: '🟩', // Common - Green SQUARE
-            2: '🟦', // Rare - Blue SQUARE
-            3: '🟪', // Epic - Purple SQUARE
-            4: '🟨', // Legendary - Yellow SQUARE
-            5: '🟧', // Mythical - Orange SQUARE
-            6: '🟥'  // Divine - Red SQUARE
+class CleanBuffAnimator {
+    
+    // Get tier-specific symbols and patterns
+    static getTierConfig(tier) {
+        const configs = {
+            1: { symbol: '▓', accent: '░', name: 'COMMON', color: 'GREEN' },
+            2: { symbol: '█', accent: '▓', name: 'RARE', color: 'BLUE' },
+            3: { symbol: '▀', accent: '▄', name: 'EPIC', color: 'PURPLE' },
+            4: { symbol: '◆', accent: '◇', name: 'LEGENDARY', color: 'GOLD' },
+            5: { symbol: '★', accent: '☆', name: 'MYTHICAL', color: 'ORANGE' },
+            6: { symbol: '◈', accent: '◊', name: 'DIVINE', color: 'RED' }
         };
-        return tierColors[tier] || '🟩';
+        return configs[tier] || configs[1];
     }
 
-    static getEnergyColor(tier, intensity = 1.0) {
-        // Lighter versions for energy buildup
-        const energyColors = {
-            1: '🟢', // Green energy
-            2: '🔵', // Blue energy  
-            3: '🟣', // Purple energy
-            4: '🟡', // Gold energy
-            5: '🟠', // Orange energy
-            6: '🔴'  // Red energy
+    // PHASE 1: Scanning and Detection
+    static createScanningFrame(frame) {
+        const scanLines = [
+            "│                    │",
+            "│ ░░░░░░░░░░░░░░░░░░ │",
+            "│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │",
+            "│ ████████████████████ │",
+            "│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │",
+            "│ ░░░░░░░░░░░░░░░░░░ │",
+        ];
+        
+        const scanLine = Math.min(frame, scanLines.length - 1);
+        
+        return "```ansi\n" +
+               "┌────────────────────┐\n" +
+               "│   ENHANCEMENT      │\n" +
+               "│     SCANNER        │\n" +
+               "├────────────────────┤\n" +
+               scanLines[scanLine] + "\n" +
+               "│                    │\n" +
+               "│  [ANALYZING...]    │\n" +
+               "└────────────────────┘\n" +
+               "```";
+    }
+
+    // PHASE 2: Energy Buildup
+    static createBuildupFrame(frame, tier) {
+        const config = this.getTierConfig(tier);
+        const intensity = Math.min(frame + 1, 6);
+        
+        let center = "";
+        let ring1 = "";
+        let ring2 = "";
+        
+        // Build from center outward based on intensity
+        if (intensity >= 1) center = config.symbol;
+        if (intensity >= 2) center = config.symbol + config.symbol + config.symbol;
+        if (intensity >= 3) {
+            ring1 = config.accent.repeat(5);
+            center = config.accent + config.symbol + config.symbol + config.symbol + config.accent;
+        }
+        if (intensity >= 4) {
+            ring2 = config.accent.repeat(7);
+            ring1 = config.symbol.repeat(5);
+        }
+        if (intensity >= 5) {
+            ring2 = config.symbol.repeat(7);
+        }
+        if (intensity >= 6) {
+            ring2 = config.symbol.repeat(9);
+            ring1 = config.symbol.repeat(7);
+            center = config.symbol.repeat(5);
+        }
+
+        return "```ansi\n" +
+               "╔════════════════════╗\n" +
+               "║   ENERGY BUILDUP   ║\n" +
+               "╠════════════════════╣\n" +
+               "║                    ║\n" +
+               `║    ${ring2.padStart(9).padEnd(9)}    ║\n` +
+               `║     ${ring1.padStart(7).padEnd(7)}     ║\n` +
+               `║      ${center.padStart(5).padEnd(5)}      ║\n` +
+               `║     ${ring1.padStart(7).padEnd(7)}     ║\n` +
+               `║    ${ring2.padStart(9).padEnd(9)}    ║\n` +
+               "║                    ║\n" +
+               `║    POWER: ${intensity}/6     ║\n` +
+               "╚════════════════════╝\n" +
+               "```";
+    }
+
+    // PHASE 3: Epic Explosion Sequence
+    static createExplosionFrame(frame, tier) {
+        const config = this.getTierConfig(tier);
+        const explosionFrames = [
+            // Frame 0: Initial burst
+            {
+                pattern: [
+                    "        ╬╬╬        ",
+                    "        ╬█╬        ",
+                    "    ╬╬╬╬█████╬╬╬╬    ",
+                    "    ╬█████████████╬    ",
+                    "╬╬╬╬█████████████████╬╬╬╬",
+                    "╬███████████████████████╬",
+                    "╬╬╬╬█████████████████╬╬╬╬",
+                    "    ╬█████████████╬    ",
+                    "    ╬╬╬╬█████╬╬╬╬    ",
+                    "        ╬█╬        ",
+                    "        ╬╬╬        "
+                ]
+            },
+            // Frame 1: Cross explosion
+            {
+                pattern: [
+                    "          █          ",
+                    "          █          ",
+                    "          █          ",
+                    "          █          ",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "          █          ",
+                    "          █          ",
+                    "          █          ",
+                    "          █          "
+                ]
+            },
+            // Frame 2: Star burst
+            {
+                pattern: [
+                    "    ╲     █     ╱    ",
+                    "      ╲   █   ╱      ",
+                    "        ╲ █ ╱        ",
+                    "          █          ",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "          █          ",
+                    "        ╱ █ ╲        ",
+                    "      ╱   █   ╲      ",
+                    "    ╱     █     ╲    "
+                ]
+            },
+            // Frame 3: Full expansion
+            {
+                pattern: [
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████"
+                ]
+            },
+            // Frame 4: Crystallization
+            {
+                pattern: [
+                    "     ◆◆◆◆◆◆◆◆◆     ",
+                    "   ◆◆◆◆◆◆◆◆◆◆◆◆◆   ",
+                    " ◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆ ",
+                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
+                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
+                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
+                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
+                    "◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆",
+                    " ◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆ ",
+                    "   ◆◆◆◆◆◆◆◆◆◆◆◆◆   ",
+                    "     ◆◆◆◆◆◆◆◆◆     "
+                ]
+            },
+            // Frame 5: Energy waves
+            {
+                pattern: [
+                    "░░░░░░░░░░░░░░░░░░░░░",
+                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
+                    "░░░░░░░░░░░░░░░░░░░░░",
+                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "██████████████████████",
+                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
+                    "░░░░░░░░░░░░░░░░░░░░░",
+                    "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
+                    "░░░░░░░░░░░░░░░░░░░░░"
+                ]
+            },
+            // Frame 6-7: Final stabilization
+            {
+                pattern: [
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21),
+                    config.symbol.repeat(21)
+                ]
+            }
+        ];
+
+        const explosionIndex = Math.min(frame, explosionFrames.length - 1);
+        const explosion = explosionFrames[explosionIndex];
+
+        return "```ansi\n" +
+               "╔══════════════════════╗\n" +
+               "║   ENHANCEMENT BURST   ║\n" +
+               "╠══════════════════════╣\n" +
+               explosion.pattern.map(line => `║${line}║`).join('\n') + "\n" +
+               "╚══════════════════════╝\n" +
+               "```";
+    }
+
+    // PHASE 4: Final Result with Clean Formatting
+    static createFinalResult(tier) {
+        const config = this.getTierConfig(tier);
+        const buffTiers = {
+            1: { name: 'Marine Training', multiplier: 1.1 },
+            2: { name: 'Enhanced Drill', multiplier: 1.2 },
+            3: { name: 'Elite Protocol', multiplier: 1.3 },
+            4: { name: 'Admiral Focus', multiplier: 1.5 },
+            5: { name: 'Fleet Command', multiplier: 1.7 },
+            6: { name: 'World Government Authorization', multiplier: 2.0 }
         };
-        return energyColors[tier] || '🟢';
+
+        const buff = buffTiers[tier];
+        const border = config.symbol.repeat(25);
+
+        return "```ansi\n" +
+               "╔═════════════════════════╗\n" +
+               "║  ENHANCEMENT COMPLETE   ║\n" +
+               "╠═════════════════════════╣\n" +
+               `║ ${border} ║\n` +
+               `║ ${config.symbol}                       ${config.symbol} ║\n` +
+               `║ ${config.symbol}   ${config.name.padEnd(15)}   ${config.symbol} ║\n` +
+               `║ ${config.symbol}   ${buff.name.padEnd(15)}   ${config.symbol} ║\n` +
+               `║ ${config.symbol}                       ${config.symbol} ║\n` +
+               `║ ${config.symbol}   MULTIPLIER: ${buff.multiplier}x    ${config.symbol} ║\n` +
+               `║ ${config.symbol}                       ${config.symbol} ║\n` +
+               `║ ${border} ║\n` +
+               "╚═════════════════════════╝\n" +
+               "```";
     }
 
-    // FIXED: Added missing getTierIntensity method
-    static getTierIntensity(tier) {
-        const tierColor = this.getTierColor(tier);
-        const energyColor = this.getEnergyColor(tier);
-        
-        return {
-            core: tierColor,        // Brightest center
-            bright: tierColor,      // High intensity
-            medium: energyColor,    // Medium intensity  
-            light: '⬜'            // Light intensity
-        };
-    }
-
-    static createEnergyBuildupFrame(frame, tier, width = 18, height = 9) {
-        const grid = this.createGrid(width, height, '⬛');
-        const centerX = Math.floor(width / 2);
-        const centerY = Math.floor(height / 2);
-        const tierColor = this.getTierColor(tier);
-        const energyColor = this.getEnergyColor(tier);
-        
-        // Intense energy concentration at center - building to explosion
-        const coreIntensity = Math.min(frame + 1, 4);
-        
-        for (let row = 0; row < height; row++) {
-            for (let col = 0; col < width; col++) {
-                const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
-                
-                if (distance === 0) {
-                    // Always bright center
-                    grid[row][col] = tierColor;
-                } else if (distance <= coreIntensity) {
-                    // Expanding energy core
-                    grid[row][col] = Math.random() > 0.3 ? tierColor : energyColor;
-                }
-            }
-        }
-        
-        // Add cross-hints in final buildup frames
-        if (frame >= 4) {
-            // Subtle horizontal line
-            grid[centerY][centerX - 1] = energyColor;
-            grid[centerY][centerX + 1] = energyColor;
-            // Subtle vertical line  
-            if (centerY > 0) grid[centerY - 1][centerX] = energyColor;
-            if (centerY < height - 1) grid[centerY + 1][centerX] = energyColor;
-        }
-        
-        return grid;
-    }
-
-    static createEpicExplosionFrame(frame, tier, width = 18, height = 9) {
-        const grid = this.createGrid(width, height, '⬛');
-        const centerX = Math.floor(width / 2);
-        const centerY = Math.floor(height / 2);
-        const tierColor = this.getTierColor(tier);
-        const energyColor = this.getEnergyColor(tier);
-        
-        // Perfect cross explosion like in the gif
-        const explosionRadius = Math.min(frame * 1.2, Math.max(centerX, centerY));
-        const beamLength = Math.min(frame * 2, Math.max(width, height));
-        
-        for (let row = 0; row < height; row++) {
-            for (let col = 0; col < width; col++) {
-                const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
-                
-                // Central explosion core
-                if (distance <= explosionRadius) {
-                    grid[row][col] = tierColor;
-                }
-                
-                // Perfect horizontal beam (full width)
-                if (row === centerY && Math.abs(col - centerX) <= beamLength) {
-                    grid[row][col] = tierColor;
-                    // Add beam thickness
-                    if (row > 0) grid[row - 1][col] = energyColor;
-                    if (row < height - 1) grid[row + 1][col] = energyColor;
-                }
-                
-                // Perfect vertical beam (full height)
-                if (col === centerX && Math.abs(row - centerY) <= beamLength) {
-                    grid[row][col] = tierColor;
-                    // Add beam thickness
-                    if (col > 0) grid[row][col - 1] = energyColor;
-                    if (col < width - 1) grid[row][col + 1] = energyColor;
-                }
-            }
-        }
-        
-        // Add energy rings around the explosion
-        if (frame > 3) {
-            const ringRadius = explosionRadius + 1;
-            for (let row = 0; row < height; row++) {
-                for (let col = 0; col < width; col++) {
-                    const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
-                    if (distance === ringRadius && Math.random() > 0.4) {
-                        grid[row][col] = energyColor;
-                    }
-                }
-            }
-        }
-        
-        return grid;
-    }
-
-    static createFluidWaveFrame(frame, tier, width = 18, height = 9) {
-        const grid = this.createGrid(width, height, '⬛');
-        const centerX = Math.floor(width / 2);
-        const centerY = Math.floor(height / 2);
-        const intensity = this.getTierIntensity(tier); // FIXED: Now this method exists
-        
-        // Scanning waves with intensity gradients
-        for (let row = 0; row < height; row++) {
-            for (let col = 0; col < width; col++) {
-                const distance = this.getSquareDistanceFromCenter(col, row, centerX, centerY);
-                
-                const wave1 = frame - distance;
-                const wave2 = frame - distance - 2;
-                
-                if (wave1 >= 0 && wave1 <= 2) {
-                    if (wave1 === 0) grid[row][col] = intensity.core;
-                    else if (wave1 === 1) grid[row][col] = intensity.bright;
-                    else grid[row][col] = intensity.medium;
-                } else if (wave2 >= 0 && wave2 <= 1) {
-                    grid[row][col] = intensity.light;
-                }
-            }
-        }
-        
-        return grid;
-    }
-
-    static createFinalStableGrid(tier, width = 18, height = 9) {
-        const grid = this.createGrid(width, height, '⬛');
-        const tierColor = this.getTierColor(tier);
-        
-        // Fill entire grid with tier color
-        for (let row = 0; row < height; row++) {
-            for (let col = 0; col < width; col++) {
-                grid[row][col] = tierColor;
-            }
-        }
-        
-        return grid;
-    }
-
-    static gridToString(grid) {
-        return grid.map(row => row.join('')).join('\n');
-    }
-
-    static getRainbowColor(frame) {
-        const colors = [0xFF0000, 0xFF8000, 0xFFFF00, 0x00FF00, 0x0080FF, 0x8000FF];
-        return colors[frame % colors.length];
-    }
-
+    // Get hex color for embed
     static getTierColorHex(tier) {
         const colors = {
             1: 0x22C55E, // Green
@@ -221,70 +270,6 @@ class BuffAnimator {
             6: 0xEF4444  // Red
         };
         return colors[tier] || 0x6B7280;
-    }
-
-    static createScanAnimationFrame(frame, tier) {
-        const grid = this.createFluidWaveFrame(frame, tier);
-        const color = this.getTierColorHex(tier);
-        
-        const embed = new EmbedBuilder()
-            .setTitle('MARINE ENHANCEMENT SCANNER')
-            .setDescription(
-                `**Detecting enhancement signature...**\n\n${this.gridToString(grid)}`
-            )
-            .setColor(color)
-            .setFooter({ text: `Scan progress: ${Math.min(100, Math.round((frame / 8) * 100))}%` })
-            .setTimestamp();
-        
-        return embed;
-    }
-
-    static createBuildupAnimationFrame(frame, tier) {
-        const grid = this.createEnergyBuildupFrame(frame, tier);
-        const color = this.getTierColorHex(tier);
-        
-        const embed = new EmbedBuilder()
-            .setTitle('ENERGY BUILDUP')
-            .setDescription(
-                `**Enhancement core charging...**\n\n${this.gridToString(grid)}`
-            )
-            .setColor(color)
-            .setFooter({ text: `Energy level: ${Math.min(100, Math.round(((frame + 1) / 8) * 100))}%` })
-            .setTimestamp();
-        
-        return embed;
-    }
-
-    static createExplosionAnimationFrame(frame, tier) {
-        const grid = this.createEpicExplosionFrame(frame, tier);
-        const color = this.getTierColorHex(tier);
-        
-        const embed = new EmbedBuilder()
-            .setTitle('ENHANCEMENT EXPLOSION')
-            .setDescription(
-                `**Power burst in progress...**\n\n${this.gridToString(grid)}`
-            )
-            .setColor(color)
-            .setFooter({ text: `Explosion power: ${Math.min(100, Math.round(((frame + 1) / 12) * 100))}%` })
-            .setTimestamp();
-        
-        return embed;
-    }
-
-    static createFinalAnimationFrame(tier) {
-        const grid = this.createFinalStableGrid(tier);
-        const color = this.getTierColorHex(tier);
-        
-        const embed = new EmbedBuilder()
-            .setTitle('ENHANCEMENT MATRIX COMPLETE')
-            .setDescription(
-                `**Enhancement fully materialized...**\n\n${this.gridToString(grid)}\n\n**Matrix stabilized and locked...**`
-            )
-            .setColor(color)
-            .setFooter({ text: 'Enhancement matrix permanently stabilized' })
-            .setTimestamp();
-        
-        return embed;
     }
 }
 
@@ -303,7 +288,7 @@ module.exports = {
             if (!global.xpTracker || !global.xpTracker.db) {
                 return await interaction.reply({
                     content: '❌ **Daily Buff System Unavailable**\n\nXP tracking system not initialized.',
-                    flags: 64 // MessageFlags.Ephemeral
+                    flags: 64
                 });
             }
 
@@ -315,17 +300,17 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor('#FF6B6B')
-                    .setTitle('🎰 DAILY BUFF ALREADY CLAIMED')
-                    .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name} ${currentBuff.symbol}\n**Multiplier:** ${currentBuff.multiplier}x XP\n\n*Next reset: <t:${nextReset}:R>*`)
-                    .setFooter({ text: '⚓ Marine Intelligence • Daily Buff System' })
+                    .setTitle('DAILY BUFF ALREADY CLAIMED')
+                    .setDescription(`You've already rolled your daily buff!\n\n**Current Buff:** ${currentBuff.name}\n**Multiplier:** ${currentBuff.multiplier}x XP\n\n*Next reset: <t:${nextReset}:R>*`)
+                    .setFooter({ text: 'Marine Intelligence • Daily Buff System' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], flags: 64 });
             }
 
-            // Start the enhanced rainbow spinning animation
+            // Start the enhanced animation sequence
             await interaction.deferReply();
-            await this.performEnhancedBuffRoll(interaction, userId, guildId, member);
+            await this.performEpicBuffAnimation(interaction, userId, guildId, member);
 
         } catch (error) {
             console.error('[DAILY BUFF] Error in daily-buff command:', error);
@@ -337,127 +322,105 @@ module.exports = {
             } else {
                 await interaction.reply({
                     content: '❌ **Error**\n\nSomething went wrong with the daily buff system. Please try again.',
-                    flags: 64 // MessageFlags.Ephemeral
+                    flags: 64
                 });
             }
         }
     },
 
-    // Epic anime-style buildup and explosion sequence
-    async performEnhancedBuffRoll(interaction, userId, guildId, member) {
-        const buffTiers = this.getBuffTiers();
-        
-        // Determine the final result first
+    // Epic animation sequence
+    async performEpicBuffAnimation(interaction, userId, guildId, member) {
         const finalResult = this.calculateBuffTier();
-        const targetColor = this.getTierColorHex(finalResult);
+        const config = CleanBuffAnimator.getTierConfig(finalResult);
         
-        // Phase 1: Initial Scan (8 frames) - detecting the enhancement
-        for (let frame = 0; frame <= ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
-            const scanEmbed = BuffAnimator.createScanAnimationFrame(frame, finalResult);
+        try {
+            // Phase 1: Scanning (6 frames)
+            for (let frame = 0; frame < ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
+                const embed = new EmbedBuilder()
+                    .setColor(0x4A90E2)
+                    .setTitle('MARINE ENHANCEMENT SCANNER')
+                    .setDescription(
+                        `**Detecting enhancement signature...**\n\n${CleanBuffAnimator.createScanningFrame(frame)}\n\n**Progress:** ${Math.round(((frame + 1) / ANIMATION_CONFIG.BUILDUP_FRAMES) * 100)}%`
+                    )
+                    .setFooter({ text: 'Scanning for compatible enhancement...' })
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [embed] });
+                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BUILDUP_DELAY));
+            }
+
+            // Phase 2: Energy Buildup (6 frames)
+            for (let frame = 0; frame < ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
+                const embed = new EmbedBuilder()
+                    .setColor(CleanBuffAnimator.getTierColorHex(finalResult))
+                    .setTitle('ENERGY CONCENTRATION')
+                    .setDescription(
+                        `**Enhancement core charging...**\n\n${CleanBuffAnimator.createBuildupFrame(frame, finalResult)}\n\n**Status:** Gathering ${config.name} energy...`
+                    )
+                    .setFooter({ text: `Building ${config.name} enhancement matrix...` })
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [embed] });
+                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.BUILDUP_DELAY));
+            }
+
+            // Phase 3: Epic Explosion (8 frames)
+            for (let frame = 0; frame < ANIMATION_CONFIG.EXPLOSION_FRAMES; frame++) {
+                const embed = new EmbedBuilder()
+                    .setColor(CleanBuffAnimator.getTierColorHex(finalResult))
+                    .setTitle('ENHANCEMENT MATERIALIZATION')
+                    .setDescription(
+                        `**Power burst in progress...**\n\n${CleanBuffAnimator.createExplosionFrame(frame, finalResult)}\n\n**WARNING:** High energy discharge detected!`
+                    )
+                    .setFooter({ text: 'Enhancement matrix crystallizing...' })
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [embed] });
+                await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.EXPLOSION_DELAY));
+            }
+
+            // Phase 4: Final Result
+            const buffInfo = this.getBuffTiers()[finalResult];
+            const nextReset = getNextResetUnixTimestamp();
             
-            await interaction.editReply({ embeds: [scanEmbed] });
-            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
+            const finalEmbed = new EmbedBuilder()
+                .setColor(CleanBuffAnimator.getTierColorHex(finalResult))
+                .setTitle('MARINE ENHANCEMENT ACQUIRED')
+                .setDescription(
+                    `${CleanBuffAnimator.createFinalResult(finalResult)}\n\n**Classification:** ${config.name}\n**Enhancement:** ${buffInfo.name}\n**Power Level:** ${buffInfo.multiplier}x Multiplier`
+                )
+                .addFields(
+                    {
+                        name: 'Operational Status',
+                        value: `**Activated:** Now\n**Expires:** <t:${nextReset}:R>\n**Reset Time:** 3:00 AM EST`,
+                        inline: true
+                    },
+                    {
+                        name: 'Enhancement Effects',
+                        value: `All XP generation increased by **${buffInfo.multiplier}x**\nEnhancement remains active until reset\nStacks with other XP modifiers`,
+                        inline: true
+                    }
+                )
+                .setFooter({ text: `Marine Enhancement Division • ${buffInfo.name} Protocol Active` })
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [finalEmbed] });
+
+            // Apply the buff role and save to database
+            await this.applyBuffRole(userId, guildId, member, finalResult);
+
+        } catch (error) {
+            console.error('[DAILY BUFF] Animation error:', error);
+            await interaction.editReply({
+                content: '❌ **Animation Error**\n\nFailed to complete enhancement sequence. Please try again.'
+            });
         }
-        
-        // Phase 2: Energy Buildup (8 frames) - power accumulating
-        for (let frame = 0; frame <= ANIMATION_CONFIG.BUILDUP_FRAMES; frame++) {
-            const buildupEmbed = BuffAnimator.createBuildupAnimationFrame(frame, finalResult);
-            
-            await interaction.editReply({ embeds: [buildupEmbed] });
-            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
-        }
-        
-        // Phase 3: EPIC EXPLOSION (12 frames) - dramatic burst in tier color
-        for (let frame = 0; frame <= ANIMATION_CONFIG.EXPLOSION_FRAMES; frame++) {
-            const explosionEmbed = BuffAnimator.createExplosionAnimationFrame(frame, finalResult);
-            
-            await interaction.editReply({ embeds: [explosionEmbed] });
-            await new Promise(resolve => setTimeout(resolve, ANIMATION_CONFIG.RAINBOW_DELAY));
-        }
-
-        // Phase 4: Final Result
-        const buffInfo = buffTiers[finalResult];
-        const rarityEmoji = this.getRarityEmoji(finalResult);
-        const nextReset = getNextResetUnixTimestamp();
-        const finalGrid = BuffAnimator.gridToString(BuffAnimator.createFinalStableGrid(finalResult));
-        
-        const finalEmbed = new EmbedBuilder()
-            .setColor(targetColor)
-            .setTitle('MARINE ENHANCEMENT ACQUIRED')
-            .setDescription(
-                `${finalGrid}\n\n` +
-                `${rarityEmoji} **${buffInfo.name}** ${buffInfo.symbol}`
-            )
-            .addFields(
-                {
-                    name: 'Enhancement Matrix',
-                    value: `**Classification:** ${this.getTierRarity(finalResult)}\n**Power Level:** ${buffInfo.multiplier}x Multiplier\n**Status:** Fully Stabilized`,
-                    inline: true
-                },
-                {
-                    name: 'Operational Window',
-                    value: `**Activated:** Now\n**Expires:** <t:${nextReset}:R>\n**Reset Time:** 3:00 AM EST`,
-                    inline: true
-                },
-                {
-                    name: 'Enhancement Effects',
-                    value: `Marine training protocols enhanced\nAll XP generation increased by ${buffInfo.multiplier}x\nEnhancement remains active until reset`,
-                    inline: false
-                }
-            )
-            .setFooter({ text: `Marine Enhancement Division • ${buffInfo.name} Protocol Active` })
-            .setTimestamp();
-
-        await interaction.editReply({ embeds: [finalEmbed] });
-
-        // Apply the buff role and save to database
-        await this.applyBuffRole(userId, guildId, member, finalResult);
-    },
-
-    // Get rarity emoji for marine theme
-    getRarityEmoji(tier) {
-        const emojis = {
-            1: '🟢', // Common - Green
-            2: '🔵', // Rare - Blue
-            3: '🟣', // Epic - Purple
-            4: '🟡', // Legendary - Gold
-            5: '🟠', // Mythical - Orange
-            6: '🔴'  // Divine - Red
-        };
-        return emojis[tier] || '🟢';
-    },
-
-    // Get tier color as hex string for embed colors
-    getTierColorHex(tier) {
-        const colors = {
-            1: '#22C55E', // Green
-            2: '#3B82F6', // Blue  
-            3: '#8B5CF6', // Purple
-            4: '#F59E0B', // Yellow/Gold
-            5: '#F97316', // Orange
-            6: '#EF4444'  // Red
-        };
-        return colors[tier] || '#6B7280';
-    },
-
-    // Get rarity text for each tier
-    getTierRarity(tier) {
-        const rarities = {
-            1: 'Common (45%)',
-            2: 'Rare (25%)',
-            3: 'Epic (15%)',
-            4: 'Legendary (9%)',
-            5: 'Mythical (5%)',
-            6: 'Divine (1%)'
-        };
-        return rarities[tier] || 'Unknown';
     },
 
     // Calculate which tier to roll (weighted probabilities)
     calculateBuffTier() {
         const random = Math.random() * 100;
         
-        // Weighted probabilities
         if (random < 45) return 1;        // 45% - Common
         else if (random < 70) return 2;   // 25% - Rare  
         else if (random < 85) return 3;   // 15% - Epic
@@ -466,7 +429,7 @@ module.exports = {
         else return 6;                    // 1% - Divine
     },
 
-    // Check if user has already rolled today (EST-based)
+    // Check if user has already rolled today
     async checkDailyRoll(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
@@ -493,24 +456,23 @@ module.exports = {
                 return {
                     tier: parseInt(tier),
                     name: buffRoles[tier].name,
-                    symbol: buffRoles[tier].symbol,
                     multiplier: buffRoles[tier].multiplier
                 };
             }
         }
 
-        return { tier: 0, name: 'No Buff', symbol: '⚪', multiplier: 1.0 };
+        return { tier: 0, name: 'No Buff', multiplier: 1.0 };
     },
 
     // Get buff tier information
     getBuffTiers() {
         return {
-            1: { name: 'Marine Training', symbol: '🟢', multiplier: 1.1 },
-            2: { name: 'Enhanced Drill', symbol: '🔵', multiplier: 1.2 },
-            3: { name: 'Elite Protocol', symbol: '🟣', multiplier: 1.3 },
-            4: { name: 'Admiral Focus', symbol: '🟡', multiplier: 1.5 },
-            5: { name: 'Fleet Command', symbol: '🟠', multiplier: 1.7 },
-            6: { name: 'World Government Authorization', symbol: '🔴', multiplier: 2.0 }
+            1: { name: 'Marine Training', multiplier: 1.1 },
+            2: { name: 'Enhanced Drill', multiplier: 1.2 },
+            3: { name: 'Elite Protocol', multiplier: 1.3 },
+            4: { name: 'Admiral Focus', multiplier: 1.5 },
+            5: { name: 'Fleet Command', multiplier: 1.7 },
+            6: { name: 'World Government Authorization', multiplier: 2.0 }
         };
     },
 
@@ -588,13 +550,12 @@ module.exports = {
     }
 };
 
-// Helper functions with proper timezone handling
+// Helper functions
 function getCurrentDayKey() {
     const now = new Date();
     const estOffset = isESTDaylightSaving(now) ? -4 : -5;
     const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
     
-    // If it's before 3 AM EST, consider it the previous day
     if (estTime.getHours() < 3) {
         estTime.setDate(estTime.getDate() - 1);
     }
@@ -607,7 +568,6 @@ function isESTDaylightSaving(date) {
     const march = new Date(year, 2, 1);
     const november = new Date(year, 10, 1);
     
-    // DST starts second Sunday in March, ends first Sunday in November
     const dstStart = new Date(year, 2, (14 - march.getDay()) % 7 + 8);
     const dstEnd = new Date(year, 10, (7 - november.getDay()) % 7 + 1);
     
@@ -622,12 +582,10 @@ function getNextResetUnixTimestamp() {
     const nextReset = new Date(estTime);
     nextReset.setHours(3, 0, 0, 0);
     
-    // If it's already past 3 AM today, schedule for tomorrow
     if (estTime.getHours() >= 3) {
         nextReset.setDate(nextReset.getDate() + 1);
     }
     
-    // Convert back to UTC for Discord timestamp
     const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
     return Math.floor(utcReset.getTime() / 1000);
 }
