@@ -21,7 +21,7 @@ const TIER_NAMES = {
     6: 'World Government Authorization'
 };
 
-// API Configuration
+// API Configuration - Anime-focused only
 const QUIZ_APIS = [
     {
         name: 'AniQuizAPI',
@@ -30,34 +30,12 @@ const QUIZ_APIS = [
             question: data.question,
             options: data.options,
             answer: data.answer,
-            difficulty: data.difficulty || 'Medium',
-            source: 'AniQuizAPI'
+            difficulty: data.difficulty || 'Medium'
         })
-    },
-    {
-        name: 'OpenTDB',
-        url: 'https://opentdb.com/api.php?amount=1&category=31&type=multiple',
-        parser: (data) => {
-            if (!data.results || data.results.length === 0) return null;
-            const q = data.results[0];
-            const options = [...q.incorrect_answers, q.correct_answer];
-            // Shuffle options
-            for (let i = options.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [options[i], options[j]] = [options[j], options[i]];
-            }
-            return {
-                question: q.question.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&"),
-                options: options,
-                answer: q.correct_answer,
-                difficulty: q.difficulty || 'Medium',
-                source: 'OpenTDB'
-            };
-        }
     }
 ];
 
-// Fallback questions (only 15 for reliability)
+// Pure Anime Fallback Questions (no Pokemon, games, or other topics)
 const FALLBACK_QUESTIONS = [
     {
         question: "Who is the captain of the Straw Hat Pirates in One Piece?",
@@ -78,7 +56,7 @@ const FALLBACK_QUESTIONS = [
         difficulty: "Medium"
     },
     {
-        question: "Which anime features the character Light Yagami?",
+        question: "Which anime features the character Light Yagami who uses a Death Note?",
         options: ["Death Note", "Tokyo Ghoul", "Code Geass", "Future Diary"],
         answer: "Death Note",
         difficulty: "Easy"
@@ -90,31 +68,25 @@ const FALLBACK_QUESTIONS = [
         difficulty: "Easy"
     },
     {
-        question: "What is the name of the school in My Hero Academia?",
+        question: "What is the name of the hero school in My Hero Academia?",
         options: ["U.A. High School", "Shiketsu High", "Ketsubutsu Academy", "Seiai Academy"],
         answer: "U.A. High School",
         difficulty: "Medium"
     },
     {
-        question: "In Dragon Ball Z, what is Goku's Saiyan name?",
+        question: "In Dragon Ball Z, what is Goku's Saiyan birth name?",
         options: ["Kakarot", "Vegeta", "Raditz", "Bardock"],
         answer: "Kakarot",
         difficulty: "Medium"
     },
     {
-        question: "Who is the main protagonist of Demon Slayer?",
+        question: "Who is the main protagonist of Demon Slayer: Kimetsu no Yaiba?",
         options: ["Tanjiro Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira", "Giyu Tomioka"],
         answer: "Tanjiro Kamado",
         difficulty: "Easy"
     },
     {
-        question: "What is the name of the notebook in Death Note?",
-        options: ["Death Note", "Life Note", "Fate Note", "Soul Note"],
-        answer: "Death Note",
-        difficulty: "Easy"
-    },
-    {
-        question: "In Fullmetal Alchemist, what is the first law of alchemy?",
+        question: "In Fullmetal Alchemist, what is the fundamental law of alchemy?",
         options: ["Equivalent Exchange", "Conservation of Mass", "Transmutation Circle", "Philosopher's Stone"],
         answer: "Equivalent Exchange",
         difficulty: "Medium"
@@ -126,16 +98,16 @@ const FALLBACK_QUESTIONS = [
         difficulty: "Medium"
     },
     {
-        question: "What is the name of Ichigo's sword in Bleach?",
+        question: "What is the name of Ichigo's Zanpakuto in Bleach?",
         options: ["Zangetsu", "Senbonzakura", "Hyorinmaru", "Ryujin Jakka"],
         answer: "Zangetsu",
         difficulty: "Medium"
     },
     {
-        question: "In Jujutsu Kaisen, what is Yuji Itadori's curse technique?",
-        options: ["None (he uses Sukuna's power)", "Divergent Fist", "Black Flash", "Cursed Energy Manipulation"],
-        answer: "None (he uses Sukuna's power)",
-        difficulty: "Hard"
+        question: "In Jujutsu Kaisen, who is known as the King of Curses?",
+        options: ["Ryomen Sukuna", "Satoru Gojo", "Yuji Itadori", "Megumi Fushiguro"],
+        answer: "Ryomen Sukuna",
+        difficulty: "Medium"
     },
     {
         question: "Who is the Flame Hashira in Demon Slayer?",
@@ -144,10 +116,16 @@ const FALLBACK_QUESTIONS = [
         difficulty: "Medium"
     },
     {
-        question: "What is the name of the virtual reality game in Sword Art Online?",
-        options: ["Sword Art Online", "Alfheim Online", "Gun Gale Online", "Underworld"],
-        answer: "Sword Art Online",
-        difficulty: "Easy"
+        question: "In One Piece, what is the name of Luffy's Devil Fruit?",
+        options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"],
+        answer: "Gomu Gomu no Mi",
+        difficulty: "Medium"
+    },
+    {
+        question: "Who is the main antagonist in the first season of Tokyo Ghoul?",
+        options: ["Jason (Yamori)", "Rize Kamishiro", "Shu Tsukiyama", "Eto Yoshimura"],
+        answer: "Jason (Yamori)",
+        difficulty: "Hard"
     }
 ];
 
@@ -186,13 +164,10 @@ class AnimeQuizSystem {
             }
         }
 
-        // All APIs failed, use fallback
-        console.log('[ANIME QUIZ] 🛡️ All APIs failed, using fallback question');
+                // All APIs failed, use fallback
+        console.log('[ANIME QUIZ] 🛡️ All APIs failed, using fallback anime question');
         const fallbackQuestion = FALLBACK_QUESTIONS[Math.floor(Math.random() * FALLBACK_QUESTIONS.length)];
-        return {
-            ...fallbackQuestion,
-            source: 'Fallback'
-        };
+        return fallbackQuestion;
     }
 
     // Create quiz embed with question
@@ -210,7 +185,7 @@ class AnimeQuizSystem {
             .addFields(
                 {
                     name: '📊 Quiz Info',
-                    value: `${difficultyEmoji[questionData.difficulty] || '🟡'} **Difficulty:** ${questionData.difficulty}\n🌐 **Source:** ${questionData.source}\n⏱️ **Time Limit:** 30 seconds`,
+                    value: `${difficultyEmoji[questionData.difficulty] || '🟡'} **Difficulty:** ${questionData.difficulty}\n⏱️ **Time Limit:** 30 seconds`,
                     inline: true
                 },
                 {
@@ -278,7 +253,7 @@ class AnimeQuizSystem {
                 .addFields(
                     {
                         name: '📚 Quiz Result',
-                        value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty} | **Source:** ${questionData.source}`,
+                        value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty}`,
                         inline: false
                     },
                     {
@@ -299,7 +274,7 @@ class AnimeQuizSystem {
                 .addFields(
                     {
                         name: '📚 Quiz Result',
-                        value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty} | **Source:** ${questionData.source}`,
+                        value: `**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Correct Answer:** ${questionData.answer}\n**Difficulty:** ${questionData.difficulty}`,
                         inline: false
                     },
                     {
