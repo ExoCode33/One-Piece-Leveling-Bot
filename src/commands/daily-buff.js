@@ -223,6 +223,7 @@ class BuffAnimator {
         return embed;
     }
 }
+}
 
     static createResultEmbed(tier, member) {
         const tierName = TIER_NAMES[tier];
