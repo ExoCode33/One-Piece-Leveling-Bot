@@ -1,31 +1,4 @@
-// Notify daily reset with improved messaging
-    async notifyDailyReset(newDay, isForced = false, triggeredBy = 'SYSTEM') {
-        try {
-            for (const [guildId, guildSettings] of (global.guildSettings || new Map()).entries()) {
-                if (guildSettings.xpLogEnabled && guildSettings.xpLogChannel) {
-                    try {
-                        const channel = await this.client.channels.fetch(guildSettings.xpLogChannel);
-                        if (channel && channel.isTextBased()) {
-                            const embed = new EmbedBuilder()
-                                .setColor(isForced ? 0xFFFF00 : 0x00FF00)
-                                .setTitle(isForced ? '🚨 MANUAL DAILY RESET COMPLETE' : '🌅 DAILY RESET COMPLETE')
-                                .setDescription(`\`\`\`diff\n${isForced ? '+ MANUAL RESET TRIGGERED' : '+ Daily systems have been reset'}\n+ New tracking day: ${newDay}\n+ Reset time: ${DAILY_RESET_HOUR_EDT}:${DAILY_RESET_MINUTE_EDT.toString().padStart(2, '0')} EDT\n${isForced ? `+ Triggered by: ${triggeredBy}\n` : ''}\`\`\``)
-                                .addFields(
-                                    {
-                                        name: '🎤 Voice XP Reset',
-                                        value: `\`\`\`yaml\nDaily cap: ${parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500} XP\nStatus: All daily limits reset\nCache: Completely cleared\nDatabase: All records deleted\n\`\`\``,
-                                        inline: true
-                                    },
-                                    {
-                                        name: '🎰 Daily Buffs Reset',
-                                        value: `\`\`\`yaml\nAll buff roles FORCE removed\nNew rolls available\nCommand: /daily-buff\nDatabase: All records deleted\n\`\`\``,
-                                        inline: true
-                                    }
-                                )
-                                .setFooter({ text: `⚓ Marine Intelligence • ${isForced ? 'Manual' : 'Automatic'} Reset System` })
-                                .setTimestamp();
-                            
-                            await// src/utils/dailyResetManager.js - Fixed Daily Reset System with EDT timezone
+// src/utils/dailyResetManager.js - Fixed Daily Reset System with EDT timezone
 
 const { EmbedBuilder } = require('discord.js');
 
