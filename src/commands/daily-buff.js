@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - API Enabled Compact Version
+// src/commands/daily-buff.js - API Enabled with Better Progress Bar
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -20,6 +20,46 @@ const FALLBACK = {
         { question: "What is the Flame Alchemist's real name?", options: ["Roy Mustang", "Alex Louis Armstrong", "Maes Hughes", "King Bradley"], answer: "Roy Mustang" }
     ]
 };
+
+// ✅ TIMEZONE HELPERS IMPLEMENTED
+function getCurrentDayKey() {
+    const now = new Date();
+    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
+    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+    
+    if (estTime.getHours() < 3) {
+        estTime.setDate(estTime.getDate() - 1);
+    }
+    
+    return estTime.toISOString().split('T')[0];
+}
+
+function isESTDaylightSaving(date) {
+    const year = date.getFullYear();
+    const march = new Date(year, 2, 1);
+    const november = new Date(year, 10, 1);
+    
+    const dstStart = new Date(year, 2, (14 - march.getDay()) % 7 + 8);
+    const dstEnd = new Date(year, 10, (7 - november.getDay()) % 7 + 1);
+    
+    return date >= dstStart && date < dstEnd;
+}
+
+function getNextResetUnixTimestamp() {
+    const now = new Date();
+    const estOffset = isESTDaylightSaving(now) ? -4 : -5;
+    const estTime = new Date(now.getTime() + (estOffset * 60 * 60 * 1000));
+    
+    const nextReset = new Date(estTime);
+    nextReset.setHours(3, 0, 0, 0);
+    
+    if (estTime.getHours() >= 3) {
+        nextReset.setDate(nextReset.getDate() + 1);
+    }
+    
+    const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
+    return Math.floor(utcReset.getTime() / 1000);
+}
 
 async function fetchQuestion(difficulty) {
     try {
@@ -91,8 +131,8 @@ async function fetchQuestion(difficulty) {
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
 }
 
-function getDay() { const n = new Date(), e = new Date(n.getTime() - 14400000); return e.getHours() < 3 && e.setDate(e.getDate() - 1), e.toISOString().split('T')[0]; }
-function getReset() { const n = new Date(), e = new Date(n.getTime() - 14400000), t = new Date(e); return t.setHours(3, 0, 0, 0), e.getHours() >= 3 && t.setDate(t.getDate() + 1), Math.floor((t.getTime() + 14400000) / 1000); }
+function getDay() { return getCurrentDayKey(); }
+function getReset() { return getNextResetUnixTimestamp(); }
 
 module.exports = {
     data: new SlashCommandBuilder().setName('daily-buff').setDescription('🎌 Progressive anime challenge! 5 questions, increasing difficulty!'),
@@ -127,19 +167,71 @@ module.exports = {
             const makeEmbed = (t) => {
                 const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
                 const diffColor = { 'Easy': [76, 175, 80], 'Medium': [255, 193, 7], 'Hard': [255, 87, 34] };
-                const prog = Array.from({length: 5}, (_, i) => i < qNum ? '🟦' : i === qNum ? '🔷' : '⬜');
-                const tProg = Math.max(0, Math.min(20, t)), bars = Math.round((tProg / 20) * 12);
-                const timeBar = (t > 12 ? '🟩' : t > 6 ? '🟨' : '🟥').repeat(bars) + '⬛'.repeat(12 - bars);
-                const color = t > 12 ? diffColor[diff] : t > 6 ? [255, 165, 0] : [231, 76, 60];
+                
+                // ✅ IMPROVED PROGRESS BAR - More Visual & Intuitive
+                const createProgressBar = () => {
+                    const steps = [];
+                    for (let i = 1; i <= 5; i++) {
+                        if (i < qNum) {
+                            steps.push('✅'); // Completed
+                        } else if (i === qNum) {
+                            steps.push('🔄'); // Current
+                        } else {
+                            steps.push('⬜'); // Not started
+                        }
+                    }
+                    return steps.join(' ');
+                };
+                
+                const progressBar = createProgressBar();
+                const progressText = `**Question ${qNum} of 5** • ${Math.round((qNum / 5) * 100)}% Complete`;
+                
+                // ✅ IMPROVED TIMER BAR - Cleaner Design
+                const tProg = Math.max(0, Math.min(20, t));
+                const percentage = Math.round((tProg / 20) * 100);
+                const bars = Math.round((tProg / 20) * 10); // Shorter bar
+                
+                let timeEmoji, timeColor;
+                if (t > 12) {
+                    timeEmoji = '🟢';
+                    timeColor = diffColor[diff];
+                } else if (t > 6) {
+                    timeEmoji = '🟡';
+                    timeColor = [255, 165, 0];
+                } else {
+                    timeEmoji = '🔴';
+                    timeColor = [231, 76, 60];
+                }
+                
+                const timeBar = '█'.repeat(bars) + '░'.repeat(10 - bars);
+                const timerDisplay = `${timeEmoji} **${t}s** remaining (${percentage}%)\n\`${timeBar}\``;
 
-                return new EmbedBuilder().setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
-                    .setTitle(`${diffEmoji[diff]} Question ${qNum}/5 • ${diff}`).setColor(color)
+                return new EmbedBuilder()
+                    .setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
+                    .setTitle(`${diffEmoji[diff]} Question ${qNum}/5 • ${diff}`)
+                    .setColor(timeColor)
                     .setDescription(`### ${q.question}\n\n*Select your answer below*`)
                     .addFields(
-                        { name: '📊 Progress', value: `${prog.join('')}\nChallenge: ${qNum}/5 Complete`, inline: true },
-                        { name: '⏰ Time Remaining', value: `\`${timeBar}\`\n\`${t} seconds left\``, inline: true },
-                        { name: '🏆 Status', value: qNum > 1 ? `Secured: ${TIER_NAMES[qNum - 1]}\nTarget: ${TIER_NAMES[qNum]}` : `Target: ${TIER_NAMES[qNum]}\n${TIER_DESC[qNum]}`, inline: false }
-                    ).setFooter({ text: `Enhancement Intelligence • Difficulty: ${diff}` }).setTimestamp();
+                        { 
+                            name: '📊 Challenge Progress', 
+                            value: `${progressBar}\n${progressText}`, 
+                            inline: false 
+                        },
+                        { 
+                            name: '⏰ Timer', 
+                            value: timerDisplay, 
+                            inline: true 
+                        },
+                        { 
+                            name: '🏆 Status', 
+                            value: qNum > 1 ? 
+                                `**Secured:** ${TIER_NAMES[qNum - 1]}\n**Target:** ${TIER_NAMES[qNum]}` : 
+                                `**Target:** ${TIER_NAMES[qNum]}\n*${TIER_DESC[qNum]}*`, 
+                            inline: true 
+                        }
+                    )
+                    .setFooter({ text: `Enhancement Intelligence • Difficulty: ${diff} • ${new Date().toLocaleTimeString()}` })
+                    .setTimestamp();
             };
 
             const btns = q.options.map((opt, i) => new ButtonBuilder()
