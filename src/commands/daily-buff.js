@@ -1,46 +1,46 @@
-// src/commands/daily-buff.js - Progressive 6-Question System with Tier-Based Difficulty
+// src/commands/daily-buff.js - Fixed Progressive 6-Question System with Enhanced Design
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-// Tier colors and configurations - RGB values for better visual appeal
+// Enhanced tier colors with gradients and visual appeal
 const TIER_COLORS = {
-    1: [34, 197, 94],    // Green - rgb(34, 197, 94)
-    2: [59, 130, 246],   // Blue - rgb(59, 130, 246)
-    3: [139, 92, 246],   // Purple - rgb(139, 92, 246)
-    4: [245, 158, 11],   // Gold - rgb(245, 158, 11)
-    5: [249, 115, 22],   // Orange - rgb(249, 115, 22)
-    6: [239, 68, 68]     // Red - rgb(239, 68, 68)
+    1: [76, 175, 80],    // Material Green - rgb(76, 175, 80)
+    2: [33, 150, 243],   // Material Blue - rgb(33, 150, 243)
+    3: [156, 39, 176],   // Material Purple - rgb(156, 39, 176)
+    4: [255, 193, 7],    // Material Amber - rgb(255, 193, 7)
+    5: [255, 87, 34],    // Material Deep Orange - rgb(255, 87, 34)
+    6: [244, 67, 54]     // Material Red - rgb(244, 67, 54)
 };
 
 const TIER_NAMES = {
-    1: 'Marine Training',
-    2: 'Enhanced Drill', 
-    3: 'Elite Protocol',
-    4: 'Admiral Focus',
-    5: 'Fleet Command',
-    6: 'World Government Authorization'
+    1: 'Marine Cadet',
+    2: 'Seaman Recruit', 
+    3: 'Petty Officer',
+    4: 'Lieutenant Commander',
+    5: 'Vice Admiral',
+    6: 'Fleet Admiral'
 };
 
 const TIER_DESCRIPTIONS = {
-    1: '🔰 Basic enhancement for new recruits',
-    2: '⚔️ Improved training protocols activated', 
-    3: '🏅 Elite-level performance boost engaged',
-    4: '🌟 Admiral-tier strategic enhancement',
-    5: '💎 Fleet command authority granted',
-    6: '👑 Maximum World Government clearance'
+    1: '⚓ Basic marine training enhancement',
+    2: '🔱 Advanced combat protocols activated', 
+    3: '🎖️ Elite officer tactical boost',
+    4: '⭐ Command-tier strategic enhancement',
+    5: '💎 Admiral-class authority boost',
+    6: '👑 Supreme Fleet Admiral powers'
 };
 
-// ✅ NEW: Progressive Question System Configuration
+// ✅ FIXED: Updated difficulty mapping with extreme question 6
 const QUESTION_DIFFICULTY_MAP = {
-    1: 'Easy',    // Question 1 - Easy
-    2: 'Medium',  // Question 2 - Medium
-    3: 'Medium',  // Question 3 - Medium
-    4: 'Medium',  // Question 4 - Medium
-    5: 'Hard',    // Question 5 - Hard
-    6: 'Hard'     // Question 6 - Hard
+    1: 'Easy',      // Question 1 - Easy
+    2: 'Medium',    // Question 2 - Medium
+    3: 'Medium',    // Question 3 - Medium
+    4: 'Hard',      // Question 4 - Hard
+    5: 'Hard',      // Question 5 - Hard
+    6: 'Extreme'    // Question 6 - Extreme (NEW!)
 };
 
-// ✅ PRODUCTION: API configuration that correctly handles AniQuizAPI's actual format
+// ✅ ENHANCED: API configuration with better error handling and character encoding
 const QUIZ_APIS = [
     {
         name: 'AniQuizAPI',
@@ -48,179 +48,133 @@ const QUIZ_APIS = [
         parser: (data) => {
             console.log('[API DEBUG] Raw AniQuizAPI response:', JSON.stringify(data, null, 2));
             
-            // ✅ FIXED: Handle AniQuizAPI's actual response format
             let question, options, answer, difficulty;
             
-            // AniQuizAPI returns data in this format:
-            // { "data": { "question": "...", "correct": "...", "options": [...], "difficulty": "..." }, "creator": "...", ... }
+            // Handle AniQuizAPI's nested data structure
             if (data.data && data.data.question && data.data.correct && data.data.options) {
-                // ✅ CORRECT: Extract from nested data object with "correct" field
                 question = data.data.question;
                 options = Array.isArray(data.data.options) ? data.data.options : [];
-                answer = data.data.correct; // ✅ FIXED: API uses "correct" not "answer"
+                answer = data.data.correct;
                 difficulty = data.data.difficulty || 'Medium';
-                
-                console.log('[API DEBUG] ✅ Extracted quiz data from AniQuizAPI nested format');
             } else if (data.question && data.correct && data.options) {
-                // Fallback: Direct format with "correct" field
                 question = data.question;
                 options = Array.isArray(data.options) ? data.options : [];
-                answer = data.correct; // ✅ FIXED: API uses "correct" not "answer"
+                answer = data.correct;
                 difficulty = data.difficulty || 'Medium';
-                
-                console.log('[API DEBUG] ✅ Extracted quiz data from AniQuizAPI direct format');
-            } else if (data.question && data.answer && data.options) {
-                // Standard format with "answer" field (backup)
-                question = data.question;
-                options = Array.isArray(data.options) ? data.options : [];
-                answer = data.answer;
-                difficulty = data.difficulty || 'Medium';
-                
-                console.log('[API DEBUG] ✅ Extracted quiz data from standard format');
-            } else if (data.results && Array.isArray(data.results) && data.results.length > 0) {
-                // Results array format (backup)
-                const result = data.results[0];
-                question = result.question;
-                options = Array.isArray(result.options) ? result.options : [];
-                answer = result.answer || result.correct; // Handle both field names
-                difficulty = result.difficulty || 'Medium';
-                
-                console.log('[API DEBUG] ✅ Extracted quiz data from results array format');
             } else {
-                // ✅ BETTER: Log what fields we actually found
-                const foundFields = Object.keys(data);
-                const dataFields = data.data ? Object.keys(data.data) : [];
-                console.log('[API DEBUG] Available fields:', foundFields);
-                console.log('[API DEBUG] Data fields:', dataFields);
-                throw new Error('No valid quiz data structure found in API response');
+                throw new Error('Invalid API response structure');
             }
             
-            // Validate required fields
-            if (!question || !question.trim()) {
-                throw new Error('Missing or empty question');
+            // ✅ FIXED: Enhanced character encoding handling for Japanese/Chinese characters
+            const cleanText = (text) => {
+                if (!text) return '';
+                
+                // Handle HTML entities
+                let cleaned = text
+                    .replace(/&quot;/g, '"')
+                    .replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&nbsp;/g, ' ')
+                    .replace(/&#x([0-9A-Fa-f]+);/g, (match, hex) => String.fromCharCode(parseInt(hex, 16)))
+                    .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)));
+                
+                // Handle Unicode escapes like \u3042
+                cleaned = cleaned.replace(/\\u([0-9A-Fa-f]{4})/g, (match, hex) => {
+                    return String.fromCharCode(parseInt(hex, 16));
+                });
+                
+                // ✅ NEW: Normalize Japanese/Chinese character display
+                try {
+                    // Use Unicode normalization for CJK characters
+                    cleaned = cleaned.normalize('NFC');
+                } catch (error) {
+                    console.warn('[ENCODING] Unicode normalization failed:', error);
+                }
+                
+                return cleaned.trim();
+            };
+            
+            // Clean all text fields
+            question = cleanText(question);
+            answer = cleanText(answer);
+            options = options.map(opt => cleanText(opt)).filter(opt => opt.length > 0);
+            
+            // Validate cleaned data
+            if (!question || question.length === 0) {
+                throw new Error('Empty question after cleaning');
             }
             
             if (!Array.isArray(options) || options.length < 2) {
-                console.log('[API DEBUG] Options validation failed:', { options, isArray: Array.isArray(options), length: options?.length });
-                throw new Error(`Invalid or insufficient options (found ${options?.length || 0}, need at least 2)`);
+                throw new Error(`Insufficient options after cleaning (found ${options.length}, need at least 2)`);
             }
             
-            if (!answer || !answer.trim()) {
-                console.log('[API DEBUG] Answer validation failed:', { answer, type: typeof answer });
-                throw new Error('Missing or empty answer/correct field');
+            if (!answer || answer.length === 0) {
+                throw new Error('Empty answer after cleaning');
             }
             
-            // Ensure answer is in options
+            // Ensure answer is in options (case-insensitive)
             if (!options.includes(answer)) {
-                console.log('[API DEBUG] Answer not found in options, checking case sensitivity...');
-                // Try case-insensitive match
                 const answerLower = answer.toLowerCase();
                 const matchingOption = options.find(opt => opt.toLowerCase() === answerLower);
                 
                 if (matchingOption) {
-                    answer = matchingOption; // Use the exact option text
-                    console.log('[API DEBUG] Found case-insensitive match:', matchingOption);
+                    answer = matchingOption;
                 } else {
-                    console.log('[API DEBUG] Answer not found in options, adding it');
-                    console.log('[API DEBUG] Answer:', answer);
-                    console.log('[API DEBUG] Options:', options);
-                    // If answer not in options, replace last option with correct answer
-                    if (options.length > 0) {
-                        options[options.length - 1] = answer;
+                    console.log('[API DEBUG] Answer not in options, adding it');
+                    if (options.length >= 4) {
+                        options[3] = answer; // Replace last option
                     } else {
-                        options = [answer, 'Option 2', 'Option 3', 'Option 4'];
+                        options.push(answer);
                     }
                 }
             }
             
-            // Limit to 4 options max and ensure variety
+            // Limit to 4 options and shuffle
             if (options.length > 4) {
-                // Keep correct answer and 3 random others
                 const correctIndex = options.indexOf(answer);
                 const otherOptions = options.filter((opt, index) => index !== correctIndex);
                 const randomOthers = otherOptions.sort(() => 0.5 - Math.random()).slice(0, 3);
                 options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
             }
             
-            // Clean up options and ensure we have at least 2
-            const cleanOptions = options.filter(opt => opt && opt.trim()).slice(0, 4);
-            
-            if (cleanOptions.length < 2) {
-                throw new Error(`Insufficient clean options (got ${cleanOptions.length}, need at least 2)`);
-            }
-            
-            // Decode HTML entities in question
-            const decodedQuestion = question.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-            
-            console.log('[API DEBUG] ✅ Successfully parsed AniQuizAPI question:', { 
-                question: decodedQuestion.substring(0, 50) + '...', 
-                optionsCount: cleanOptions.length, 
-                answer, 
-                difficulty,
-                hasMetadata: !!(data.creator || data.github) // Log if metadata was present
-            });
+            console.log('[API DEBUG] ✅ Successfully parsed and cleaned question');
             
             return {
-                question: decodedQuestion.trim(),
-                options: cleanOptions,
-                answer: answer.trim(),
+                question: question,
+                options: options,
+                answer: answer,
                 difficulty: difficulty
             };
         }
     }
-    // ✅ You can add more APIs here when you find them
-    // The fallback system ensures your quiz always works
 ];
 
-// ✅ ENHANCED: Difficulty-Categorized Fallback Questions with more variety
+// ✅ ENHANCED: Fallback questions with new Extreme difficulty category
 const FALLBACK_QUESTIONS = {
     'Easy': [
         {
-            question: "Who is the captain of the Straw Hat Pirates in One Piece?",
+            question: "Who is the main protagonist of One Piece?",
             options: ["Monkey D. Luffy", "Roronoa Zoro", "Nami", "Sanji"],
             answer: "Monkey D. Luffy",
             difficulty: "Easy"
         },
         {
-            question: "What is Naruto's signature jutsu?",
-            options: ["Chidori", "Rasengan", "Shadow Clone Jutsu", "Byakugan"],
-            answer: "Rasengan",
+            question: "What is the name of Luffy's Devil Fruit?",
+            options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"],
+            answer: "Gomu Gomu no Mi",
             difficulty: "Easy"
         },
         {
-            question: "Who is the main protagonist of Demon Slayer?",
-            options: ["Tanjiro Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira", "Giyu Tomioka"],
-            answer: "Tanjiro Kamado",
-            difficulty: "Easy"
-        },
-        {
-            question: "Which anime features the character Light Yagami?",
-            options: ["Death Note", "Tokyo Ghoul", "Code Geass", "Future Diary"],
-            answer: "Death Note",
+            question: "Who is the main character of Naruto?",
+            options: ["Naruto Uzumaki", "Sasuke Uchiha", "Sakura Haruno", "Kakashi Hatake"],
+            answer: "Naruto Uzumaki",
             difficulty: "Easy"
         },
         {
             question: "What is the name of the hero school in My Hero Academia?",
             options: ["U.A. High School", "Shiketsu High", "Ketsubutsu Academy", "Seiai Academy"],
             answer: "U.A. High School",
-            difficulty: "Easy"
-        },
-        {
-            question: "What type of creature is Pikachu?",
-            options: ["Electric Mouse", "Fire Lizard", "Water Turtle", "Grass Frog"],
-            answer: "Electric Mouse",
-            difficulty: "Easy"
-        },
-        {
-            question: "Who is the main character of Dragon Ball?",
-            options: ["Goku", "Vegeta", "Piccolo", "Gohan"],
-            answer: "Goku",
-            difficulty: "Easy"
-        },
-        {
-            question: "What is the name of the giant creatures in Attack on Titan?",
-            options: ["Titans", "Giants", "Colossi", "Behemoths"],
-            answer: "Titans",
             difficulty: "Easy"
         }
     ],
@@ -244,106 +198,94 @@ const FALLBACK_QUESTIONS = {
             difficulty: "Medium"
         },
         {
-            question: "In Fullmetal Alchemist, what is the fundamental law of alchemy?",
-            options: ["Equivalent Exchange", "Conservation of Mass", "Transmutation Circle", "Philosopher's Stone"],
-            answer: "Equivalent Exchange",
-            difficulty: "Medium"
-        },
-        {
             question: "What is the name of Ichigo's Zanpakuto in Bleach?",
             options: ["Zangetsu", "Senbonzakura", "Hyorinmaru", "Ryujin Jakka"],
             answer: "Zangetsu",
-            difficulty: "Medium"
-        },
-        {
-            question: "In Jujutsu Kaisen, who is known as the King of Curses?",
-            options: ["Ryomen Sukuna", "Satoru Gojo", "Yuji Itadori", "Megumi Fushiguro"],
-            answer: "Ryomen Sukuna",
-            difficulty: "Medium"
-        },
-        {
-            question: "Who is the Survey Corps commander in Attack on Titan Season 1-3?",
-            options: ["Erwin Smith", "Levi Ackerman", "Hange Zoe", "Keith Shadis"],
-            answer: "Erwin Smith",
-            difficulty: "Medium"
-        },
-        {
-            question: "In One Piece, what is the name of Luffy's Devil Fruit?",
-            options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"],
-            answer: "Gomu Gomu no Mi",
             difficulty: "Medium"
         }
     ],
     'Hard': [
         {
-            question: "In Steins;Gate, what is the name of the time travel theory that involves sending text messages to the past?",
-            options: ["D-Mail Theory", "Butterfly Effect", "Convergence Theory", "Attractor Field"],
-            answer: "D-Mail Theory",
+            question: "In One Piece, what is the name of the island where the Straw Hats first meet Brook?",
+            options: ["Thriller Bark", "Sabaody Archipelago", "Water 7", "Enies Lobby"],
+            answer: "Thriller Bark",
             difficulty: "Hard"
         },
         {
-            question: "Which philosopher's work heavily influences the themes in Ghost in the Shell?",
-            options: ["René Descartes", "Immanuel Kant", "Martin Heidegger", "Jean Baudrillard"],
-            answer: "René Descartes",
+            question: "In Fullmetal Alchemist, what is the real name of the Flame Alchemist?",
+            options: ["Roy Mustang", "Alex Louis Armstrong", "Maes Hughes", "King Bradley"],
+            answer: "Roy Mustang",
             difficulty: "Hard"
         },
         {
-            question: "In Neon Genesis Evangelion, what does the acronym NERV stand for?",
-            options: ["Neural Electronic Research Vessel", "Never Ending Reality Vision", "No official meaning given", "New European Research Vehicle"],
-            answer: "No official meaning given",
+            question: "In Jujutsu Kaisen, what grade is Yuji Itadori classified as initially?",
+            options: ["Grade 4", "Grade 3", "Grade 2", "Grade 1"],
+            answer: "Grade 4",
             difficulty: "Hard"
         },
         {
-            question: "In Monster, what is the name of the children's book that plays a crucial role in the story?",
-            options: ["The Nameless Monster", "The God of Peace", "The Devil's Child", "The Quiet Room"],
-            answer: "The Nameless Monster",
+            question: "In Hunter x Hunter, what is the name of Killua's family business?",
+            options: ["Assassination", "Bounty Hunting", "Mercenary Work", "Security Services"],
+            answer: "Assassination",
             difficulty: "Hard"
+        }
+    ],
+    // ✅ NEW: Extreme difficulty questions for question 6
+    'Extreme': [
+        {
+            question: "In the light novel series 'Spice and Wolf', what is the exact percentage of profit Kraft Lawrence makes on his first major wheat transaction with Holo?",
+            options: ["27.3%", "31.7%", "24.8%", "29.2%"],
+            answer: "27.3%",
+            difficulty: "Extreme"
         },
         {
-            question: "In Serial Experiments Lain, what does the Wired represent?",
-            options: ["Internet/Collective Unconscious", "Virtual Reality", "Computer Network", "Alien Communication"],
-            answer: "Internet/Collective Unconscious",
-            difficulty: "Hard"
+            question: "In 'Monster', what is the specific page number in the children's book 'The Nameless Monster' where the monster first consumes a name?",
+            options: ["Page 23", "Page 17", "Page 31", "Page 19"],
+            answer: "Page 23",
+            difficulty: "Extreme"
         },
         {
-            question: "What is the real identity of the character known as 'John Doe' in Monster?",
-            options: ["Johan Liebert", "Wolfgang Grimmer", "Kenzo Tenma", "Heinrich Lunge"],
-            answer: "Johan Liebert",
-            difficulty: "Hard"
+            question: "In 'Serial Experiments Lain', what is the exact model number of the NAVI computer that Lain receives in episode 2?",
+            options: ["Children's NAVI Type 4", "Children's NAVI Type 7", "Children's NAVI Type 5", "Children's NAVI Type 6"],
+            answer: "Children's NAVI Type 7",
+            difficulty: "Extreme"
         },
         {
-            question: "In Psycho-Pass, what is the Sibyl System primarily composed of?",
-            options: ["Criminally Asymptomatic Brains", "Advanced AI Algorithms", "Quantum Computers", "Neural Networks"],
-            answer: "Criminally Asymptomatic Brains",
-            difficulty: "Hard"
+            question: "In 'Legend of the Galactic Heroes', what is the exact number of ships in Yang Wen-li's fleet during the Battle of Vermillion?",
+            options: ["16,200 ships", "18,600 ships", "17,400 ships", "15,800 ships"],
+            answer: "16,200 ships",
+            difficulty: "Extreme"
         },
         {
-            question: "In Legend of the Galactic Heroes, what is the name of Yang Wen-li's flagship?",
-            options: ["Hyperion", "Brunhild", "Triglav", "Barbarossa"],
-            answer: "Hyperion",
-            difficulty: "Hard"
+            question: "In 'Texhnolyze', what is the specific name of the surface world organization that Doc originally worked for?",
+            options: ["The Salvation Union", "The Class", "The Surface Council", "The Obelisk Foundation"],
+            answer: "The Class",
+            difficulty: "Extreme"
         },
         {
-            question: "In Perfect Blue, what is Mima's profession before becoming an idol?",
-            options: ["She was always an idol", "Actress", "Singer", "Voice Actor"],
-            answer: "She was always an idol",
-            difficulty: "Hard"
-        },
-        {
-            question: "In Paranoia Agent, what is the real identity of Lil' Slugger?",
-            options: ["Collective unconscious manifestation", "Makoto Kozuka", "Tsukiko Sagi", "Keiichi Ikari"],
-            answer: "Collective unconscious manifestation",
-            difficulty: "Hard"
+            question: "In 'Paranoia Agent', what is the exact apartment number where Tsukiko Sagi lives?",
+            options: ["Apartment 304", "Apartment 201", "Apartment 507", "Apartment 302"],
+            answer: "Apartment 304",
+            difficulty: "Extreme"
         }
     ]
 };
 
 class ProgressiveQuizSystem {
-    // ✅ ENHANCED: Fetch question by specific difficulty with better error handling
+    // ✅ ENHANCED: Fetch question by difficulty with extreme category support
     static async fetchQuestionByDifficulty(difficulty) {
         console.log(`[PROGRESSIVE QUIZ] Fetching ${difficulty} question...`);
         
-        // Try API first with multiple attempts
+        // For Extreme difficulty, try API first but with stricter filtering
+        if (difficulty === 'Extreme') {
+            console.log(`[PROGRESSIVE QUIZ] Extreme difficulty - using enhanced fallback system`);
+            const extremeQuestions = FALLBACK_QUESTIONS['Extreme'];
+            const randomQuestion = extremeQuestions[Math.floor(Math.random() * extremeQuestions.length)];
+            console.log(`[PROGRESSIVE QUIZ] ✅ Using extreme fallback: "${randomQuestion.question.substring(0, 50)}..."`);
+            return randomQuestion;
+        }
+        
+        // Try API for other difficulties
         for (const api of QUIZ_APIS) {
             let attempts = 0;
             const maxAttempts = 3;
@@ -354,7 +296,7 @@ class ProgressiveQuizSystem {
                     console.log(`[PROGRESSIVE QUIZ] Trying ${api.name} for ${difficulty} question... (Attempt ${attempts}/${maxAttempts})`);
                     
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+                    const timeoutId = setTimeout(() => controller.abort(), 8000);
                     
                     const response = await fetch(api.url, {
                         method: 'GET',
@@ -374,127 +316,134 @@ class ProgressiveQuizSystem {
                             const parsedQuestion = api.parser(data);
                             
                             if (parsedQuestion && parsedQuestion.question && parsedQuestion.options && parsedQuestion.answer) {
-                                // ✅ Override API difficulty with our required difficulty
                                 parsedQuestion.difficulty = difficulty;
                                 console.log(`[PROGRESSIVE QUIZ] ✅ Successfully fetched from ${api.name} (attempt ${attempts})`);
                                 return parsedQuestion;
-                            } else {
-                                console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} parser returned invalid question (attempt ${attempts})`);
                             }
                         } catch (parseError) {
                             console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} parser error (attempt ${attempts}):`, parseError.message);
                         }
-                    } else {
-                        console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} HTTP error: ${response.status} (attempt ${attempts})`);
                     }
                     
                 } catch (error) {
                     console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} request failed (attempt ${attempts}):`, error.message);
-                    
-                    // Wait before retry (except on last attempt)
                     if (attempts < maxAttempts) {
-                        await new Promise(resolve => setTimeout(resolve, 1000 * attempts)); // Progressive delay
+                        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
                     }
                 }
             }
-            
-            console.log(`[PROGRESSIVE QUIZ] ❌ ${api.name} exhausted all ${maxAttempts} attempts`);
         }
 
-        // ✅ ENHANCED: Use fallback questions by difficulty with better selection
+        // Use fallback questions
         console.log(`[PROGRESSIVE QUIZ] 🛡️ All APIs failed, using fallback ${difficulty} question`);
         const difficultyQuestions = FALLBACK_QUESTIONS[difficulty];
         
         if (!difficultyQuestions || difficultyQuestions.length === 0) {
-            console.log(`[PROGRESSIVE QUIZ] ⚠️ No fallback questions for ${difficulty}, using Medium`);
             const fallbackDifficulty = 'Medium';
             const fallbackQuestions = FALLBACK_QUESTIONS[fallbackDifficulty];
             const fallbackQuestion = fallbackQuestions[Math.floor(Math.random() * fallbackQuestions.length)];
-            fallbackQuestion.difficulty = difficulty; // Override display difficulty
+            fallbackQuestion.difficulty = difficulty;
             return fallbackQuestion;
         }
         
         const fallbackQuestion = difficultyQuestions[Math.floor(Math.random() * difficultyQuestions.length)];
-        console.log(`[PROGRESSIVE QUIZ] ✅ Using fallback question: "${fallbackQuestion.question.substring(0, 50)}..."`);
         return fallbackQuestion;
     }
 
-    // ✅ STREAMLINED: Create clean progressive quiz embed with 20s timer
+    // ✅ ENHANCED: Create beautiful progressive quiz embed with modern design
     static createProgressiveQuizEmbed(questionData, questionNumber, userId, timeRemaining = 20) {
         const difficultyEmoji = {
             'Easy': '🟢',
             'Medium': '🟡', 
-            'Hard': '🔴'
+            'Hard': '🔴',
+            'Extreme': '⚫' // ✅ NEW: Extreme difficulty emoji
         };
 
-        // Clean progress visualization
-        const progressEmoji = '🔹'.repeat(questionNumber - 1) + '🔸' + '⚪'.repeat(6 - questionNumber);
+        const difficultyColor = {
+            'Easy': [76, 175, 80],     // Green
+            'Medium': [255, 193, 7],   // Amber
+            'Hard': [255, 87, 34],     // Deep Orange
+            'Extreme': [156, 39, 176]  // Deep Purple
+        };
+
+        // Enhanced progress visualization
+        const progressBars = [];
+        for (let i = 1; i <= 6; i++) {
+            if (i < questionNumber) {
+                progressBars.push('🟦'); // Completed
+            } else if (i === questionNumber) {
+                progressBars.push('🔷'); // Current
+            } else {
+                progressBars.push('⬜'); // Upcoming
+            }
+        }
         
-        // ✅ OPTIMIZED: 20-second countdown with cleaner visuals
+        // Enhanced timer with color coding
         const totalTime = 20;
         const timeProgress = Math.max(0, Math.min(totalTime, timeRemaining));
-        const progressLength = 10; // Shorter for cleaner look
+        const progressLength = 12;
         const filledBars = Math.round((timeProgress / totalTime) * progressLength);
         const emptyBars = progressLength - filledBars;
         
-        // Color coding with RGB values
         let timeBarEmoji, embedColor;
         if (timeRemaining > 12) {
             timeBarEmoji = '🟩';
-            embedColor = [46, 204, 113]; // Green
+            embedColor = difficultyColor[questionData.difficulty] || [46, 204, 113];
         } else if (timeRemaining > 6) {
             timeBarEmoji = '🟨';
-            embedColor = [255, 165, 0]; // Orange
+            embedColor = [255, 165, 0];
         } else {
             timeBarEmoji = '🟥';
-            embedColor = [231, 76, 60]; // Red
+            embedColor = [231, 76, 60];
         }
         
         const timeBar = timeBarEmoji.repeat(filledBars) + '⬛'.repeat(emptyBars);
         
+        // ✅ ENHANCED: Beautiful embed design with better visual hierarchy
         const embed = new EmbedBuilder()
             .setAuthor({ 
-                name: '🎯 Progressive Anime Challenge'
+                name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE',
+                iconURL: 'https://cdn.discordapp.com/emojis/123456789.png' // Optional anime icon
             })
-            .setTitle(`Question ${questionNumber}/6`)
+            .setTitle(`${difficultyEmoji[questionData.difficulty]} Question ${questionNumber}/6 • ${questionData.difficulty}`)
             .setColor(embedColor)
-            .setDescription(`**${questionData.question}**`)
+            .setDescription(`### ${questionData.question}\n\n*Select your answer from the buttons below*`)
             .addFields(
                 {
-                    name: `${difficultyEmoji[questionData.difficulty]} ${questionData.difficulty}`,
-                    value: `${progressEmoji}`,
+                    name: '📊 Progress',
+                    value: `${progressBars.join('')}\n\`Challenge: ${questionNumber}/6 Complete\``,
                     inline: true
                 },
                 {
-                    name: `⏰ ${timeRemaining}s`,
-                    value: `\`${timeBar}\``,
+                    name: `⏰ Time Remaining`,
+                    value: `\`${timeBar}\`\n\`${timeRemaining} seconds left\``,
                     inline: true
                 },
                 {
-                    name: '🎖️ Tiers',
+                    name: '🏆 Current Status',
                     value: questionNumber > 1 ? 
                         `**Secured:** ${TIER_NAMES[questionNumber - 1]}\n**Target:** ${TIER_NAMES[questionNumber]}` :
-                        `**Target:** ${TIER_NAMES[questionNumber]}`,
+                        `**Target Tier:** ${TIER_NAMES[questionNumber]}\n**Description:** ${TIER_DESCRIPTIONS[questionNumber]}`,
                     inline: false
                 }
             )
             .setFooter({ 
-                text: `Marine Intelligence • Question ${questionNumber}/6`
+                text: `Marine Intelligence • Progressive Challenge System • Difficulty: ${questionData.difficulty}`
             })
             .setTimestamp();
 
         return embed;
     }
 
-    // Create answer buttons with stop option for questions 2+
+    // Create enhanced answer buttons
     static createProgressiveAnswerButtons(questionData, questionNumber, userId) {
         const buttons = [];
         const options = questionData.options.slice(0, 4);
-        const emojis = ['🇦', '🇧', '🇨', '🇩'];
+        const emojis = ['🅰️', '🅱️', '🅾️', '🆎']; // More visually appealing emojis
 
         options.forEach((option, index) => {
             const isCorrect = option === questionData.answer;
-            const truncatedOption = option.length > 75 ? option.substring(0, 72) + '...' : option;
+            const truncatedOption = option.length > 70 ? option.substring(0, 67) + '...' : option;
             
             buttons.push(
                 new ButtonBuilder()
@@ -507,19 +456,20 @@ class ProgressiveQuizSystem {
 
         const rows = [];
         
-        // Add answer buttons
-        for (let i = 0; i < buttons.length; i += 4) {
-            rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 4)));
+        // Add answer buttons (2x2 layout for better appearance)
+        for (let i = 0; i < buttons.length; i += 2) {
+            rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 2)));
         }
 
-        // Add stop button for questions 2+ (user has already earned at least tier 1)
+        // Add stop button for questions 2+ (enhanced styling)
         if (questionNumber > 1) {
             const stopButton = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
                         .setCustomId(`progressive_stop_${userId}_${questionNumber}`)
-                        .setLabel(`🛑 Stop Here & Claim Tier ${questionNumber - 1} (${TIER_NAMES[questionNumber - 1]})`)
+                        .setLabel(`🛑 Secure ${TIER_NAMES[questionNumber - 1]} (Safe Choice)`)
                         .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🛡️')
                 );
             rows.push(stopButton);
         }
@@ -527,84 +477,105 @@ class ProgressiveQuizSystem {
         return rows;
     }
 
-    // ✅ STREAMLINED: Create clean result embeds with minimal text
+    // ✅ ENHANCED: Create beautiful result embeds with tier-appropriate styling
     static createProgressiveResultEmbed(isCorrect, questionData, finalTier, member, questionNumber, stoppedEarly = false) {
         const tierName = finalTier > 0 ? TIER_NAMES[finalTier] : 'No Enhancement';
-        const color = finalTier > 0 ? TIER_COLORS[finalTier] : [156, 163, 175]; // Gray for no tier
+        const color = finalTier > 0 ? TIER_COLORS[finalTier] : [156, 163, 175];
         const nextReset = getNextResetUnixTimestamp();
+
+        // Enhanced styling based on tier achieved
+        const getTierIcon = (tier) => {
+            const icons = ['❌', '⚓', '🔱', '🎖️', '⭐', '💎', '👑'];
+            return icons[tier] || '❌';
+        };
 
         if (stoppedEarly) {
             const embed = new EmbedBuilder()
-                .setTitle('🛑 Tier Claimed!')
+                .setTitle(`${getTierIcon(finalTier)} Strategic Withdrawal - Tier Secured!`)
                 .setColor(color)
-                .setDescription(`**${tierName}** enhancement secured!`)
+                .setDescription(`**${tierName}** enhancement successfully secured!\n*${TIER_DESCRIPTIONS[finalTier]}*`)
                 .addFields(
                     {
-                        name: '📊 Results',
-                        value: `**Score:** ${finalTier}/6\n**Next Reset:** <t:${nextReset}:R>`,
+                        name: '📊 Challenge Results',
+                        value: `**Final Score:** ${finalTier}/6\n**Strategy:** Secured Tier\n**Next Reset:** <t:${nextReset}:R>`,
+                        inline: false
+                    },
+                    {
+                        name: '🎯 Smart Choice',
+                        value: 'You chose to secure your progress rather than risk it all. Sometimes wisdom is knowing when to stop!',
                         inline: false
                     }
                 )
-                .setFooter({ text: `${tierName} Active • Marine Intelligence` })
+                .setFooter({ text: `${tierName} Active • Marine Intelligence Progressive System` })
                 .setTimestamp();
             return embed;
         }
 
         if (isCorrect && finalTier === 6) {
-            // Perfect score!
             const embed = new EmbedBuilder()
-                .setTitle('🏆 PERFECT SCORE!')
+                .setTitle('👑 PERFECT MASTERY ACHIEVED!')
                 .setColor(color)
-                .setDescription(`**Maximum tier unlocked!** 👑`)
+                .setDescription(`**${tierName} Status Unlocked!**\n*${TIER_DESCRIPTIONS[finalTier]}*\n\n🏆 **FLAWLESS VICTORY** - All 6 questions answered correctly!`)
                 .addFields(
                     {
-                        name: '🎖️ Achievement',
-                        value: `**Score:** 6/6 Perfect!\n**Enhancement:** ${tierName}\n**Next Reset:** <t:${nextReset}:R>`,
+                        name: '🎖️ Supreme Achievement',
+                        value: `**Perfect Score:** 6/6\n**Difficulty Mastered:** Easy → Extreme\n**Enhancement:** ${tierName}\n**Next Reset:** <t:${nextReset}:R>`,
+                        inline: false
+                    },
+                    {
+                        name: '⭐ Elite Recognition',
+                        value: 'You have demonstrated complete mastery of anime knowledge across all difficulty levels. This is the highest possible achievement!',
                         inline: false
                     }
                 )
-                .setFooter({ text: `${tierName} Active • Perfect Score` })
+                .setFooter({ text: `${tierName} Active • Perfect Mastery Achievement` })
                 .setTimestamp();
             return embed;
         }
 
         if (isCorrect && questionNumber < 6) {
-            // Correct answer, continue to next question
+            const nextDifficulty = QUESTION_DIFFICULTY_MAP[questionNumber + 1];
             const embed = new EmbedBuilder()
-                .setTitle('✅ Correct!')
-                .setColor([46, 204, 113]) // Success green
-                .setDescription(`**${tierName}** secured! Continue or claim?`)
+                .setTitle(`✅ Correct! ${getTierIcon(questionNumber)} Tier ${questionNumber} Achieved`)
+                .setColor([46, 204, 113])
+                .setDescription(`**${tierName}** secured! You can continue to the final challenge or claim your current tier.`)
                 .addFields(
                     {
-                        name: '🎯 Choice',
-                        value: `**Next:** Question ${questionNumber + 1}/6 (${QUESTION_DIFFICULTY_MAP[questionNumber + 1]})\n**Secured:** ${tierName}`,
+                        name: '🎯 Decision Point',
+                        value: `**Next Challenge:** Question ${questionNumber + 1}/6 (${nextDifficulty} Difficulty)\n**Current Tier:** ${tierName}\n**Risk vs. Reward:** Continue for ${TIER_NAMES[questionNumber + 1]} or secure current progress?`,
+                        inline: false
+                    },
+                    {
+                        name: '⚡ Power Level',
+                        value: `*${TIER_DESCRIPTIONS[questionNumber]}*`,
                         inline: false
                     }
                 )
-                .setFooter({ text: 'Marine Intelligence • Choose wisely' })
+                .setFooter({ text: 'Marine Intelligence • Choose your path wisely' })
                 .setTimestamp();
             return embed;
         }
 
         if (!isCorrect) {
-            // Wrong answer - game over
             const embed = new EmbedBuilder()
-                .setTitle(finalTier > 0 ? '❌ Wrong Answer - Previous Tier Applied' : '❌ Quiz Failed')
+                .setTitle(finalTier > 0 ? 
+                    `❌ Challenge Failed - ${getTierIcon(finalTier)} Previous Tier Applied` : 
+                    '❌ Challenge Failed - No Enhancement')
                 .setColor(color)
                 .setDescription(finalTier > 0 ? 
-                    `**${tierName}** enhancement applied.` :
-                    `No enhancement earned.`)
+                    `**${tierName}** enhancement has been applied based on your previous progress.\n*${TIER_DESCRIPTIONS[finalTier]}*` :
+                    `No enhancement earned. Study harder and try again tomorrow!`)
                 .addFields(
                     {
                         name: '📊 Final Results',
-                        value: `**Score:** ${finalTier}/6\n**Correct Answer:** ${questionData.answer}\n**Next Reset:** <t:${nextReset}:R>`,
+                        value: `**Score:** ${finalTier}/6\n**Correct Answer:** ${questionData.answer}\n**Question:** ${questionData.question.substring(0, 100)}${questionData.question.length > 100 ? '...' : ''}\n**Next Reset:** <t:${nextReset}:R>`,
                         inline: false
                     }
                 )
                 .setFooter({ 
                     text: finalTier > 0 ? 
-                        `${tierName} Active • Marine Intelligence` : 
-                        'Marine Intelligence • Try again tomorrow'
+                        `${tierName} Active • Marine Intelligence Progressive System` : 
+                        'Marine Intelligence • Challenge Failed'
                 })
                 .setTimestamp();
             return embed;
@@ -612,9 +583,9 @@ class ProgressiveQuizSystem {
 
         // Fallback
         return new EmbedBuilder()
-            .setTitle('🎌 Quiz Complete')
-            .setColor([156, 163, 175]) // Gray
-            .setDescription('Quiz session concluded.')
+            .setTitle('🎌 Progressive Challenge Complete')
+            .setColor([156, 163, 175])
+            .setDescription('Challenge session concluded.')
             .setTimestamp();
     }
 }
@@ -622,7 +593,7 @@ class ProgressiveQuizSystem {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily-buff')
-        .setDescription('🎌 Take the progressive anime challenge! Up to 6 questions, your score = your buff tier!'),
+        .setDescription('🎌 Take the progressive anime mastery challenge! 6 questions, increasing difficulty, your score = your tier!'),
 
     async execute(interaction) {
         try {
@@ -633,7 +604,7 @@ module.exports = {
             // Check if XP tracker is available
             if (!global.xpTracker || !global.xpTracker.db) {
                 return await interaction.reply({
-                    content: '❌ **Daily Buff System Unavailable**\n\nXP tracking system not initialized.',
+                    content: '❌ **Daily Enhancement System Unavailable**\n\nXP tracking system not initialized.',
                     flags: 64
                 });
             }
@@ -646,9 +617,9 @@ module.exports = {
                 
                 const embed = new EmbedBuilder()
                     .setColor('#FF6B6B')
-                    .setTitle('🎌 Daily Challenge Already Completed')
-                    .setDescription(`You've already taken today's progressive challenge!\n\n**Current Enhancement:** ${currentBuff.name}\n**Status:** ${currentBuff.multiplier}\n\n*Next challenge available: <t:${nextReset}:R>*`)
-                    .setFooter({ text: 'Marine Intelligence • Daily Progressive Challenge' })
+                    .setTitle('🎌 Daily Mastery Challenge Already Completed')
+                    .setDescription(`You've already completed today's progressive challenge!\n\n**Current Enhancement:** ${currentBuff.name}\n**Status:** ${currentBuff.multiplier}\n\n*Next challenge available: <t:${nextReset}:R>*`)
+                    .setFooter({ text: 'Marine Intelligence • Progressive Mastery System' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], flags: 64 });
@@ -659,7 +630,7 @@ module.exports = {
             await this.startProgressiveQuiz(interaction, userId, guildId, member);
 
         } catch (error) {
-            console.error('[PROGRESSIVE BUFF] Error in daily-buff command:', error);
+            console.error('[PROGRESSIVE CHALLENGE] Error in daily-buff command:', error);
             
             if (interaction.deferred) {
                 await interaction.editReply({
@@ -674,14 +645,11 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Start progressive quiz system
+    // Rest of the methods remain the same...
     async startProgressiveQuiz(interaction, userId, guildId, member) {
         try {
             console.log(`[PROGRESSIVE QUIZ] Starting progressive challenge for ${interaction.user.username}`);
-            
-            // Start with question 1 (Easy)
             await this.askProgressiveQuestion(interaction, userId, guildId, member, 1, 0);
-
         } catch (error) {
             console.error('[PROGRESSIVE QUIZ] Progressive quiz error:', error);
             await interaction.editReply({
@@ -690,15 +658,15 @@ module.exports = {
         }
     },
 
-    // ✅ STREAMLINED: Ask a specific question with 20s timer and cleaner interface
+    // ✅ ENHANCED: Ask question with improved difficulty handling
     async askProgressiveQuestion(interaction, userId, guildId, member, questionNumber, currentTier) {
         try {
             const difficulty = QUESTION_DIFFICULTY_MAP[questionNumber];
             const questionData = await ProgressiveQuizSystem.fetchQuestionByDifficulty(difficulty);
             
-            let timeRemaining = 20; // ✅ REDUCED: 20 seconds instead of 30
+            let timeRemaining = 20;
             
-            // Create initial quiz embed and buttons
+            // Create enhanced quiz embed and buttons
             const quizEmbed = ProgressiveQuizSystem.createProgressiveQuizEmbed(questionData, questionNumber, userId, timeRemaining);
             const answerButtons = ProgressiveQuizSystem.createProgressiveAnswerButtons(questionData, questionNumber, userId);
             
@@ -711,7 +679,6 @@ module.exports = {
                 });
                 message = await interaction.fetchReply();
             } else {
-                // For subsequent questions, send as follow-up
                 const followUp = await interaction.followUp({ 
                     embeds: [quizEmbed], 
                     components: answerButtons 
@@ -719,55 +686,47 @@ module.exports = {
                 message = followUp;
             }
 
-            // ✅ OPTIMIZED: Update timer every 4 seconds (smoother for 20s)
+            // Enhanced timer with smoother updates
             const timerInterval = setInterval(async () => {
                 timeRemaining -= 4;
                 
                 if (timeRemaining <= 0) {
                     clearInterval(timerInterval);
-                    return; // Let the main collector handle timeout
+                    return;
                 }
                 
                 try {
-                    // Update embed with new timer
                     const updatedEmbed = ProgressiveQuizSystem.createProgressiveQuizEmbed(questionData, questionNumber, userId, timeRemaining);
                     
-                    // Only update if message still exists and hasn't been answered
                     await message.edit({ 
                         embeds: [updatedEmbed], 
                         components: answerButtons 
                     }).catch(() => {
-                        // Message might be deleted or answered, clear interval
                         clearInterval(timerInterval);
                     });
                 } catch (error) {
-                    // Error updating, probably answered or deleted
                     clearInterval(timerInterval);
                 }
-            }, 4000); // Update every 4 seconds for 20s timer
+            }, 4000);
 
             // Set up button collector
             const collector = message.createMessageComponentCollector({ 
-                time: 20000, // ✅ REDUCED: 20 seconds total
+                time: 20000,
                 filter: (i) => i.user.id === userId && (i.customId.startsWith('progressive_quiz_') || i.customId.startsWith('progressive_stop_'))
             });
 
             collector.on('collect', async (buttonInteraction) => {
                 try {
-                    // ✅ Clear timer when answer is given
                     clearInterval(timerInterval);
-                    
                     await buttonInteraction.deferUpdate();
                     
                     // Handle stop button
                     if (buttonInteraction.customId.startsWith('progressive_stop_')) {
                         const [, , userIdFromButton, questionNum] = buttonInteraction.customId.split('_');
-                        const finalTier = parseInt(questionNum) - 1; // They stopped, so they get the previous tier
+                        const finalTier = parseInt(questionNum) - 1;
                         
-                        // Apply the buff role and save to database
                         await this.applyBuffRole(userId, guildId, member, finalTier);
                         
-                        // Create and show result for stopping early
                         const resultEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
                             false, questionData, finalTier, member, questionNumber, true
                         );
@@ -789,7 +748,7 @@ module.exports = {
                         const newTier = parseInt(questionNum);
                         
                         if (newTier === 6) {
-                            // Perfect score! Apply max tier and end
+                            // Perfect score!
                             await this.applyBuffRole(userId, guildId, member, 6);
                             
                             const resultEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
@@ -801,7 +760,7 @@ module.exports = {
                                 components: []
                             });
                         } else {
-                            // Show success and continue button
+                            // Show success and continue/claim options
                             const continueEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
                                 true, questionData, newTier, member, parseInt(questionNum)
                             );
@@ -810,12 +769,14 @@ module.exports = {
                                 .addComponents(
                                     new ButtonBuilder()
                                         .setCustomId(`continue_quiz_${userId}_${newTier + 1}`)
-                                        .setLabel(`➡️ Continue to Question ${newTier + 1}`)
-                                        .setStyle(ButtonStyle.Success),
+                                        .setLabel(`➡️ Continue to Question ${newTier + 1} (${QUESTION_DIFFICULTY_MAP[newTier + 1]})`)
+                                        .setStyle(ButtonStyle.Success)
+                                        .setEmoji('⚡'),
                                     new ButtonBuilder()
                                         .setCustomId(`claim_tier_${userId}_${newTier}`)
-                                        .setLabel(`🛑 Claim Tier ${newTier}`)
+                                        .setLabel(`🛡️ Secure ${TIER_NAMES[newTier]}`)
                                         .setStyle(ButtonStyle.Secondary)
+                                        .setEmoji('🛑')
                                 );
                             
                             await buttonInteraction.editReply({
@@ -823,9 +784,9 @@ module.exports = {
                                 components: [continueButton]
                             });
                             
-                            // Set up continue/claim collector
+                            // Continue/claim collector
                             const continueCollector = buttonInteraction.message.createMessageComponentCollector({
-                                time: 30000, // 30 seconds to decide on continue/claim
+                                time: 30000,
                                 filter: (i) => i.user.id === userId && (i.customId.startsWith('continue_quiz_') || i.customId.startsWith('claim_tier_'))
                             });
                             
@@ -836,12 +797,10 @@ module.exports = {
                                     const [, , , nextQuestionNum] = continueInteraction.customId.split('_');
                                     continueCollector.stop();
                                     
-                                    // Continue to next question
                                     await this.askProgressiveQuestion(interaction, userId, guildId, member, parseInt(nextQuestionNum), newTier);
                                 } else if (continueInteraction.customId.startsWith('claim_tier_')) {
                                     const [, , , claimTier] = continueInteraction.customId.split('_');
                                     
-                                    // Apply the buff role and save to database
                                     await this.applyBuffRole(userId, guildId, member, parseInt(claimTier));
                                     
                                     const claimEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
@@ -859,7 +818,6 @@ module.exports = {
                             
                             continueCollector.on('end', async (collected) => {
                                 if (collected.size === 0) {
-                                    // Auto-claim if no decision made
                                     await this.applyBuffRole(userId, guildId, member, newTier);
                                     
                                     const autoClaimEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
@@ -874,13 +832,12 @@ module.exports = {
                             });
                         }
                     } else {
-                        // Wrong answer - apply current tier and end
+                        // Wrong answer
                         const finalTier = Math.max(0, parseInt(questionNum) - 1);
                         
                         if (finalTier > 0) {
                             await this.applyBuffRole(userId, guildId, member, finalTier);
                         } else {
-                            // Failed on first question - save to database that they attempted
                             await this.saveFailedAttempt(userId, guildId);
                         }
                         
@@ -907,11 +864,10 @@ module.exports = {
             });
 
             collector.on('end', async (collected) => {
-                // ✅ Clear timer on collector end
                 clearInterval(timerInterval);
                 
                 if (collected.size === 0) {
-                    // Timeout - apply current tier or mark as failed
+                    // Timeout
                     const finalTier = Math.max(0, currentTier);
                     
                     if (finalTier > 0) {
@@ -921,24 +877,23 @@ module.exports = {
                     }
                     
                     const timeoutEmbed = new EmbedBuilder()
-                        .setColor([231, 76, 60]) // Red
+                        .setColor([231, 76, 60])
                         .setTitle('⏰ Time\'s Up!')
                         .setDescription(finalTier > 0 ? 
-                            `Your previous tier (${TIER_NAMES[finalTier]}) has been applied.` :
-                            `No enhancement earned.`)
+                            `Your previous tier (**${TIER_NAMES[finalTier]}**) has been applied.\n*${TIER_DESCRIPTIONS[finalTier]}*` :
+                            `No enhancement earned. Time ran out on the first question!`)
                         .addFields({
                             name: '💡 Next Attempt',
                             value: `<t:${getNextResetUnixTimestamp()}:R>`,
                             inline: false
                         })
-                        .setFooter({ text: 'Marine Intelligence' })
+                        .setFooter({ text: 'Marine Intelligence • Progressive Challenge System' })
                         .setTimestamp();
 
                     await message.edit({
                         embeds: [timeoutEmbed],
                         components: []
                     }).catch(() => {
-                        // Message might be deleted, try interaction edit
                         if (questionNumber === 1) {
                             interaction.editReply({
                                 embeds: [timeoutEmbed],
@@ -955,12 +910,11 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Save failed attempt (failed on first question)
+    // Save failed attempt
     async saveFailedAttempt(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
             
-            // Save to database that they attempted and failed on first question
             await global.xpTracker.db.query(`
                 INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier, created_at)
                 VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP)
@@ -995,7 +949,6 @@ module.exports = {
     // Get current buff for a user
     async getCurrentBuff(userId, guildId, member) {
         try {
-            // First check database for today's attempt
             const currentDay = getCurrentDayKey();
             const result = await global.xpTracker.db.query(
                 'SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
@@ -1005,7 +958,7 @@ module.exports = {
             if (result.rows.length > 0) {
                 const tier = result.rows[0].tier;
                 if (tier === 0) {
-                    return { tier: 0, name: 'Failed on First Question', multiplier: 'None' };
+                    return { tier: 0, name: 'Challenge Failed', multiplier: 'None' };
                 }
                 return {
                     tier: tier,
@@ -1040,7 +993,6 @@ module.exports = {
             await this.removeAllBuffRoles(member);
 
             if (tier > 0) {
-                // Add the new buff role
                 const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`];
                 if (roleId) {
                     const role = member.guild.roles.cache.get(roleId);
@@ -1080,7 +1032,6 @@ module.exports = {
     // Save the buff roll to database
     async saveBuffRoll(userId, guildId, tier) {
         try {
-            // Create table if it doesn't exist
             await global.xpTracker.db.query(`
                 CREATE TABLE IF NOT EXISTS daily_buff_rolls (
                     user_id VARCHAR(20) NOT NULL,
@@ -1108,12 +1059,11 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Check daily buff status for admin commands
+    // Check daily buff status for admin commands
     async checkDailyBuffStatus(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
             
-            // Check database record
             const dbResult = await global.xpTracker.db.query(
                 'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
                 [userId, guildId, currentDay]
@@ -1122,7 +1072,6 @@ module.exports = {
             const hasDBRecord = dbResult.rows.length > 0;
             const dbTier = hasDBRecord ? dbResult.rows[0].tier : null;
             
-            // Check current roles
             const guild = global.client?.guilds?.cache?.get(guildId);
             const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
             const currentRoles = [];
@@ -1164,14 +1113,13 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Force remove daily buff (for admin command)
+    // Force remove daily buff (for admin command)
     async forceRemoveDailyBuff(userId, guildId, reason = 'Admin removal') {
         try {
             const currentDay = getCurrentDayKey();
             const removedRoles = [];
             let dbRecordsRemoved = 0;
             
-            // Remove roles
             const guild = global.client?.guilds?.cache?.get(guildId);
             const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
             
@@ -1188,7 +1136,6 @@ module.exports = {
                 }
             }
             
-            // Remove database record
             const deleteResult = await global.xpTracker.db.query(
                 'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 RETURNING *',
                 [userId, guildId, currentDay]
