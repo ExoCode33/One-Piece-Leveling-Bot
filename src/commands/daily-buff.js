@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Fixed Progressive 6-Question System with Enhanced Design
+// src/commands/daily-buff.js - Progressive 5-Question System with Enhanced Design
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -12,22 +12,22 @@ const TIER_COLORS = {
 };
 
 const TIER_NAMES = {
-    1: 'Marine Cadet',
-    2: 'Seaman Recruit', 
-    3: 'Petty Officer',
-    4: 'Lieutenant Commander',
-    5: 'Vice Admiral'
+    1: 'Common',
+    2: 'Rare', 
+    3: 'Epic',
+    4: 'Legendary',
+    5: 'Divine'
 };
 
 const TIER_DESCRIPTIONS = {
-    1: '⚓ Basic marine training enhancement',
-    2: '🔱 Advanced combat protocols activated', 
-    3: '🎖️ Elite officer tactical boost',
-    4: '⭐ Command-tier strategic enhancement',
-    5: '💎 Vice Admiral authority boost'
+    1: '⚓ Common enhancement boost',
+    2: '🔱 Rare power amplification', 
+    3: '🎖️ Epic ability enhancement',
+    4: '⭐ Legendary mastery boost',
+    5: '💎 Divine transcendence power'
 };
 
-// ✅ UPDATED: 5-question difficulty mapping
+// Updated difficulty mapping for 5 questions
 const QUESTION_DIFFICULTY_MAP = {
     1: 'Easy',      // Question 1 - Easy
     2: 'Medium',    // Question 2 - Medium
@@ -36,7 +36,7 @@ const QUESTION_DIFFICULTY_MAP = {
     5: 'Hard'       // Question 5 - Hard (Final question)
 };
 
-// ✅ ENHANCED: API configuration with better character encoding
+// Enhanced API configuration with better character encoding
 const QUIZ_APIS = [
     {
         name: 'AniQuizAPI',
@@ -59,7 +59,7 @@ const QUIZ_APIS = [
                 throw new Error('Invalid API response structure');
             }
             
-            // ✅ FIXED: Enhanced character encoding handling
+            // Enhanced character encoding handling
             const cleanText = (text) => {
                 if (!text) return '';
                 
@@ -120,7 +120,7 @@ const QUIZ_APIS = [
     }
 ];
 
-// ✅ ENHANCED: Fallback questions (removed extreme category)
+// Enhanced fallback questions
 const FALLBACK_QUESTIONS = {
     'Easy': [
         {
@@ -255,7 +255,7 @@ class ProgressiveQuizSystem {
         return fallbackQuestion;
     }
 
-    // ✅ ENHANCED: Create beautiful quiz embed
+    // Create beautiful quiz embed
     static createProgressiveQuizEmbed(questionData, questionNumber, userId, timeRemaining = 20) {
         const difficultyEmoji = {
             'Easy': '🟢',
@@ -329,7 +329,7 @@ class ProgressiveQuizSystem {
                 }
             )
             .setFooter({ 
-                text: `Marine Intelligence • Progressive Challenge System • Difficulty: ${questionData.difficulty}`
+                text: `Enhancement Intelligence • Progressive Challenge System • Difficulty: ${questionData.difficulty}`
             })
             .setTimestamp();
 
@@ -375,7 +375,7 @@ class ProgressiveQuizSystem {
         return rows;
     }
 
-    // ✅ ENHANCED: Create beautiful result embeds
+    // Create beautiful result embeds
     static createProgressiveResultEmbed(isCorrect, questionData, finalTier, member, questionNumber, stoppedEarly = false) {
         const tierName = finalTier > 0 ? TIER_NAMES[finalTier] : 'No Enhancement';
         const color = finalTier > 0 ? TIER_COLORS[finalTier] : [156, 163, 175];
@@ -396,13 +396,13 @@ class ProgressiveQuizSystem {
                     value: `**Final Score:** ${finalTier}/5\n**Strategy:** Secured Tier\n**Next Reset:** <t:${nextReset}:R>`,
                     inline: false
                 })
-                .setFooter({ text: `${tierName} Active • Marine Intelligence Progressive System` })
+                .setFooter({ text: `${tierName} Active • Progressive Enhancement System` })
                 .setTimestamp();
         }
 
         if (isCorrect && finalTier === 5) {
             return new EmbedBuilder()
-                .setTitle('💎 PERFECT MASTERY ACHIEVED!')
+                .setTitle('💎 DIVINE MASTERY ACHIEVED!')
                 .setColor(color)
                 .setDescription(`**${tierName} Status Unlocked!**\n*${TIER_DESCRIPTIONS[finalTier]}*\n\n🏆 **FLAWLESS VICTORY** - All 5 questions answered correctly!`)
                 .addFields({
@@ -410,7 +410,7 @@ class ProgressiveQuizSystem {
                     value: `**Perfect Score:** 5/5\n**Enhancement:** ${tierName}\n**Next Reset:** <t:${nextReset}:R>`,
                     inline: false
                 })
-                .setFooter({ text: `${tierName} Active • Perfect Mastery Achievement` })
+                .setFooter({ text: `${tierName} Active • Divine Mastery Achievement` })
                 .setTimestamp();
         }
 
@@ -425,7 +425,7 @@ class ProgressiveQuizSystem {
                     value: `**Next Challenge:** Question ${questionNumber + 1}/5 (${nextDifficulty})\n**Current Tier:** ${tierName}`,
                     inline: false
                 })
-                .setFooter({ text: 'Marine Intelligence • Choose your path wisely' })
+                .setFooter({ text: 'Enhancement Intelligence • Choose your path wisely' })
                 .setTimestamp();
         }
 
@@ -445,8 +445,8 @@ class ProgressiveQuizSystem {
                 })
                 .setFooter({ 
                     text: finalTier > 0 ? 
-                        `${tierName} Active • Marine Intelligence Progressive System` : 
-                        'Marine Intelligence • Challenge Failed'
+                        `${tierName} Active • Progressive Enhancement System` : 
+                        'Enhancement Intelligence • Challenge Failed'
                 })
                 .setTimestamp();
         }
@@ -486,7 +486,7 @@ module.exports = {
                     .setColor('#FF6B6B')
                     .setTitle('🎌 Daily Mastery Challenge Already Completed')
                     .setDescription(`You've already completed today's progressive challenge!\n\n**Current Enhancement:** ${currentBuff.name}\n**Status:** ${currentBuff.multiplier}\n\n*Next challenge available: <t:${nextReset}:R>*`)
-                    .setFooter({ text: 'Marine Intelligence • Progressive Mastery System' })
+                    .setFooter({ text: 'Enhancement Intelligence • Progressive Mastery System' })
                     .setTimestamp();
 
                 return await interaction.reply({ embeds: [embed], flags: 64 });
@@ -661,37 +661,6 @@ module.exports = {
                         const finalTier = Math.max(0, parseInt(questionNum) - 1);
                         
                         if (finalTier > 0) {
-                            await this.applyBuffRole(userId, guildId, member, finalTier);
-                        } else {
-                            await this.saveFailedAttempt(userId, guildId);
-                        }
-                        
-                        const resultEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
-                            false, questionData, finalTier, member, parseInt(questionNum)
-                        );
-                        
-                        await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
-                    }
-                    
-                    collector.stop();
-                    
-                } catch (error) {
-                    console.error('[PROGRESSIVE QUIZ] Button interaction error:', error);
-                    clearInterval(timerInterval);
-                    await buttonInteraction.editReply({
-                        content: '❌ **Error processing answer**\n\nPlease try the quiz again.',
-                        components: []
-                    });
-                }
-            });
-
-            collector.on('end', async (collected) => {
-                clearInterval(timerInterval);
-                
-                if (collected.size === 0) {
-                    const finalTier = Math.max(0, currentTier);
-                    
-                    if (finalTier > 0) {
                         await this.applyBuffRole(userId, guildId, member, finalTier);
                     } else {
                         await this.saveFailedAttempt(userId, guildId);
@@ -708,7 +677,7 @@ module.exports = {
                             value: `<t:${getNextResetUnixTimestamp()}:R>`,
                             inline: false
                         })
-                        .setFooter({ text: 'Marine Intelligence • Progressive Challenge System' })
+                        .setFooter({ text: 'Enhancement Intelligence • Progressive Challenge System' })
                         .setTimestamp();
 
                     await message.edit({ embeds: [timeoutEmbed], components: [] }).catch(() => {
@@ -725,7 +694,6 @@ module.exports = {
         }
     },
 
-    // Save failed attempt
     async saveFailedAttempt(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
@@ -744,7 +712,6 @@ module.exports = {
         }
     },
 
-    // Check if user has already taken quiz today
     async checkDailyRoll(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
@@ -761,7 +728,6 @@ module.exports = {
         }
     },
 
-    // Get current buff for a user
     async getCurrentBuff(userId, guildId, member) {
         try {
             const currentDay = getCurrentDayKey();
@@ -801,10 +767,8 @@ module.exports = {
         }
     },
 
-    // Apply the buff role to the user
     async applyBuffRole(userId, guildId, member, tier) {
         try {
-            // Remove any existing buff roles first
             await this.removeAllBuffRoles(member);
 
             if (tier > 0) {
@@ -822,7 +786,6 @@ module.exports = {
                 }
             }
 
-            // Save to database
             await this.saveBuffRoll(userId, guildId, tier);
 
         } catch (error) {
@@ -830,9 +793,8 @@ module.exports = {
         }
     },
 
-    // Remove all buff roles from user
     async removeAllBuffRoles(member) {
-        for (let i = 1; i <= 6; i++) {
+        for (let i = 1; i <= 5; i++) {
             const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
             if (roleId && member.roles.cache.has(roleId)) {
                 const role = member.guild.roles.cache.get(roleId);
@@ -844,7 +806,6 @@ module.exports = {
         }
     },
 
-    // Save the buff roll to database
     async saveBuffRoll(userId, guildId, tier) {
         try {
             await global.xpTracker.db.query(`
@@ -874,7 +835,6 @@ module.exports = {
         }
     },
 
-    // Check daily buff status for admin commands
     async checkDailyBuffStatus(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
@@ -928,7 +888,6 @@ module.exports = {
         }
     },
 
-    // Force remove daily buff (for admin command)
     async forceRemoveDailyBuff(userId, guildId, reason = 'Admin removal') {
         try {
             const currentDay = getCurrentDayKey();
@@ -1018,4 +977,35 @@ function getNextResetUnixTimestamp() {
     
     const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
     return Math.floor(utcReset.getTime() / 1000);
-}
+} {
+                            await this.applyBuffRole(userId, guildId, member, finalTier);
+                        } else {
+                            await this.saveFailedAttempt(userId, guildId);
+                        }
+                        
+                        const resultEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
+                            false, questionData, finalTier, member, parseInt(questionNum)
+                        );
+                        
+                        await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
+                    }
+                    
+                    collector.stop();
+                    
+                } catch (error) {
+                    console.error('[PROGRESSIVE QUIZ] Button interaction error:', error);
+                    clearInterval(timerInterval);
+                    await buttonInteraction.editReply({
+                        content: '❌ **Error processing answer**\n\nPlease try the quiz again.',
+                        components: []
+                    });
+                }
+            });
+
+            collector.on('end', async (collected) => {
+                clearInterval(timerInterval);
+                
+                if (collected.size === 0) {
+                    const finalTier = Math.max(0, currentTier);
+                    
+                    if (finalTier > 0)
