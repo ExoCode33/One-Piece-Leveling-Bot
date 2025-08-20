@@ -406,10 +406,30 @@ module.exports = {
                     if (btn.customId.startsWith('stop_')) {
                         const fTier = qNum - 1; 
                         await this.apply(userId, guildId, member, fTier);
+                        
+                        // ✅ NEW: Get XP multiplier for secured tier
+                        let xpMultiplier = 'Unknown';
+                        try {
+                            const roleId = process.env[`DAILY_XP_BUFF_TIER_${fTier}_ROLE`];
+                            if (roleId && global.xpBoostManager) {
+                                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                if (boostInfo && boostInfo.boost_multiplier) {
+                                    xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                }
+                            }
+                        } catch (error) {
+                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                            xpMultiplier = 'Active';
+                        }
+                        
                         const res = new EmbedBuilder().setTitle('Strategic Withdrawal - Tier Secured!').setColor(TIER_COLORS[fTier])
-                            .setDescription(`**${TIER_NAMES[fTier]}** secured!\n*${TIER_DESC[fTier]}*`)
-                            .addFields({ name: '📊 Results', value: `Score: ${fTier}/5\nNext: <t:${getReset()}:R>`, inline: false })
-                            .setFooter({ text: `${TIER_NAMES[fTier]} Active` }).setTimestamp();
+                            .setDescription(`**${TIER_NAMES[fTier]}** secured!\n*${TIER_DESC[fTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                            .addFields({ 
+                                name: '📊 Results', 
+                                value: `Score: ${fTier}/5\n**Buff Received:** ${TIER_EMOJIS[fTier]} ${TIER_NAMES[fTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                inline: false 
+                            })
+                            .setFooter({ text: `${TIER_EMOJIS[fTier]} ${TIER_NAMES[fTier]} ${xpMultiplier} Active` }).setTimestamp();
                         await btn.editReply({ embeds: [res], components: [] }); 
                         collector.stop(); 
                         return;
@@ -422,10 +442,30 @@ module.exports = {
                     if (isCorrect) {
                         if (qNum === 5) {
                             await this.apply(userId, guildId, member, 5);
+                            
+                            // ✅ NEW: Get XP multiplier for Divine tier
+                            let xpMultiplier = 'Unknown';
+                            try {
+                                const roleId = process.env[`DAILY_XP_BUFF_TIER_5_ROLE`];
+                                if (roleId && global.xpBoostManager) {
+                                    const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                    if (boostInfo && boostInfo.boost_multiplier) {
+                                        xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                xpMultiplier = 'Active';
+                            }
+                            
                             const res = new EmbedBuilder().setTitle('💎 DIVINE MASTERY ACHIEVED!').setColor(TIER_COLORS[5])
-                                .setDescription(`**${TIER_NAMES[5]}** unlocked!\n*${TIER_DESC[5]}*\n\n🏆 **FLAWLESS VICTORY**`)
-                                .addFields({ name: '🎖️ Achievement', value: `Perfect Score: 5/5\nNext: <t:${getReset()}:R>`, inline: false })
-                                .setFooter({ text: `${TIER_NAMES[5]} Active • Divine Achievement` }).setTimestamp();
+                                .setDescription(`**${TIER_NAMES[5]}** unlocked!\n*${TIER_DESC[5]}*\n\n🏆 **FLAWLESS VICTORY**\n**XP Multiplier:** ${xpMultiplier}`)
+                                .addFields({ 
+                                    name: '🎖️ Achievement', 
+                                    value: `Perfect Score: 5/5\n**Buff Received:** ${TIER_EMOJIS[5]} ${TIER_NAMES[5]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                    inline: false 
+                                })
+                                .setFooter({ text: `${TIER_EMOJIS[5]} ${TIER_NAMES[5]} ${xpMultiplier} Active • Divine Achievement` }).setTimestamp();
                             await btn.editReply({ embeds: [res], components: [] });
                         } else {
                             const cont = new EmbedBuilder().setTitle(`✅ Correct! Tier ${qNum} Achieved`).setColor([46, 204, 113])
@@ -458,10 +498,30 @@ module.exports = {
                                 } else {
                                     const cTier = parseInt(contBtn.customId.split('_')[2]); 
                                     await this.apply(userId, guildId, member, cTier);
+                                    
+                                    // ✅ NEW: Get XP multiplier for claimed tier
+                                    let xpMultiplier = 'Unknown';
+                                    try {
+                                        const roleId = process.env[`DAILY_XP_BUFF_TIER_${cTier}_ROLE`];
+                                        if (roleId && global.xpBoostManager) {
+                                            const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                            if (boostInfo && boostInfo.boost_multiplier) {
+                                                xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                        xpMultiplier = 'Active';
+                                    }
+                                    
                                     const claim = new EmbedBuilder().setTitle('Strategic Withdrawal - Tier Secured!').setColor(TIER_COLORS[cTier])
-                                        .setDescription(`**${TIER_NAMES[cTier]}** secured!\n*${TIER_DESC[cTier]}*`)
-                                        .addFields({ name: '📊 Results', value: `Score: ${cTier}/5\nNext: <t:${getReset()}:R>`, inline: false })
-                                        .setFooter({ text: `${TIER_NAMES[cTier]} Active` }).setTimestamp();
+                                        .setDescription(`**${TIER_NAMES[cTier]}** secured!\n*${TIER_DESC[cTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                        .addFields({ 
+                                            name: '📊 Results', 
+                                            value: `Score: ${cTier}/5\n**Buff Received:** ${TIER_EMOJIS[cTier]} ${TIER_NAMES[cTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                            inline: false 
+                                        })
+                                        .setFooter({ text: `${TIER_EMOJIS[cTier]} ${TIER_NAMES[cTier]} ${xpMultiplier} Active` }).setTimestamp();
                                     await contBtn.editReply({ embeds: [claim], components: [] }); 
                                     contColl.stop();
                                 }
@@ -471,22 +531,39 @@ module.exports = {
                         const fTier = Math.max(0, qNum - 1);
                         if (fTier > 0) await this.apply(userId, guildId, member, fTier); else await this.saveFail(userId, guildId);
                         
-                        // ✅ ENHANCED: Make failure more obvious with tier emoji and better formatting
+                        // ✅ ENHANCED: Make failure more obvious with tier emoji and XP multiplier info
                         const name = fTier > 0 ? TIER_NAMES[fTier] : 'No Enhancement';
                         const tierEmoji = TIER_EMOJIS[fTier] || '⬛';
+                        
+                        // ✅ NEW: Get XP multiplier from database
+                        let xpMultiplier = 'Unknown';
+                        if (fTier > 0) {
+                            try {
+                                const roleId = process.env[`DAILY_XP_BUFF_TIER_${fTier}_ROLE`];
+                                if (roleId && global.xpBoostManager) {
+                                    const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                    if (boostInfo && boostInfo.boost_multiplier) {
+                                        xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                xpMultiplier = 'Active';
+                            }
+                        }
                         
                         const res = new EmbedBuilder()
                             .setTitle(`❌ Challenge Failed - ${fTier > 0 ? 'Previous Tier Applied' : 'No Enhancement'}`)
                             .setColor('#FF0000')
                             .setDescription(fTier > 0 ? 
-                                `**${tierEmoji} ${name} Buff Applied** from previous progress!\n\n*You earned this from reaching question ${fTier + 1}*` : 
+                                `**${tierEmoji} ${name} Buff Applied** from previous progress!\n\n*You earned this from reaching question ${fTier + 1}*\n**XP Multiplier:** ${xpMultiplier}` : 
                                 '**⬛ No Enhancement** earned. Try again tomorrow!')
                             .addFields({ 
                                 name: '📊 Final Results', 
-                                value: `**Score:** ${fTier}/5\n**Buff Received:** ${tierEmoji} ${name}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
+                                value: `**Score:** ${fTier}/5\n**Buff Received:** ${tierEmoji} ${name}${fTier > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
                                 inline: false 
                             })
-                            .setFooter({ text: fTier > 0 ? `${tierEmoji} ${name} Active Until Reset` : 'Challenge Failed - No Buff Awarded' })
+                            .setFooter({ text: fTier > 0 ? `${tierEmoji} ${name} ${xpMultiplier} Active Until Reset` : 'Challenge Failed - No Buff Awarded' })
                             .setTimestamp();
                         await btn.editReply({ embeds: [res], components: [] });
                     }
