@@ -241,7 +241,7 @@ module.exports = {
                     .setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
                     .setTitle(`${diffEmoji[diff]} Question ${qNum}/5 • ${diff}`)
                     .setColor(embedColor) // ✅ RGB color that changes every 2 seconds
-                    .setDescription(`\`\`\`ansi\n\u001b[0;32m${q.question}\u001b[0m\n\`\`\`\n*Select your answer using the buttons below*`) // ✅ Green text in black box
+                    .setDescription(`## **${q.question}**\n\n*Select your answer using the buttons below*`) // ✅ Large bold text without flickering
                     .addFields(
                         {
                             name: '📊 Challenge Progress',
