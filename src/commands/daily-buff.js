@@ -529,6 +529,18 @@ module.exports = {
                     console.log(`[DAILY BUFF] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"`);
                     
                     if (isCorrect) {
+                    if (isCorrect) {
+                        // ✅ NEW: Award XP for correct answer (single configurable amount for all difficulties)
+                        const correctAnswerXP = parseInt(process.env.DAILY_BUFF_CORRECT_ANSWER_XP) || 100;
+                        if (global.xpTracker && correctAnswerXP > 0) {
+                            try {
+                                await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-buff-correct', member.user);
+                                console.log(`[DAILY BUFF] Q${qNum} CORRECT XP: Awarded ${correctAnswerXP} XP to ${member.displayName} for correct answer (${diff} difficulty)`);
+                            } catch (error) {
+                                console.error(`[DAILY BUFF] Error awarding XP for correct answer:`, error);
+                            }
+                        }
+                        
                         if (qNum === 10) {
                             // Divine mastery completion
                             await this.apply(userId, guildId, member, 10);
@@ -637,7 +649,7 @@ module.exports = {
                         console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"`);
                         await this.showAnswerReveal(btn, q, qNum, member);
                         
-                        // Wait 20 seconds before proceeding
+                        // Wait 10 seconds before proceeding (reduced from 20)
                         setTimeout(async () => {
                             // Failure handling with tier 1 consolation prize
                             let fTier = Math.max(0, qNum - 1);
@@ -695,7 +707,7 @@ module.exports = {
                             } catch (error) {
                                 console.error('[DAILY BUFF] Error editing reply after answer reveal:', error);
                             }
-                        }, 20000); // 20 second delay
+                        }, 10000); // 10 second delay (reduced from 20)
                     }
                     collector.stop();
                 } catch (error) { 
@@ -734,27 +746,50 @@ module.exports = {
         }
     },
 
-    // Show answer reveal for 20 seconds
+    // Show answer reveal with 10-second countdown
     async showAnswerReveal(btnInteraction, question, questionNum, member) {
         try {
             console.log(`[ANSWER REVEAL] Showing correct answer for Q${questionNum}: "${question.answer}" to ${member.displayName}`);
+            
+            // Get the user's wrong answer from the button interaction
+            const selectedOption = question.options[parseInt(btnInteraction.customId.split('_')[3])];
+            
             const revealEmbed = new EmbedBuilder()
                 .setColor('#FF0000')
-                .setTitle(`❌ Incorrect! Question ${questionNum}/10`)
-                .setDescription(`**Question:** ${question.question}\n\n**Correct Answer:** 🎯 ${question.answer}`)
+                .setTitle(`❌ Wrong Answer - Question ${questionNum}/10`)
+                .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}`)
                 .addFields({
-                    name: '📚 Answer Revealed',
-                    value: `The correct answer was **${question.answer}**. Study up for next time!`,
-                    inline: false
-                }, {
                     name: '⏳ Processing Results',
-                    value: 'Results will be shown in 20 seconds...',
+                    value: 'Results in **10** seconds...',
                     inline: false
                 })
-                .setFooter({ text: 'Learn from your mistakes • Challenge continues...' })
+                .setFooter({ text: 'Answer revealed • Processing...' })
                 .setTimestamp();
 
             await btnInteraction.editReply({ embeds: [revealEmbed], components: [] });
+            
+            // Start 10-second countdown
+            for (let i = 9; i >= 1; i--) {
+                setTimeout(async () => {
+                    try {
+                        const countdownEmbed = new EmbedBuilder()
+                            .setColor('#FF0000')
+                            .setTitle(`❌ Wrong Answer - Question ${questionNum}/10`)
+                            .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}`)
+                            .addFields({
+                                name: '⏳ Processing Results',
+                                value: `Results in **${i}** second${i !== 1 ? 's' : ''}...`,
+                                inline: false
+                            })
+                            .setFooter({ text: 'Answer revealed • Processing...' })
+                            .setTimestamp();
+                        
+                        await btnInteraction.editReply({ embeds: [countdownEmbed], components: [] });
+                    } catch (error) {
+                        console.error(`[ANSWER REVEAL] Error updating countdown ${i}:`, error);
+                    }
+                }, (10 - i) * 1000);
+            }
         } catch (error) {
             console.error('[ANSWER REVEAL] Error showing answer:', error);
         }
