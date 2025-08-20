@@ -188,21 +188,43 @@ module.exports = {
     async execute(interaction) {
         try {
             const userId = interaction.user.id, guildId = interaction.guild.id, member = interaction.member;
-            if (!global.xpTracker?.db) return await interaction.reply({ content: '❌ System unavailable', ephemeral: true });
+            
+            // Check if XP tracker is available
+            if (!global.xpTracker?.db) {
+                return await interaction.reply({ 
+                    content: '❌ System unavailable - XP tracker not initialized', 
+                    ephemeral: true 
+                });
+            }
 
+            // Check if user already completed today
             if (await this.checkRoll(userId, guildId)) {
                 const buff = await this.getBuff(userId, guildId, member);
-                const embed = new EmbedBuilder().setColor('#FF6B6B').setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
-                    .setTitle('Daily Challenge Already Completed').setDescription(`Current Enhancement: ${buff.name}\nNext: <t:${getReset()}:R>`)
-                    .setFooter({ text: 'Enhancement Intelligence • Progressive System' }).setTimestamp();
+                const embed = new EmbedBuilder()
+                    .setColor('#FF6B6B')
+                    .setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
+                    .setTitle('Daily Challenge Already Completed')
+                    .setDescription(`Current Enhancement: ${buff.name}\nNext: <t:${getReset()}:R>`)
+                    .setFooter({ text: 'Enhancement Intelligence • Progressive System' })
+                    .setTimestamp();
                 return await interaction.reply({ embeds: [embed], ephemeral: true });
             }
+            
             await interaction.deferReply();
-            await this.ask(interaction, userId, guildId, member, 1, 0, false); // Added rerollUsed parameter
+            await this.ask(interaction, userId, guildId, member, 1, 0, false);
+            
         } catch (error) {
-            console.error('[DAILY BUFF] Error:', error);
-            const content = '❌ Error occurred. Try again.';
-            if (interaction.deferred) await interaction.editReply({ content }); else await interaction.reply({ content, ephemeral: true });
+            console.error('[DAILY BUFF] Execute error:', error);
+            const content = '❌ Error occurred. Please try again.';
+            try {
+                if (interaction.deferred) {
+                    await interaction.editReply({ content });
+                } else {
+                    await interaction.reply({ content, ephemeral: true });
+                }
+            } catch (replyError) {
+                console.error('[DAILY BUFF] Reply error:', replyError);
+            }
         }
     },
 
