@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - COMPLETE Fixed Daily Quiz System with Testing Mode
+// src/commands/daily-quiz.js - COMPLETE Fixed Daily Quiz System with XP Carryover
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -1186,19 +1186,151 @@ module.exports = {
         }
     },
 
-    // Delete failed attempt to allow retry (skip in testing mode)
-    async deleteFailedAttempt(userId, guildId) {
+    // ✅ FIXED: Get tier XP cap with carryover support
+    async getTierXPCap(userId, guildId) {
         try {
             if (isTestingMode()) {
-                console.log(`[DAILY QUIZ] Testing mode - skipping database deletion for user ${userId}`);
+                const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+                return {
+                    tier: 0,
+                    cap: defaultCap,
+                    currentXP: 0,
+                    remaining: defaultCap,
+                    hasCustomCap: false
+                };
+            }
+            
+            const currentDay = this.getCurrentDay();
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
+            if (member) {
+                // Check for tier roles (highest tier wins)
+                for (let i = 10; i >= 1; i--) { 
+                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const tierXPCap = parseInt(process.env[`DAILY_QUIZ_TIER_${i}_XP_CAP`]);
+                        if (tierXPCap && tierXPCap > 0) {
+                            
+                            // Check existing tier XP
+                            const result = await global.xpTracker.db.query(
+                                'SELECT current_xp FROM daily_buff_xp_caps WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                                [userId, guildId, currentDay]
+                            );
+                            
+                            let currentXP = 0;
+
+                            if (result.rows.length > 0) {
+                                // User already has tier record
+                                currentXP = result.rows[0].current_xp || 0;
+                            } else {
+                                // ✅ CRITICAL FIX: Check default system for XP to carry over
+                                const defaultXP = global.xpTracker.dailyResetManager ? 
+                                    global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay) : 0;
+                                
+                                if (defaultXP > 0) {
+                                    console.log(`[DAILY QUIZ] 🔄 Carrying over ${defaultXP} XP from default to tier ${i} for ${member.displayName}`);
+                                    currentXP = defaultXP;
+                                    
+                                    // Create tier record with carried over XP
+                                    await global.xpTracker.db.query(`
+                                        INSERT INTO daily_buff_xp_caps (user_id, guild_id, date, tier, xp_cap, current_xp, created_at, updated_at)
+                                        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                        ON CONFLICT (user_id, guild_id, date)
+                                        DO UPDATE SET
+                                            tier = $4,
+                                            xp_cap = $5,
+                                            current_xp = GREATEST(daily_buff_xp_caps.current_xp, $6),
+                                            updated_at = CURRENT_TIMESTAMP
+                                    `, [userId, guildId, currentDay, i, tierXPCap, defaultXP]);
+                                } else {
+                                    // No existing XP, create fresh tier record
+                                    await global.xpTracker.db.query(`
+                                        INSERT INTO daily_buff_xp_caps (user_id, guild_id, date, tier, xp_cap, current_xp, created_at, updated_at)
+                                        VALUES ($1, $2, $3, $4, $5, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                        ON CONFLICT (user_id, guild_id, date)
+                                        DO UPDATE SET
+                                            tier = $4,
+                                            xp_cap = $5,
+                                            updated_at = CURRENT_TIMESTAMP
+                                    `, [userId, guildId, currentDay, i, tierXPCap]);
+                                }
+                            }
+                            
+                            return {
+                                tier: i,
+                                cap: tierXPCap,
+                                currentXP: currentXP,
+                                remaining: Math.max(0, tierXPCap - currentXP),
+                                hasCustomCap: true
+                            };
+                        }
+                    }
+                }
+            }
+
+            // Default cap
+            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+            let currentXP = 0;
+            
+            if (global.xpTracker && global.xpTracker.dailyResetManager) {
+                currentXP = global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay);
+            }
+            
+            return {
+                tier: 0,
+                cap: defaultCap,
+                currentXP: currentXP,
+                remaining: Math.max(0, defaultCap - currentXP),
+                hasCustomCap: false
+            };
+
+        } catch (error) {
+            console.error('[DAILY QUIZ] Error getting tier XP cap:', error);
+            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+            return {
+                tier: 0,
+                cap: defaultCap,
+                currentXP: 0,
+                remaining: defaultCap,
+                hasCustomCap: false
+            };
+        }
+    },
+
+    // Update tier XP usage
+    async updateTierXPUsage(userId, guildId, xpGained) {
+        try {
+            if (isTestingMode()) {
                 return;
             }
             
-            await global.xpTracker.db.query('DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 AND tier = 0', [userId, guildId, getDay()]);
-            console.log(`[DAILY QUIZ] Deleted failed attempt for user ${userId} to allow retry`);
+            const currentDay = this.getCurrentDay();
+            
+            await global.xpTracker.db.query(`
+                UPDATE daily_buff_xp_caps 
+                SET current_xp = current_xp + $1, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $2 AND guild_id = $3 AND date = $4
+            `, [xpGained, userId, guildId, currentDay]);
+
         } catch (error) {
-            console.error('[DAILY QUIZ] Error deleting failed attempt:', error);
+            console.error('[DAILY QUIZ] Error updating tier XP usage:', error);
         }
+    },
+
+    // Get current day
+    getCurrentDay() {
+        return getCurrentDayKey();
+    },
+
+    // Check EDT
+    isEDT(date) {
+        const year = date.getFullYear();
+        const marchSecondSunday = new Date(year, 2, 8);
+        marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
+        const novemberFirstSunday = new Date(year, 10, 1);
+        novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
+        return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
     // Check for ALL 10 tiers in getBuff function (testing mode aware)
@@ -1259,7 +1391,7 @@ module.exports = {
         }
     },
 
-    // Set individual XP cap based on tier (skip in testing mode)
+    // ✅ FIXED: Set tier XP cap with carryover support
     async setTierXPCap(userId, guildId, tier) {
         try {
             if (isTestingMode()) {
@@ -1274,132 +1406,34 @@ module.exports = {
                 return;
             }
 
-            await global.xpTracker.db.query(`
-                CREATE TABLE IF NOT EXISTS daily_buff_xp_caps (
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    date DATE NOT NULL,
-                    tier INTEGER NOT NULL,
-                    xp_cap INTEGER NOT NULL,
-                    current_xp INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, guild_id, date)
-                )
-            `);
+            const currentDay = this.getCurrentDay();
 
-            const currentDay = getCurrentDayKey();
+            // ✅ CRITICAL FIX: Get existing XP from default system for carryover
+            let existingXP = 0;
+            if (global.xpTracker && global.xpTracker.dailyResetManager) {
+                existingXP = global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay);
+            }
 
+            // Create/update tier record with XP carryover
             await global.xpTracker.db.query(`
-                INSERT INTO daily_buff_xp_caps (user_id, guild_id, date, tier, xp_cap, current_xp, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 0, CURRENT_TIMESTAMP)
+                INSERT INTO daily_buff_xp_caps (user_id, guild_id, date, tier, xp_cap, current_xp, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (user_id, guild_id, date)
                 DO UPDATE SET
                     tier = $4,
                     xp_cap = $5,
+                    current_xp = GREATEST(daily_buff_xp_caps.current_xp, $6),
                     updated_at = CURRENT_TIMESTAMP
-            `, [userId, guildId, currentDay, tier, tierXPCap]);
+            `, [userId, guildId, currentDay, tier, tierXPCap, existingXP]);
 
-            console.log(`[DAILY QUIZ] Set tier ${tier} XP cap: ${tierXPCap.toLocaleString()} XP for ${guildId}:${userId}`);
+            if (existingXP > 0) {
+                console.log(`[DAILY QUIZ] ✅ Set tier ${tier} XP cap with carryover: ${existingXP}/${tierXPCap} XP for ${guildId}:${userId}`);
+            } else {
+                console.log(`[DAILY QUIZ] ✅ Set tier ${tier} XP cap: ${tierXPCap.toLocaleString()} XP for ${guildId}:${userId}`);
+            }
 
         } catch (error) {
             console.error('[DAILY QUIZ] Error setting tier XP cap:', error);
-        }
-    },
-
-    // Get current tier XP cap for a user
-    async getTierXPCap(userId, guildId) {
-        try {
-            if (isTestingMode()) {
-                const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-                return {
-                    tier: 0,
-                    cap: defaultCap,
-                    currentXP: 0,
-                    remaining: defaultCap,
-                    hasCustomCap: false
-                };
-            }
-            
-            const currentDay = getCurrentDayKey();
-            
-            const result = await global.xpTracker.db.query(
-                'SELECT tier, xp_cap, current_xp FROM daily_buff_xp_caps WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [userId, guildId, currentDay]
-            );
-
-            if (result.rows.length > 0) {
-                const { tier, xp_cap, current_xp } = result.rows[0];
-                return {
-                    tier: tier,
-                    cap: xp_cap,
-                    currentXP: current_xp,
-                    remaining: Math.max(0, xp_cap - current_xp),
-                    hasCustomCap: true
-                };
-            }
-
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            if (member) {
-                for (let i = 10; i >= 1; i--) { 
-                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const tierXPCap = parseInt(process.env[`DAILY_QUIZ_TIER_${i}_XP_CAP`]);
-                        if (tierXPCap && tierXPCap > 0) {
-                            console.log(`[TIER CAP DEBUG] Found user ${member.displayName} with tier ${i} role, cap: ${tierXPCap}`);
-                            return {
-                                tier: i,
-                                cap: tierXPCap,
-                                currentXP: 0,
-                                remaining: tierXPCap,
-                                hasCustomCap: true
-                            };
-                        }
-                    }
-                }
-            }
-
-            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            return {
-                tier: 0,
-                cap: defaultCap,
-                currentXP: 0,
-                remaining: defaultCap,
-                hasCustomCap: false
-            };
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error getting tier XP cap:', error);
-            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            return {
-                tier: 0,
-                cap: defaultCap,
-                currentXP: 0,
-                remaining: defaultCap,
-                hasCustomCap: false
-            };
-        }
-    },
-
-    // Update tier XP usage
-    async updateTierXPUsage(userId, guildId, xpGained) {
-        try {
-            if (isTestingMode()) {
-                return;
-            }
-            
-            const currentDay = getCurrentDayKey();
-            
-            await global.xpTracker.db.query(`
-                UPDATE daily_buff_xp_caps 
-                SET current_xp = current_xp + $1, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $2 AND guild_id = $3 AND date = $4
-            `, [xpGained, userId, guildId, currentDay]);
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error updating tier XP usage:', error);
         }
     },
 
@@ -1431,129 +1465,6 @@ module.exports = {
             console.log('[DAILY QUIZ] ❌ Saved failed attempt');
         } catch (error) { 
             console.error('[DAILY QUIZ] Save failed error:', error); 
-        }
-    },
-
-    // Export functions for admin command use
-    checkDailyBuffStatus: async function(userId, guildId) {
-        try {
-            if (isTestingMode()) {
-                return {
-                    hasDBRecord: false,
-                    currentRoles: [],
-                    currentDay: 'testing-mode',
-                    member: null
-                };
-            }
-            
-            const currentDay = getCurrentDayKey();
-            
-            const dbResult = await global.xpTracker.db.query(
-                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [userId, guildId, currentDay]
-            );
-            const hasDBRecord = dbResult.rows.length > 0;
-
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            const currentRoles = [];
-
-            if (member) {
-                for (let i = 1; i <= 10; i++) {
-                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const role = guild.roles.cache.get(roleId);
-                        if (role) {
-                            currentRoles.push({
-                                tier: i,
-                                roleId: roleId,
-                                roleName: role.name
-                            });
-                        }
-                    }
-                }
-            }
-
-            return {
-                hasDBRecord,
-                currentRoles,
-                currentDay,
-                member
-            };
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error checking status:', error);
-            return {
-                hasDBRecord: false,
-                currentRoles: [],
-                currentDay: getCurrentDayKey(),
-                member: null
-            };
-        }
-    },
-
-    forceRemoveDailyBuff: async function(userId, guildId, reason) {
-        try {
-            if (isTestingMode()) {
-                return {
-                    success: true,
-                    removedRoles: ['Testing Mode - No Roles to Remove'],
-                    dbRecordsRemoved: 0,
-                    currentDay: 'testing-mode'
-                };
-            }
-            
-            const currentDay = getCurrentDayKey();
-            const removedRoles = [];
-            let dbRecordsRemoved = 0;
-
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-
-            if (member) {
-                for (let i = 1; i <= 10; i++) {
-                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const role = guild.roles.cache.get(roleId);
-                        if (role) {
-                            try {
-                                await member.roles.remove(role, reason);
-                                removedRoles.push(`Tier ${i}: ${role.name}`);
-                                console.log(`[DAILY BUFF] Removed ${role.name} from ${member.user.username}`);
-                            } catch (error) {
-                                console.error(`[DAILY BUFF] Error removing role ${role.name}:`, error);
-                            }
-                        }
-                    }
-                }
-            }
-
-            try {
-                const deleteResult = await global.xpTracker.db.query(
-                    'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2',
-                    [userId, guildId]
-                );
-                dbRecordsRemoved = deleteResult.rowCount || 0;
-                console.log(`[DAILY QUIZ] Deleted ${dbRecordsRemoved} daily quiz records`);
-            } catch (error) {
-                console.error('[DAILY QUIZ] Error deleting database records:', error);
-            }
-
-            return {
-                success: true,
-                removedRoles,
-                dbRecordsRemoved,
-                currentDay
-            };
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error in forceRemoveDailyBuff:', error);
-            return {
-                success: false,
-                error: error.message,
-                removedRoles: [],
-                dbRecordsRemoved: 0,
-                currentDay: getCurrentDayKey()
-            };
         }
     }
 };
