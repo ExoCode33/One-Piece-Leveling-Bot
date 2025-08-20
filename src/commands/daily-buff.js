@@ -165,7 +165,7 @@ module.exports = {
             const q = await fetchQuestion(diff);
             let time = 20;
 
-            // ✅ NEW: Create 10 square countdown embed
+            // ✅ NEW: Create RGB changing embed with improved layout
             const makeEmbed = (t) => {
                 const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
                 
@@ -176,18 +176,38 @@ module.exports = {
                 const remainingSquares = Math.ceil(t / timePerSquare);
                 const filledSquares = Math.max(0, Math.min(totalSquares, remainingSquares));
                 
-                // Color progression: Green → Yellow → Red
+                // ✅ RGB Color progression that constantly changes
                 const percentageRemaining = (t / totalTime) * 100;
                 let squareEmoji, embedColor;
-                if (percentageRemaining > 60) {
+                
+                // Smooth RGB transition based on exact time
+                if (percentageRemaining > 66) {
+                    // Green to Green-Yellow transition
+                    const intensity = (percentageRemaining - 66) / 34; // 0-1
                     squareEmoji = '🟩';
-                    embedColor = [46, 204, 113]; // Green
-                } else if (percentageRemaining > 30) {
+                    embedColor = [
+                        Math.floor(46 + (30 * (1 - intensity))), // 46->76 (more yellow as time decreases)
+                        204, // Keep green high
+                        Math.floor(113 - (50 * (1 - intensity))) // 113->63 (less blue)
+                    ];
+                } else if (percentageRemaining > 33) {
+                    // Yellow transition
+                    const intensity = (percentageRemaining - 33) / 33; // 0-1
                     squareEmoji = '🟨';
-                    embedColor = [255, 193, 7]; // Yellow
+                    embedColor = [
+                        Math.floor(200 + (55 * (1 - intensity))), // 200->255
+                        Math.floor(150 + (50 * intensity)), // 150->200
+                        Math.floor(7 + (50 * intensity)) // 7->57
+                    ];
                 } else {
+                    // Red transition
+                    const intensity = percentageRemaining / 33; // 0-1
                     squareEmoji = '🟥';
-                    embedColor = [231, 76, 60]; // Red
+                    embedColor = [
+                        255, // Keep red high
+                        Math.floor(87 * intensity), // 0->87
+                        Math.floor(34 * intensity) // 0->34
+                    ];
                 }
                 
                 // Build the countdown bar
@@ -211,7 +231,6 @@ module.exports = {
                 };
                 
                 const progressSteps = createProgressBar();
-                const progressText = `Question **${qNum}** of **5** • ${Math.round((qNum / 5) * 100)}% Complete`;
                 
                 // Format time display
                 const mins = Math.floor(t / 60);
@@ -221,12 +240,12 @@ module.exports = {
                 return new EmbedBuilder()
                     .setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
                     .setTitle(`${diffEmoji[diff]} Question ${qNum}/5 • ${diff}`)
-                    .setColor(embedColor)
-                    .setDescription(`**${q.question}**\n\n*Select your answer using the buttons below*`)
+                    .setColor(embedColor) // ✅ RGB color that changes every 2 seconds
+                    .setDescription(`\`\`\`ansi\n\u001b[0;32m${q.question}\u001b[0m\n\`\`\`\n*Select your answer using the buttons below*`) // ✅ Green text in black box
                     .addFields(
                         {
                             name: '📊 Challenge Progress',
-                            value: `${progressSteps}\n${progressText}`,
+                            value: progressSteps, // ✅ Removed duplicate text
                             inline: false
                         },
                         {
@@ -246,11 +265,18 @@ module.exports = {
                     .setTimestamp();
             };
 
+            // ✅ UPDATED: Create 4 green buttons in 2x2 layout
             const btns = q.options.map((opt, i) => new ButtonBuilder()
                 .setCustomId(`q_${userId}_${qNum}_${i}_${opt === q.answer}`)
-                .setLabel(opt.substring(0, 70)).setStyle(ButtonStyle.Primary).setEmoji(['🅰️', '🅱️', '🅾️', '🆎'][i]));
+                .setLabel(opt.substring(0, 70))
+                .setStyle(ButtonStyle.Success) // ✅ Green buttons
+                .setEmoji(['🅰️', '🅱️', '🅾️', '🆎'][i]));
 
-            const rows = [new ActionRowBuilder().addComponents(btns.slice(0, 2)), new ActionRowBuilder().addComponents(btns.slice(2))];
+            // ✅ NEW: 2x2 button layout (side by side)
+            const rows = [
+                new ActionRowBuilder().addComponents(btns.slice(0, 2)), // First row: A, B
+                new ActionRowBuilder().addComponents(btns.slice(2, 4))  // Second row: O, AB
+            ];
             if (qNum > 1) rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder()
                 .setCustomId(`stop_${userId}_${qNum}`).setLabel(`Secure ${TIER_NAMES[qNum - 1]} Buff`).setStyle(ButtonStyle.Secondary).setEmoji('🛡️')));
 
