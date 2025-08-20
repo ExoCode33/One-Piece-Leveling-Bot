@@ -1,7 +1,7 @@
 // src/commands/daily-buff.js - Updated with Better Questions and Reroll Feature
 
-// Add missing import for StringSelectMenuBuilder
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+// Remove StringSelectMenuBuilder import since we're not using dropdown anymore
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const TIER_COLORS = { 1: [76, 175, 80], 2: [33, 150, 243], 3: [156, 39, 176], 4: [255, 193, 7], 5: [255, 87, 34] };
 const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic', 4: 'Legendary', 5: 'Divine' };
@@ -306,22 +306,14 @@ module.exports = {
                     .setTimestamp();
             };
 
-            // ✅ ENHANCED: Create answer dropdown instead of buttons
-            const answerDropdown = new ActionRowBuilder()
-                .addComponents(
-                    new StringSelectMenuBuilder()
-                        .setCustomId(`answer_${userId}_${qNum}_${rerollUsed}`)
-                        .setPlaceholder('🎯 Select your answer...')
-                        .addOptions(
-                            q.options.map((opt, i) => ({
-                                label: opt.substring(0, 100), // Discord limit
-                                description: `Option ${['A', 'B', 'C', 'D'][i]}`,
-                                value: `${i}_${opt === q.answer}_${opt}`
-                            }))
-                        )
-                );
+            // ✅ REVERTED: Create answer buttons (green)
+            const btns = q.options.map((opt, i) => new ButtonBuilder()
+                .setCustomId(`q_${userId}_${qNum}_${i}_${opt === q.answer}_${rerollUsed}`)
+                .setLabel(opt.substring(0, 70))
+                .setStyle(ButtonStyle.Success) // Green buttons
+                .setEmoji(['🅰️', '🅱️', '🅾️', '🆎'][i]));
 
-            // ✅ ENHANCED: Create action buttons (green, below dropdown)
+            // ✅ ENHANCED: Create action buttons (green, below answers)
             const actionButtons = [];
             
             // Add secure tier button if past question 1
@@ -345,8 +337,13 @@ module.exports = {
                     .setDisabled(rerollUsed)
             );
 
-            // ✅ NEW: Component layout with dropdown first, then buttons
-            const rows = [answerDropdown];
+            // ✅ ENHANCED: Button layout - answers first, then actions
+            const rows = [
+                new ActionRowBuilder().addComponents(btns.slice(0, 2)), // First row: A, B
+                new ActionRowBuilder().addComponents(btns.slice(2, 4))  // Second row: C, D
+            ];
+            
+            // Add action buttons as separate row if they exist
             if (actionButtons.length > 0) {
                 rows.push(new ActionRowBuilder().addComponents(actionButtons));
             }
