@@ -1,17 +1,11 @@
-// src/utils/xpLogger.js - FIXED with all red text, no progress bar, tier-specific caps
+// src/utils/xpLogger.js - FIXED with unified tier-specific cap display
 
 const { EmbedBuilder } = require('discord.js');
 
 /**
  * Send comprehensive XP logs to designated channel
- * @param {Client} client - Discord client
- * @param {string} type - Type of XP gain (message, reaction, voice, levelup)
- * @param {User} user - Discord user
- * @param {number} xpGain - Amount of XP gained
- * @param {Object} additionalInfo - Additional information for logging
  */
 async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
-    // Check if XP logging is enabled
     const logChannelId = process.env.XP_LOG_CHANNEL;
     const logEnabled = process.env.XP_LOG_ENABLED === 'true';
     
@@ -20,7 +14,6 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
         return;
     }
 
-    // Check specific logging settings (default to true if not specified)
     const logSettings = {
         message: process.env.XP_LOG_MESSAGES !== 'false',
         reaction: process.env.XP_LOG_REACTIONS !== 'false', 
@@ -40,26 +33,23 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
             return;
         }
 
-        // Create Marine Intelligence embed with red theme
         const embed = new EmbedBuilder()
-            .setColor(0xFF0000) // Marine red
+            .setColor(0xFF0000)
             .setTimestamp()
             .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
 
-        // Helper function to properly handle level 0
         const formatLevel = (level) => {
             return level !== undefined && level !== null ? level.toString() : '0';
         };
 
-        // Helper function to format XP totals
         const formatXP = (xp) => {
             return xp !== undefined && xp !== null ? xp.toLocaleString() : '0';
         };
 
-        // ✅ NEW: Helper function to get user's tier-specific daily cap
-        const getUserTierCap = async (userId, guildId) => {
+        // ✅ FIXED: Get unified user tier-specific daily cap
+        const getUserUnifiedCap = async (userId, guildId) => {
             try {
-                // Try to get tier-specific cap from daily quiz
+                // Check tier-specific cap first
                 const dailyQuizCommand = require('../commands/daily-quiz');
                 if (dailyQuizCommand && dailyQuizCommand.getTierXPCap) {
                     const tierCapInfo = await dailyQuizCommand.getTierXPCap(userId, guildId);
@@ -68,32 +58,42 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                             cap: tierCapInfo.cap,
                             currentXP: tierCapInfo.currentXP,
                             tier: tierCapInfo.tier,
-                            hasCustomCap: true
+                            hasCustomCap: true,
+                            capType: `Tier ${tierCapInfo.tier}`
                         };
                     }
                 }
                 
                 // Fall back to default cap
                 const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+                let currentXP = 0;
+                
+                // Get current XP from daily reset manager
+                if (global.xpTracker && global.xpTracker.dailyResetManager) {
+                    const currentDay = global.xpTracker.dailyResetManager.getCurrentDay();
+                    currentXP = global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay);
+                }
+                
                 return {
                     cap: defaultCap,
-                    currentXP: 0,
+                    currentXP: currentXP,
                     tier: 0,
-                    hasCustomCap: false
+                    hasCustomCap: false,
+                    capType: 'Default'
                 };
             } catch (error) {
-                console.error('[XP LOG] Error getting tier cap:', error);
+                console.error('[XP LOG] Error getting unified cap:', error);
                 const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
                 return {
                     cap: defaultCap,
                     currentXP: 0,
                     tier: 0,
-                    hasCustomCap: false
+                    hasCustomCap: false,
+                    capType: 'Error-Fallback'
                 };
             }
         };
 
-        // Configure embed based on XP type
         switch (type) {
             case 'message':
                 embed
@@ -116,10 +116,10 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                 break;
 
             case 'voice':
-                // ✅ FIXED: Get user's tier-specific daily cap
-                const tierCapInfo = await getUserTierCap(user.id, additionalInfo.guildId);
-                const dailyCap = tierCapInfo.cap;
-                const dailyXP = tierCapInfo.currentXP;
+                // ✅ FIXED: Get unified cap information
+                const capInfo = await getUserUnifiedCap(user.id, additionalInfo.guildId);
+                const dailyCap = capInfo.cap;
+                const dailyXP = capInfo.currentXP;
                 const remainingXP = Math.max(0, dailyCap - dailyXP);
                 const capPercentage = Math.round((dailyXP / dailyCap) * 100);
                 
@@ -137,12 +137,12 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                     .addFields(
                         {
                             name: '📊 Daily Voice XP Progress',
-                            value: `\`\`\`diff\n- Daily XP: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} (${capPercentage}%)\n- Remaining: ${remainingXP.toLocaleString()} XP\n- Tier: ${tierCapInfo.hasCustomCap ? `Tier ${tierCapInfo.tier}` : 'Default'}\n- Reset Day: ${getCurrentDay()}\n\`\`\``,
+                            value: `\`\`\`diff\n- Daily XP: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} (${capPercentage}%)\n- Remaining: ${remainingXP.toLocaleString()} XP\n- Cap Type: ${capInfo.capType}\n- Reset Day: ${getCurrentDay()}\n\`\`\``,
                             inline: true
                         },
                         {
                             name: '🎯 Status',
-                            value: `\`\`\`diff\n${dailyXP >= dailyCap ? '- 🚨 DAILY CAP REACHED' : `- ⏱️ ${remainingXP.toLocaleString()} XP until cap`}\n\`\`\``,
+                            value: `\`\`\`diff\n${dailyXP >= dailyCap ? '- 🚨 DAILY CAP REACHED' : `- ⏱️ ${remainingXP.toLocaleString()} XP until cap`}\n- Cap Level: ${capInfo.hasCustomCap ? `Tier ${capInfo.tier} Enhanced` : 'Standard'}\n\`\`\``,
                             inline: true
                         }
                     );
@@ -187,7 +187,6 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                 break;
         }
 
-        // Send the log
         await channel.send({ embeds: [embed] });
         console.log(`[XP LOG] Logged ${type} XP for ${user.username}: +${xpGain}`);
 
@@ -198,20 +197,12 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
 
 /**
  * Log XP activity with automatic user stats fetching
- * @param {Client} client - Discord client
- * @param {string} type - XP type
- * @param {User} user - Discord user
- * @param {string} guildId - Guild ID
- * @param {number} xpGain - XP gained
- * @param {Object} extraInfo - Additional info
  */
 async function logXPActivity(client, type, user, guildId, xpGain, extraInfo = {}) {
     try {
-        // Get guild info
         const guild = client.guilds.cache.get(guildId);
         const guildName = guild?.name || 'Unknown Guild';
 
-        // Get user's current stats
         let totalXP = 0;
         let currentLevel = 0;
         
@@ -231,10 +222,9 @@ async function logXPActivity(client, type, user, guildId, xpGain, extraInfo = {}
             }
         }
 
-        // Combine info
         const logInfo = {
             guildName,
-            guildId, // ✅ FIXED: Add guildId for tier cap checking
+            guildId,
             totalXP,
             currentLevel,
             ...extraInfo
@@ -246,80 +236,11 @@ async function logXPActivity(client, type, user, guildId, xpGain, extraInfo = {}
     }
 }
 
-// ✅ NEW: Helper function to get current day
+// Helper function to get current day
 function getCurrentDay() {
     const now = new Date();
     const edtOffset = isEDT(now) ? -4 : -5;
     const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
     
     if (edtTime.getHours() < 3) {
-        edtTime.setDate(edtTime.getDate() - 1);
-    }
-    
-    return edtTime.toISOString().split('T')[0];
-}
-
-// ✅ NEW: Helper function to check EDT
-function isEDT(date) {
-    const year = date.getFullYear();
-    const marchSecondSunday = new Date(year, 2, 8);
-    marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
-    const novemberFirstSunday = new Date(year, 10, 1);
-    novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
-    return date >= marchSecondSunday && date < novemberFirstSunday;
-}
-
-/**
- * Quick logging functions for easy use
- */
-const quickLog = {
-    message: async (client, user, guildId, xpGain, channel, messageLength = 0) => {
-        await logXPActivity(client, 'message', user, guildId, xpGain, {
-            channelName: channel?.name || 'Unknown',
-            messageLength,
-            xpSource: 'message'
-        });
-    },
-
-    reaction: async (client, user, guildId, xpGain, channel, emoji = '❓') => {
-        await logXPActivity(client, 'reaction', user, guildId, xpGain, {
-            channelName: channel?.name || 'Unknown',
-            emoji,
-            xpSource: 'reaction'
-        });
-    },
-
-    voice: async (client, user, guildId, xpGain, channel, sessionDuration = 1, memberCount = 0, dailyCapped = false) => {
-        await logXPActivity(client, 'voice', user, guildId, xpGain, {
-            channelName: channel?.name || 'Unknown',
-            sessionDuration,
-            memberCount,
-            dailyCapped,
-            xpSource: 'voice'
-        });
-    },
-
-    levelup: async (client, user, guildId, oldLevel, newLevel, totalXP, roleReward = null, xpSource = 'unknown') => {
-        await logXPActivity(client, 'levelup', user, guildId, 0, {
-            oldLevel,
-            newLevel,
-            totalXP,
-            roleReward,
-            xpSource
-        });
-    },
-
-    admin: async (client, user, guildId, xpGain, adminUser, reason = 'No reason specified') => {
-        await logXPActivity(client, 'admin', user, guildId, xpGain, {
-            adminUser,
-            reason,
-            xpSource: 'admin'
-        });
-    }
-};
-
-module.exports = { 
-    sendXPLog,
-    logXPActivity,
-    quickLog
-};
+        edtTime.setDate(e
