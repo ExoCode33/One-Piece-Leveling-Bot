@@ -333,7 +333,7 @@ module.exports = {
                 .setCustomId(`q_${userId}_${qNum}_${i}_${opt === q.answer}_${rerollUsed}`)
                 .setLabel(opt.substring(0, 70))
                 .setStyle(ButtonStyle.Success) // Green buttons
-                .setEmoji(['🅰️', '🅱️', '🅾️', '🆎'][i]));
+                .setEmoji(['1️⃣', '2️⃣', '3️⃣', '4️⃣'][i]));
 
             // ✅ ENHANCED: Create action buttons (green, below answers)
             const actionButtons = [];
