@@ -84,7 +84,7 @@ async function initializeDatabase() {
             )
         `);
 
-        // Guild settings table
+        // Enhanced guild settings table with all required columns
         await db.query(`
             CREATE TABLE IF NOT EXISTS guild_settings (
                 guild_id VARCHAR(20) PRIMARY KEY,
@@ -93,14 +93,94 @@ async function initializeDatabase() {
                 xp_log_channel VARCHAR(20),
                 xp_log_enabled BOOLEAN DEFAULT false,
                 xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
+                excluded_role VARCHAR(20),
+                category_id VARCHAR(20) DEFAULT '0',
+                category_name VARCHAR(100) DEFAULT 'Default Category',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
+        // Add indexes for better performance
+        await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_guild_xp ON user_levels(guild_id, total_xp DESC)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_user_guild ON user_levels(user_id, guild_id)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_guild_settings_guild ON guild_settings(guild_id)');
+
         console.log('✅ Database tables initialized successfully');
+        
+        // Check existing guild_settings structure
+        const tableInfo = await db.query(`
+            SELECT column_name, data_type, is_nullable 
+            FROM information_schema.columns 
+            WHERE table_name = 'guild_settings' 
+            ORDER BY ordinal_position
+        `);
+        
+        console.log('[DATABASE] Guild settings table structure:');
+        tableInfo.rows.forEach(col => {
+            console.log(`  - ${col.column_name}: ${col.data_type} (nullable: ${col.is_nullable})`);
+        });
+        
     } catch (error) {
         console.error('❌ Error initializing database:', error);
+        throw error;
+    }
+}
+
+// ✅ FIXED: Load guild settings from database on startup
+async function loadGuildSettings() {
+    try {
+        console.log('🔧 Loading guild settings from database...');
+        
+        if (!global.guildSettings) {
+            global.guildSettings = new Map();
+        }
+        
+        const result = await db.query('SELECT * FROM guild_settings');
+        
+        let loadedCount = 0;
+        for (const row of result.rows) {
+            // ✅ FIXED: Proper boolean conversion for PostgreSQL
+            const settings = {
+                levelupChannel: row.levelup_channel,
+                levelupEnabled: row.levelup_enabled === true || row.levelup_enabled === 'true' || row.levelup_enabled === 1,
+                xpLogChannel: row.xp_log_channel,
+                xpLogEnabled: row.xp_log_enabled === true || row.xp_log_enabled === 'true' || row.xp_log_enabled === 1,
+                xpMultiplier: parseFloat(row.xp_multiplier) || 1.0,
+                excludedRole: row.excluded_role || null
+            };
+            
+            global.guildSettings.set(row.guild_id, settings);
+            loadedCount++;
+            
+            // Debug logging for specific guild
+            if (row.guild_id === '717768828364390432') {
+                console.log(`[GUILD SETTINGS] ✅ Loaded for guild ${row.guild_id}:`, {
+                    levelupEnabled: settings.levelupEnabled,
+                    levelupChannel: settings.levelupChannel,
+                    xpLogEnabled: settings.xpLogEnabled,
+                    xpLogChannel: settings.xpLogChannel,
+                    xpMultiplier: settings.xpMultiplier
+                });
+                console.log(`[GUILD SETTINGS] Raw database values:`, {
+                    levelup_enabled: row.levelup_enabled,
+                    xp_log_enabled: row.xp_log_enabled,
+                    typeof_levelup: typeof row.levelup_enabled,
+                    typeof_xplog: typeof row.xp_log_enabled
+                });
+            }
+        }
+        
+        console.log(`✅ Loaded ${loadedCount} guild settings from database`);
+        
+        // Log total guild settings for verification
+        console.log(`[GUILD SETTINGS] Total guilds in memory: ${global.guildSettings.size}`);
+        
+    } catch (error) {
+        console.error('❌ Error loading guild settings:', error);
+        if (!global.guildSettings) {
+            global.guildSettings = new Map();
+        }
     }
 }
 
@@ -208,7 +288,7 @@ async function initializeXP() {
     }
 }
 
-// Bot ready event
+// ✅ FIXED: Bot ready event with proper guild settings loading
 client.once('ready', async () => {
     console.log(`One Piece Leveling Bot is ready to set sail!`);
     console.log(`⚓ Logged in as ${client.user.tag}`);
@@ -217,6 +297,10 @@ client.once('ready', async () => {
     try {
         await initializeConnection();
         await initializeDatabase();
+        
+        // ✅ CRITICAL: Load guild settings BEFORE XP system initialization
+        await loadGuildSettings();
+        
         await initializeXP();
         
         if (CLIENT_ID) {
@@ -227,6 +311,22 @@ client.once('ready', async () => {
         console.log(`⏰ Database time: ${result.rows[0].now}`);
         console.log('🗄️ Database connection test successful!');
         console.log('🎯 All systems initialized and ready!');
+        
+        // ✅ NEW: Verify guild settings loaded properly
+        if (global.guildSettings && global.guildSettings.size > 0) {
+            console.log(`🎯 Guild settings verification: ${global.guildSettings.size} guilds loaded`);
+            
+            // Check if our specific guild is loaded
+            const testGuild = global.guildSettings.get('717768828364390432');
+            if (testGuild) {
+                console.log('🎯 Test guild settings confirmed loaded:', {
+                    xpLogEnabled: testGuild.xpLogEnabled,
+                    xpLogChannel: testGuild.xpLogChannel
+                });
+            }
+        } else {
+            console.warn('⚠️ No guild settings loaded from database');
+        }
         
     } catch (error) {
         console.error('❌ Initialization failed:', error);
@@ -452,6 +552,18 @@ async function gracefulShutdown() {
     
     process.exit(0);
 }
+
+// ✅ NEW: Refresh guild settings periodically (every 5 minutes)
+setInterval(async () => {
+    try {
+        if (global.guildSettings && db) {
+            console.log('[GUILD SETTINGS] Refreshing guild settings from database...');
+            await loadGuildSettings();
+        }
+    } catch (error) {
+        console.error('[GUILD SETTINGS] Error during periodic refresh:', error);
+    }
+}, 300000); // 5 minutes
 
 // Keep the process alive and log status
 setInterval(() => {
