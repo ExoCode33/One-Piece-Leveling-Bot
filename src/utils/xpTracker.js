@@ -1,195 +1,4 @@
-// src/utils/xpTracker.js - Complete Enhanced XP Tracker with Tier-based Daily Cap Logging
-
-const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { createCanvas, loadImage, registerFont } = require('canvas');
-const { getBountyForLevel } = require('./bountySystem');
-const DailyResetManager = require('./dailyResetManager');
-const VoiceXPManager = require('./voiceXPManager');
-const LevelUpManager = require('./levelUpManager');
-const path = require('path');
-
-// Register fonts for canvas
-try {
-    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
-    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
-    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
-    console.log('[XP TRACKER] Successfully registered custom fonts for wanted posters');
-} catch (error) {
-    console.error('[XP TRACKER] Failed to register custom fonts:', error.message);
-}
-
-// CONFIGURABLE RESET TIME (EST)
-const DAILY_RESET_HOUR_EST = parseInt(process.env.DAILY_RESET_HOUR_EST) || 3;
-const DAILY_RESET_MINUTE_EST = parseInt(process.env.DAILY_RESET_MINUTE_EST) || 0;
-
-class XPTracker {
-    constructor(client, database) {
-        this.client = client;
-        this.db = database;
-        this.voiceSessions = new Map();
-        this.cooldowns = new Map();
-        
-        console.log(`[XP TRACKER] Daily reset configured for ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST`);
-        
-        // Initialize managers
-        this.dailyResetManager = new DailyResetManager(this);
-        this.voiceXPManager = new VoiceXPManager(this);
-        this.levelUpManager = new LevelUpManager(this);
-        
-        // Initialize daily reset system
-        this.dailyResetManager.initialize().catch(error => {
-            console.error('[XP TRACKER] Failed to initialize daily reset manager:', error);
-        });
-    }
-
-    // ✅ ENHANCED: Award XP with comprehensive boost support and daily caps
-    async awardXP(userId, guildId, amount, source = 'unknown', user = null, skipMultiplier = false) {
-        try {
-            // Skip if no XP to award
-            if (!amount || amount <= 0) return;
-
-            // Get guild and member for boost calculation
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) return;
-
-            const member = await guild.members.fetch(userId).catch(() => null);
-            if (!member || member.user.bot) return;
-
-            // Get user object if not provided
-            if (!user) {
-                user = member.user;
-            }
-
-            let finalAmount = amount;
-
-            // Apply multipliers unless skipped (for daily-specific XP that already has multipliers)
-            if (!skipMultiplier) {
-                // Apply global XP multiplier
-                const globalMultiplier = parseFloat(process.env.XP_MULTIPLIER) || 1.0;
-                finalAmount = Math.floor(finalAmount * globalMultiplier);
-
-                // Apply role-based XP boosts (additive stacking)
-                if (global.xpBoostManager) {
-                    try {
-                        const boostInfo = await global.xpBoostManager.calculateUserBoost(guildId, member);
-                        if (boostInfo.multiplier > 1.0) {
-                            finalAmount = Math.floor(finalAmount * boostInfo.multiplier);
-                            
-                            // Enhanced logging for boost application
-                            const displayName = member.displayName || user.username;
-                            console.log(`[XP AWARD] ${displayName}: ${amount} base → ${finalAmount} final (${boostInfo.multiplier.toFixed(2)}x boost)`);
-                            
-                            if (boostInfo.appliedBoosts.length > 0) {
-                                const boostNames = boostInfo.appliedBoosts.map(b => b.name || 'Unknown').join(', ');
-                                console.log(`[XP AWARD] Active boosts: ${boostNames}`);
-                            }
-                        }
-                    } catch (error) {
-                        console.error('[XP AWARD] Error applying boost:', error);
-                    }
-                }
-            }
-
-            // Update user level in database
-            await this.updateUserLevel(userId, guildId, finalAmount, source, user);
-
-            // Enhanced logging
-            console.log(`[XP AWARD] ${user.username}: +${finalAmount} XP from ${source}${skipMultiplier ? ' (no multiplier)' : ''}`);
-
-        } catch (error) {
-            console.error('[XP AWARD] Error awarding XP:', error);
-        }
-    }
-
-    // ✅ ENHANCED: Update user level with comprehensive tracking
-    async updateUserLevel(userId, guildId, xpGain, source = 'unknown', user = null) {
-        try {
-            // Get current user data
-            const currentResult = await this.db.query(
-                'SELECT total_xp, level, messages, reactions, voice_time FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                [userId, guildId]
-            );
-
-            let currentData;
-            if (currentResult.rows.length === 0) {
-                // Create new user entry
-                currentData = { total_xp: 0, level: 0, messages: 0, reactions: 0, voice_time: 0 };
-            } else {
-                currentData = currentResult.rows[0];
-            }
-
-            // Calculate new totals
-            const newTotalXP = currentData.total_xp + xpGain;
-            const oldLevel = currentData.level;
-            const newLevel = this.calculateLevel(newTotalXP);
-
-            // Update activity counters based on source
-            let messageIncrement = 0;
-            let reactionIncrement = 0;
-            let voiceTimeIncrement = 0;
-
-            switch (source) {
-                case 'message':
-                    messageIncrement = 1;
-                    break;
-                case 'reaction':
-                    reactionIncrement = 1;
-                    break;
-                case 'voice':
-                    voiceTimeIncrement = 1; // 1 minute increment
-                    break;
-            }
-
-            // Update or insert user data
-            await this.db.query(`
-                INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id, guild_id)
-                DO UPDATE SET
-                    total_xp = $3,
-                    level = $4,
-                    messages = user_levels.messages + $5,
-                    reactions = user_levels.reactions + $6,
-                    voice_time = user_levels.voice_time + $7,
-                    updated_at = CURRENT_TIMESTAMP
-            `, [
-                userId, 
-                guildId, 
-                newTotalXP, 
-                newLevel, 
-                messageIncrement, 
-                reactionIncrement, 
-                voiceTimeIncrement
-            ]);
-
-            // Handle level up
-            if (newLevel > oldLevel && user) {
-                await this.handleLevelUpWithCanvas(userId, guildId, oldLevel, newLevel, newTotalXP, user, source);
-            }
-
-            // Log XP activity
-            await this.logXPActivity(source, user, guildId, xpGain, {
-                totalXP: newTotalXP,
-                currentLevel: newLevel,
-                xpSource: source
-            });
-
-        } catch (error) {
-            console.error('[XP TRACKER] Error updating user level:', error);
-        }
-    }
-
-    // Voice state update handler
-    async handleVoiceStateUpdate(oldState, newState) {
-        return await this.voiceXPManager.handleVoiceStateUpdate(oldState, newState);
-    }
-
-    // Process voice XP for all active sessions
-    async processVoiceXP() {
-        return await this.voiceXPManager.processVoiceXP();
-    }
-
-    // Get user stats and other utility methods
+// Get user stats and other utility methods
     async getUserStats(userId, guildId) {
         try {
             const result = await this.db.query(`
@@ -657,93 +466,6 @@ class XPTracker {
         return canvas;
     }
 
-    // XP Activity Logging
-    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
-        try {
-            // Get guild settings
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            if (!guildSettings?.xpLogEnabled || !guildSettings?.xpLogChannel) return;
-
-            const channel = await this.client.channels.fetch(guildSettings.xpLogChannel).catch(() => null);
-            if (!channel || !channel.isTextBased()) return;
-
-            // Get guild info
-            const guild = this.client.guilds.cache.get(guildId);
-            const guildName = guild?.name || 'Unknown Guild';
-
-            // Create Marine Intelligence embed
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTimestamp()
-                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
-
-            // Configure embed based on XP type
-            switch (type) {
-                case 'message':
-                    embed
-                        .setAuthor({ 
-                            name: '🚨 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('MESSAGE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guildName}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-
-                case 'reaction':
-                    embed
-                        .setAuthor({ 
-                            name: '🚨 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('REACTION ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guildName}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-
-                case 'voice':
-                    const sessionDuration = additionalInfo.sessionDuration || 1;
-                    const dailyCap = additionalInfo.dailyCapped ? ' (DAILY CAP REACHED)' : '';
-                    const memberCount = additionalInfo.memberCount || 'Unknown';
-                    
-                    embed
-                        .setAuthor({ 
-                            name: '🚨 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('VOICE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guildName}\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${sessionDuration} minute(s)\n- MEMBERS PRESENT: ${memberCount}\n- XP AWARDED: +${xpGain}${dailyCap}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-
-                case 'admin':
-                    embed
-                        .setAuthor({ 
-                            name: '⚓ MARINE COMMAND CENTER',
-                            iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
-                        })
-                        .setTitle('MANUAL XP ADJUSTMENT')
-                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username}\n- TARGET ID: ${user.id}\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown Officer'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason specified'}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- NEW LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ADMIN COMMAND\n\`\`\``);
-                    break;
-
-                default:
-                    embed
-                        .setAuthor({ 
-                            name: '❓ MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('UNKNOWN ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- ACTIVITY TYPE: ${type.toUpperCase()}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ${type.toUpperCase()}\n\`\`\``);
-                    break;
-            }
-
-            // Send the log
-            await channel.send({ embeds: [embed] });
-            console.log(`[XP LOG] Logged ${type} XP for ${user.username}: +${xpGain}`);
-
-        } catch (error) {
-            console.error('[XP LOG] Failed to send XP log:', error);
-        }
-    }
-
     // Utility methods
     getRandomXP(type) {
         let min, max;
@@ -866,4 +588,40 @@ class XPTracker {
     }
 }
 
-module.exports = XPTracker;
+module.exports = XPTracker;// src/utils/xpTracker.js - Complete Enhanced XP Tracker with Tier-based Daily Cap Logging
+
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { createCanvas, loadImage, registerFont } = require('canvas');
+const { getBountyForLevel } = require('./bountySystem');
+const DailyResetManager = require('./dailyResetManager');
+const VoiceXPManager = require('./voiceXPManager');
+const LevelUpManager = require('./levelUpManager');
+const path = require('path');
+
+// Register fonts for canvas
+try {
+    registerFont(path.join(__dirname, '../../assets/fonts/captkd.ttf'), { family: 'CaptainKiddNF' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Cinzel-Bold.otf'), { family: 'Cinzel' });
+    registerFont(path.join(__dirname, '../../assets/fonts/Times New Normal Regular.ttf'), { family: 'TimesNewNormal' });
+    console.log('[XP TRACKER] Successfully registered custom fonts for wanted posters');
+} catch (error) {
+    console.error('[XP TRACKER] Failed to register custom fonts:', error.message);
+}
+
+// CONFIGURABLE RESET TIME (EST)
+const DAILY_RESET_HOUR_EST = parseInt(process.env.DAILY_RESET_HOUR_EST) || 3;
+const DAILY_RESET_MINUTE_EST = parseInt(process.env.DAILY_RESET_MINUTE_EST) || 0;
+
+class XPTracker {
+    constructor(client, database) {
+        this.client = client;
+        this.db = database;
+        this.voiceSessions = new Map();
+        this.cooldowns = new Map();
+        
+        console.log(`[XP TRACKER] Daily reset configured for ${DAILY_RESET_HOUR_EST}:${DAILY_RESET_MINUTE_EST.toString().padStart(2, '0')} EST`);
+        
+        // Initialize managers
+        this.dailyResetManager = new DailyResetManager(this);
+        this.voiceXPManager = new VoiceXPManager(this);
+        this.levelUpManager = new LevelUpManager(this);
