@@ -1,4 +1,4 @@
-// src/utils/dailyResetManager.js - Fixed Daily Reset System with EDT timezone
+// src/utils/dailyResetManager.js - COMPLETE FIXED Daily Reset System with Daily Quiz Support
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -148,7 +148,7 @@ class DailyResetManager {
         scheduleNext();
     }
 
-    // Perform daily reset - FIXED VERSION
+    // ✅ COMPLETE FIXED: Perform daily reset with ALL daily quiz support
     async performDailyReset() {
         try {
             console.log(`[DAILY CAP] ⏰ Performing daily reset at ${DAILY_RESET_HOUR_EDT}:${DAILY_RESET_MINUTE_EDT.toString().padStart(2, '0')} EDT...`);
@@ -159,25 +159,11 @@ class DailyResetManager {
             console.log(`[DAILY CAP] Clearing ALL voice XP cache for new day: ${currentDay}`);
             this.dailyVoiceXP.clear();
             
-            // ✅ FIXED: Reset daily buffs FIRST, then clean database
-            await this.resetDailyBuffs();
+            // ✅ FIXED: Reset BOTH daily buffs AND daily quiz buffs FIRST
+            await this.resetAllDailyBuffs();
             
-            // Clean up database records with better error handling
-            try {
-                // ✅ FIXED: Delete ALL buff rolls, not just old ones, to ensure complete reset
-                const buffDeleteResult = await this.db.query('DELETE FROM daily_buff_rolls');
-                console.log(`[DAILY BUFF] ✅ AUTO-RESET: Deleted ALL ${buffDeleteResult.rowCount} daily buff records for complete reset`);
-            } catch (error) {
-                console.error('[DAILY BUFF] Error cleaning up daily buff database:', error);
-            }
-            
-            // ✅ FIXED: For automatic daily reset, delete ALL voice XP records to ensure complete reset
-            try {
-                const voiceDeleteResult = await this.db.query('DELETE FROM daily_voice_xp');
-                console.log(`[DAILY CAP] ✅ AUTO-RESET: Deleted ALL ${voiceDeleteResult.rowCount} voice XP records for fresh start`);
-            } catch (error) {
-                console.error('[DAILY CAP] Error cleaning up voice XP database:', error);
-            }
+            // ✅ FIXED: Clean up ALL daily-related database tables
+            await this.cleanupAllDailyTables();
             
             console.log(`[DAILY CAP] 🆕 New day started: ${currentDay}`);
             await this.notifyDailyReset(currentDay);
@@ -187,25 +173,37 @@ class DailyResetManager {
         }
     }
 
-    // ✅ FIXED: Reset daily buffs with better error handling, rate limiting, and forced role removal
-    async resetDailyBuffs() {
+    // ✅ COMPLETE FIXED: Reset ALL daily buffs including daily quiz buffs
+    async resetAllDailyBuffs() {
         try {
-            console.log('[DAILY BUFF] 🔄 Resetting daily buffs for all users...');
+            console.log('[DAILY BUFF] 🔄 Resetting ALL daily buffs (voice buffs + daily quiz buffs)...');
             
-            const buffRoles = [];
+            // ✅ FIXED: Get ALL possible buff roles (both voice buffs AND daily quiz)
+            const allBuffRoles = [];
+            
+            // Add voice/traditional daily buff roles (Tier 1-6)
             for (let i = 1; i <= 6; i++) {
                 const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                if (roleId && roleId !== `role_id_${i}`) { // Skip placeholder values
-                    buffRoles.push({ tier: i, roleId });
+                if (roleId && roleId !== `role_id_${i}`) {
+                    allBuffRoles.push({ tier: i, roleId, type: 'voice_buff' });
+                }
+            }
+            
+            // ✅ FIXED: Add daily quiz roles (Tier 1-10)
+            for (let i = 1; i <= 10; i++) {
+                const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
+                if (roleId && roleId !== `role_id_${i}`) {
+                    allBuffRoles.push({ tier: i, roleId, type: 'quiz_buff' });
                 }
             }
 
-            if (buffRoles.length === 0) {
+            if (allBuffRoles.length === 0) {
                 console.log('[DAILY BUFF] No buff roles configured (check environment variables)');
                 return;
             }
 
-            console.log(`[DAILY BUFF] Found ${buffRoles.length} configured buff roles:`, buffRoles.map(r => `Tier ${r.tier}: ${r.roleId}`));
+            console.log(`[DAILY BUFF] Found ${allBuffRoles.length} total buff roles:`, 
+                allBuffRoles.map(r => `${r.type} Tier ${r.tier}: ${r.roleId}`));
 
             let totalUsersReset = 0;
             let totalErrors = 0;
@@ -217,10 +215,10 @@ class DailyResetManager {
                     
                     console.log(`[DAILY BUFF] Processing guild: ${guild.name} (${guild.id})`);
                     
-                    for (const { tier, roleId } of buffRoles) {
+                    for (const { tier, roleId, type } of allBuffRoles) {
                         const role = guild.roles.cache.get(roleId);
                         if (role && role.members.size > 0) {
-                            console.log(`[DAILY BUFF] 🎯 FORCE REMOVING ${role.name} from ${role.members.size} users in ${guild.name}`);
+                            console.log(`[DAILY BUFF] 🎯 FORCE REMOVING ${type} ${role.name} from ${role.members.size} users in ${guild.name}`);
                             
                             // ✅ FIXED: Process members in smaller batches with more aggressive error handling
                             const memberArray = Array.from(role.members.values());
@@ -233,7 +231,7 @@ class DailyResetManager {
                                 for (const member of batch) {
                                     try {
                                         console.log(`[DAILY BUFF] 🗑️ Removing ${role.name} from ${member.user.username}...`);
-                                        await member.roles.remove(role, 'Daily reset - force removing all buff roles');
+                                        await member.roles.remove(role, `Daily reset - force removing all ${type} roles`);
                                         guildUsersReset++;
                                         console.log(`[DAILY BUFF] ✅ Successfully removed ${role.name} from ${member.user.username}`);
                                     } catch (error) {
@@ -245,7 +243,7 @@ class DailyResetManager {
                                             console.log(`[DAILY BUFF] 🔄 Retrying removal for ${member.user.username}...`);
                                             await member.edit({ 
                                                 roles: member.roles.cache.filter(r => r.id !== roleId).map(r => r.id),
-                                                reason: 'Daily reset - force buff role removal (retry method)'
+                                                reason: `Daily reset - force ${type} role removal (retry method)`
                                             });
                                             console.log(`[DAILY BUFF] ✅ Retry successful for ${member.user.username}`);
                                             guildUsersReset++;
@@ -285,10 +283,52 @@ class DailyResetManager {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
-            console.log(`[DAILY BUFF] ✅ Daily buff reset complete - removed roles from ${totalUsersReset} total users, ${totalErrors} errors`);
+            console.log(`[DAILY BUFF] ✅ ALL daily buff reset complete - removed roles from ${totalUsersReset} total users, ${totalErrors} errors`);
 
         } catch (error) {
-            console.error('[DAILY BUFF] ❌ Error during daily buff reset:', error);
+            console.error('[DAILY BUFF] ❌ Error during complete daily buff reset:', error);
+        }
+    }
+
+    // ✅ COMPLETE FIXED: Clean up ALL daily-related database tables
+    async cleanupAllDailyTables() {
+        try {
+            console.log('[DAILY DB CLEANUP] 🧹 Cleaning up ALL daily-related database tables...');
+            
+            let totalDeleted = 0;
+            const tables = [
+                'daily_buff_rolls',
+                'daily_voice_xp', 
+                'daily_buff_xp_caps' // ✅ FIXED: Added missing table cleanup
+            ];
+            
+            for (const tableName of tables) {
+                try {
+                    // ✅ FIXED: Check if table exists first
+                    const tableExists = await this.db.query(`
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = $1
+                        );
+                    `, [tableName]);
+                    
+                    if (tableExists.rows[0].exists) {
+                        const deleteResult = await this.db.query(`DELETE FROM ${tableName}`);
+                        const deletedCount = deleteResult.rowCount || 0;
+                        totalDeleted += deletedCount;
+                        console.log(`[DAILY DB CLEANUP] ✅ Deleted ${deletedCount} records from ${tableName}`);
+                    } else {
+                        console.log(`[DAILY DB CLEANUP] ⚠️ Table ${tableName} does not exist, skipping`);
+                    }
+                } catch (error) {
+                    console.error(`[DAILY DB CLEANUP] ❌ Error cleaning table ${tableName}:`, error);
+                }
+            }
+            
+            console.log(`[DAILY DB CLEANUP] ✅ Database cleanup complete: ${totalDeleted} total records deleted`);
+            
+        } catch (error) {
+            console.error('[DAILY DB CLEANUP] ❌ Error during database cleanup:', error);
         }
     }
 
@@ -329,7 +369,7 @@ class DailyResetManager {
         }
     }
 
-    // ✅ FIXED: Force daily reset with complete cache AND database clearing
+    // ✅ COMPLETE FIXED: Force daily reset with complete ALL daily systems clearing
     async forceDailyReset(triggeredBy = 'SYSTEM') {
         try {
             console.log(`[DAILY RESET] 🚨 FORCE RESET TRIGGERED BY ${triggeredBy} 🚨`);
@@ -341,22 +381,11 @@ class DailyResetManager {
             this.dailyVoiceXP.clear();
             console.log(`[DAILY RESET] Cleared ${beforeCacheSize} voice XP cache entries`);
             
-            // ✅ FIXED: Reset daily buffs FIRST (remove roles before database cleanup)
-            await this.resetDailyBuffs();
+            // ✅ FIXED: Reset ALL daily buffs FIRST (remove roles before database cleanup)
+            await this.resetAllDailyBuffs();
             
-            // Clean up database
-            try {
-                // ✅ FIXED: Delete ALL buff rolls for complete reset
-                const buffDeleteResult = await this.db.query('DELETE FROM daily_buff_rolls');
-                console.log(`[DAILY BUFF] ✅ FORCE DELETED ALL ${buffDeleteResult.rowCount} daily buff records for complete reset`);
-                
-                // ✅ FIXED: Delete ALL daily voice XP records for fresh start
-                const voiceDeleteResult = await this.db.query('DELETE FROM daily_voice_xp');
-                console.log(`[DAILY CAP] ✅ FORCE DELETED ALL ${voiceDeleteResult.rowCount} voice XP records for complete reset`);
-                
-            } catch (error) {
-                console.error('[DAILY RESET] Error during force cleanup:', error);
-            }
+            // ✅ FIXED: Clean up ALL daily database tables
+            await this.cleanupAllDailyTables();
             
             await this.notifyDailyReset(currentDay, true, triggeredBy);
             
@@ -365,6 +394,8 @@ class DailyResetManager {
                 cacheCleared: beforeCacheSize,
                 voiceXPRecordsDeleted: true,
                 buffRolesRemoved: true,
+                quizBuffsRemoved: true, // ✅ NEW
+                tierXPCapsCleared: true, // ✅ NEW
                 success: true
             };
             
@@ -401,7 +432,7 @@ class DailyResetManager {
         }
     }
 
-    // Notify daily reset with improved messaging
+    // ✅ FIXED: Notify daily reset with improved messaging about ALL systems
     async notifyDailyReset(newDay, isForced = false, triggeredBy = 'SYSTEM') {
         try {
             for (const [guildId, guildSettings] of (global.guildSettings || new Map()).entries()) {
@@ -422,6 +453,11 @@ class DailyResetManager {
                                     {
                                         name: '🎰 Daily Buffs Reset',
                                         value: `\`\`\`yaml\nAll buff roles FORCE removed\nNew rolls available\nCommand: /daily-buff\nDatabase: All records deleted\n\`\`\``,
+                                        inline: true
+                                    },
+                                    {
+                                        name: '🎌 Daily Quiz Reset', // ✅ NEW
+                                        value: `\`\`\`yaml\nQuiz roles FORCE removed\nTier XP caps cleared\nCommand: /daily-quiz\nDatabase: All records deleted\n\`\`\``,
                                         inline: true
                                     }
                                 )
