@@ -162,7 +162,7 @@ class DailyResetManager {
             // ✅ FIXED: Reset BOTH daily buffs AND daily quiz buffs FIRST
             await this.resetAllDailyBuffs();
             
-            // ✅ FIXED: Clean up ALL daily-related database tables
+            // ✅ FIXED: Clean up ALL daily-related database tables INCLUDING daily_buff_xp_caps
             await this.cleanupAllDailyTables();
             
             console.log(`[DAILY CAP] 🆕 New day started: ${currentDay}`);
@@ -290,7 +290,7 @@ class DailyResetManager {
         }
     }
 
-    // ✅ COMPLETE FIXED: Clean up ALL daily-related database tables
+    // ✅ COMPLETE FIXED: Clean up ALL daily-related database tables INCLUDING daily_buff_xp_caps
     async cleanupAllDailyTables() {
         try {
             console.log('[DAILY DB CLEANUP] 🧹 Cleaning up ALL daily-related database tables...');
@@ -298,8 +298,8 @@ class DailyResetManager {
             let totalDeleted = 0;
             const tables = [
                 'daily_buff_rolls',
-                'daily_voice_xp', 
-                'daily_buff_xp_caps' // ✅ FIXED: Added missing table cleanup
+                'daily_voice_xp',
+                'daily_buff_xp_caps' // ✅ CRITICAL FIX: Added missing table cleanup
             ];
             
             for (const tableName of tables) {
@@ -384,7 +384,7 @@ class DailyResetManager {
             // ✅ FIXED: Reset ALL daily buffs FIRST (remove roles before database cleanup)
             await this.resetAllDailyBuffs();
             
-            // ✅ FIXED: Clean up ALL daily database tables
+            // ✅ FIXED: Clean up ALL daily database tables INCLUDING daily_buff_xp_caps
             await this.cleanupAllDailyTables();
             
             await this.notifyDailyReset(currentDay, true, triggeredBy);
@@ -395,7 +395,7 @@ class DailyResetManager {
                 voiceXPRecordsDeleted: true,
                 buffRolesRemoved: true,
                 quizBuffsRemoved: true, // ✅ NEW
-                tierXPCapsCleared: true, // ✅ NEW
+                tierXPCapsCleared: true, // ✅ NEW - CRITICAL FIX
                 success: true
             };
             
@@ -432,7 +432,7 @@ class DailyResetManager {
         }
     }
 
-    // ✅ FIXED: Notify daily reset with improved messaging about ALL systems
+    // ✅ FIXED: Notify daily reset with improved messaging about ALL systems including tier XP caps
     async notifyDailyReset(newDay, isForced = false, triggeredBy = 'SYSTEM') {
         try {
             for (const [guildId, guildSettings] of (global.guildSettings || new Map()).entries()) {
@@ -457,10 +457,15 @@ class DailyResetManager {
                                     },
                                     {
                                         name: '🎌 Daily Quiz Reset', // ✅ NEW
-                                        value: `\`\`\`yaml\nQuiz roles FORCE removed\nTier XP caps cleared\nCommand: /daily-quiz\nDatabase: All records deleted\n\`\`\``,
+                                        value: `\`\`\`yaml\nQuiz roles FORCE removed\nTier XP caps cleared\nCommand: /daily-quiz\nDatabase: ALL tables cleared\n\`\`\``,
                                         inline: true
                                     }
                                 )
+                                .addFields({
+                                    name: '🗄️ Database Tables Reset', // ✅ NEW - CRITICAL INFO
+                                    value: `\`\`\`diff\n+ daily_voice_xp: CLEARED\n+ daily_buff_rolls: CLEARED\n+ daily_buff_xp_caps: CLEARED\n+ All tier XP progress: RESET\n+ All daily limits: RESTORED\n\`\`\``,
+                                    inline: false
+                                })
                                 .setFooter({ text: `⚓ Marine Intelligence • ${isForced ? 'Manual' : 'Automatic'} Reset System` })
                                 .setTimestamp();
                             
@@ -528,6 +533,30 @@ class DailyResetManager {
             edtOffset: edtOffset,
             currentDay: this.getCurrentDay()
         };
+    }
+
+    // ✅ NEW: Debug table cleanup status
+    async debugTableCleanup() {
+        try {
+            console.log('\n🧹 TABLE CLEANUP DEBUG:');
+            
+            const tables = ['daily_voice_xp', 'daily_buff_rolls', 'daily_buff_xp_caps'];
+            
+            for (const tableName of tables) {
+                try {
+                    const result = await this.db.query(`SELECT COUNT(*) as count FROM ${tableName}`);
+                    const count = result.rows[0].count;
+                    console.log(`📊 ${tableName}: ${count} records`);
+                } catch (error) {
+                    console.log(`❌ ${tableName}: Error or doesn't exist - ${error.message}`);
+                }
+            }
+            
+            console.log('───────────────────────────────────────\n');
+            
+        } catch (error) {
+            console.error('[DEBUG] Error in table cleanup debug:', error);
+        }
     }
 }
 
