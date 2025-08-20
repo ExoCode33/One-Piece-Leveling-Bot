@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Complete Enhanced XP Tracker with Tier-based Daily Cap Logging
+// src/utils/xpTracker.js - FIXED XP Tracker with proper guild settings loading
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
@@ -42,7 +42,7 @@ class XPTracker {
         });
     }
 
-    // ✅ ENHANCED: Award XP with comprehensive boost support and daily caps
+    // ✅ FIXED: Award XP with comprehensive boost support and daily caps
     async awardXP(userId, guildId, amount, source = 'unknown', user = null, skipMultiplier = false) {
         try {
             // Skip if no XP to award
@@ -101,7 +101,7 @@ class XPTracker {
         }
     }
 
-    // ✅ ENHANCED: Update user level with comprehensive tracking
+    // ✅ FIXED: Update user level with comprehensive tracking
     async updateUserLevel(userId, guildId, xpGain, source = 'unknown', user = null) {
         try {
             // Get current user data
@@ -167,7 +167,7 @@ class XPTracker {
                 await this.handleLevelUpWithCanvas(userId, guildId, oldLevel, newLevel, newTotalXP, user, source);
             }
 
-            // Log XP activity
+            // ✅ FIXED: Log XP activity with proper error handling
             await this.logXPActivity(source, user, guildId, xpGain, {
                 totalXP: newTotalXP,
                 currentLevel: newLevel,
@@ -337,7 +337,39 @@ class XPTracker {
             const guild = this.client.guilds.cache.get(guildId);
             if (!guild) return;
 
-            const guildSettings = global.guildSettings?.get(guildId);
+            // ✅ FIXED: Get guild settings with database fallback
+            let guildSettings = global.guildSettings?.get(guildId);
+            
+            if (!guildSettings) {
+                console.log('[LEVEL UP] No guild settings in memory, checking database...');
+                try {
+                    const dbResult = await this.db.query(
+                        'SELECT * FROM guild_settings WHERE guild_id = $1',
+                        [guildId]
+                    );
+                    
+                    if (dbResult.rows.length > 0) {
+                        const row = dbResult.rows[0];
+                        guildSettings = {
+                            levelupChannel: row.levelup_channel,
+                            levelupEnabled: row.levelup_enabled !== false,
+                            xpLogChannel: row.xp_log_channel,
+                            xpLogEnabled: row.xp_log_enabled === true,
+                            xpMultiplier: parseFloat(row.xp_multiplier) || 1.0,
+                            excludedRole: row.excluded_role || null
+                        };
+                        
+                        // Cache it for future use
+                        if (!global.guildSettings) {
+                            global.guildSettings = new Map();
+                        }
+                        global.guildSettings.set(guildId, guildSettings);
+                        console.log('[LEVEL UP] Loaded guild settings from database');
+                    }
+                } catch (dbError) {
+                    console.error('[LEVEL UP] Error loading guild settings from database:', dbError);
+                }
+            }
             
             const levelupEnabled = guildSettings?.levelupEnabled !== false;
             if (!levelupEnabled) {
@@ -444,10 +476,42 @@ class XPTracker {
         }
     }
 
-    // Log level up
+    // ✅ FIXED: Log level up with proper guild settings loading
     async logLevelUp(user, guildId, oldLevel, newLevel, totalXP, roleReward, xpSource) {
         try {
-            const guildSettings = global.guildSettings?.get(guildId);
+            // ✅ FIXED: Get guild settings with database fallback
+            let guildSettings = global.guildSettings?.get(guildId);
+            
+            if (!guildSettings) {
+                console.log('[LEVEL UP LOG] No guild settings in memory, checking database...');
+                try {
+                    const dbResult = await this.db.query(
+                        'SELECT * FROM guild_settings WHERE guild_id = $1',
+                        [guildId]
+                    );
+                    
+                    if (dbResult.rows.length > 0) {
+                        const row = dbResult.rows[0];
+                        guildSettings = {
+                            levelupChannel: row.levelup_channel,
+                            levelupEnabled: row.levelup_enabled !== false,
+                            xpLogChannel: row.xp_log_channel,
+                            xpLogEnabled: row.xp_log_enabled === true,
+                            xpMultiplier: parseFloat(row.xp_multiplier) || 1.0,
+                            excludedRole: row.excluded_role || null
+                        };
+                        
+                        // Cache it for future use
+                        if (!global.guildSettings) {
+                            global.guildSettings = new Map();
+                        }
+                        global.guildSettings.set(guildId, guildSettings);
+                        console.log('[LEVEL UP LOG] Loaded guild settings from database');
+                    }
+                } catch (dbError) {
+                    console.error('[LEVEL UP LOG] Error loading guild settings from database:', dbError);
+                }
+            }
             
             if (!guildSettings?.xpLogEnabled || !guildSettings?.xpLogChannel) return;
 
@@ -469,6 +533,172 @@ class XPTracker {
 
         } catch (error) {
             console.error('[XP LOG] Failed to send level up log:', error);
+        }
+    }
+
+    // ✅ COMPLETELY FIXED: XP Activity Logging with proper guild settings handling
+    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
+        try {
+            console.log(`[XP LOG] Attempting to log ${type} XP for ${user?.username || 'Unknown'}: +${xpGain}`);
+            
+            // ✅ FIXED: Get guild settings with database fallback
+            let guildSettings = global.guildSettings?.get(guildId);
+            
+            if (!guildSettings) {
+                console.log(`[XP LOG] No guild settings in memory for ${guildId}, checking database...`);
+                
+                try {
+                    const dbResult = await this.db.query(
+                        'SELECT * FROM guild_settings WHERE guild_id = $1',
+                        [guildId]
+                    );
+                    
+                    if (dbResult.rows.length > 0) {
+                        const row = dbResult.rows[0];
+                        guildSettings = {
+                            levelupChannel: row.levelup_channel,
+                            levelupEnabled: row.levelup_enabled !== false,
+                            xpLogChannel: row.xp_log_channel,
+                            xpLogEnabled: row.xp_log_enabled === true,
+                            xpMultiplier: parseFloat(row.xp_multiplier) || 1.0,
+                            excludedRole: row.excluded_role || null
+                        };
+                        
+                        // Cache it for future use
+                        if (!global.guildSettings) {
+                            global.guildSettings = new Map();
+                        }
+                        global.guildSettings.set(guildId, guildSettings);
+                        
+                        console.log(`[XP LOG] Loaded and cached guild settings from database for ${guildId}`);
+                        console.log(`[XP LOG] Settings: xpLogEnabled=${guildSettings.xpLogEnabled}, xpLogChannel=${guildSettings.xpLogChannel}`);
+                    } else {
+                        console.log(`[XP LOG] No guild settings found in database for ${guildId}`);
+                        return; // Exit early if no settings found
+                    }
+                } catch (dbError) {
+                    console.error(`[XP LOG] Error loading guild settings from database:`, dbError);
+                    return; // Exit early on database error
+                }
+            }
+
+            // Check if XP logging is enabled
+            if (!guildSettings?.xpLogEnabled) {
+                console.log(`[XP LOG] XP logging disabled for guild ${guildId} (enabled: ${guildSettings?.xpLogEnabled})`);
+                return;
+            }
+
+            if (!guildSettings?.xpLogChannel) {
+                console.log(`[XP LOG] No XP log channel set for guild ${guildId} (channel: ${guildSettings?.xpLogChannel})`);
+                return;
+            }
+
+            // Get the channel
+            let channel;
+            try {
+                channel = await this.client.channels.fetch(guildSettings.xpLogChannel);
+                if (!channel || !channel.isTextBased()) {
+                    console.error(`[XP LOG] Invalid log channel ${guildSettings.xpLogChannel} for guild ${guildId}`);
+                    return;
+                }
+                console.log(`[XP LOG] Found log channel: #${channel.name} (${channel.id})`);
+            } catch (channelError) {
+                console.error(`[XP LOG] Error fetching log channel ${guildSettings.xpLogChannel}:`, channelError);
+                return;
+            }
+
+            // Get guild info
+            const guild = this.client.guilds.cache.get(guildId);
+            const guildName = guild?.name || 'Unknown Guild';
+
+            // Create Marine Intelligence embed
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTimestamp()
+                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
+
+            // Configure embed based on XP type
+            switch (type) {
+                case 'message':
+                    embed
+                        .setAuthor({ 
+                            name: '🚨 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('MESSAGE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user?.username || 'Unknown'} (${user?.id || 'Unknown'})\n- GUILD: ${guildName}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
+                    break;
+
+                case 'reaction':
+                    embed
+                        .setAuthor({ 
+                            name: '🚨 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('REACTION ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user?.username || 'Unknown'} (${user?.id || 'Unknown'})\n- GUILD: ${guildName}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
+                    break;
+
+                case 'voice':
+                    const sessionDuration = additionalInfo.sessionDuration || 1;
+                    const dailyCap = additionalInfo.dailyCapped ? ' (DAILY CAP REACHED)' : '';
+                    const memberCount = additionalInfo.memberCount || 'Unknown';
+                    
+                    embed
+                        .setAuthor({ 
+                            name: '🚨 MARINE INTELLIGENCE BUREAU',
+                            iconURL: user?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('VOICE ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user?.username || 'Unknown'} (${user?.id || 'Unknown'})\n- GUILD: ${guildName}\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${sessionDuration} minute(s)\n- MEMBERS PRESENT: ${memberCount}\n- XP AWARDED: +${xpGain}${dailyCap}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
+                    break;
+
+                case 'admin':
+                    embed
+                        .setAuthor({ 
+                            name: '⚓ MARINE COMMAND CENTER',
+                            iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('MANUAL XP ADJUSTMENT')
+                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user?.username || 'Unknown'}\n- TARGET ID: ${user?.id || 'Unknown'}\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown Officer'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason specified'}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- NEW LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ADMIN COMMAND\n\`\`\``);
+                    break;
+
+                case 'daily-quiz-correct':
+                    embed
+                        .setAuthor({ 
+                            name: '🎌 ANIME MASTERY BUREAU',
+                            iconURL: user?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('QUIZ MASTERY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user?.username || 'Unknown'} (${user?.id || 'Unknown'})\n- GUILD: ${guildName}\n- QUIZ ANSWER: CORRECT\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- SOURCE: DAILY QUIZ SYSTEM\n\`\`\``);
+                    break;
+
+                default:
+                    embed
+                        .setAuthor({ 
+                            name: '❓ MARINE INTELLIGENCE BUREAU',
+                            iconURL: user?.displayAvatarURL({ size: 32 }) || null
+                        })
+                        .setTitle('UNKNOWN ACTIVITY DETECTED')
+                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user?.username || 'Unknown'} (${user?.id || 'Unknown'})\n- ACTIVITY TYPE: ${type.toUpperCase()}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ${type.toUpperCase()}\n\`\`\``);
+                    break;
+            }
+
+            // Send the log
+            await channel.send({ embeds: [embed] });
+            console.log(`[XP LOG] ✅ Successfully logged ${type} XP for ${user?.username || 'Unknown'}: +${xpGain} in #${channel.name}`);
+
+        } catch (error) {
+            console.error('[XP LOG] ❌ Failed to send XP log:', error);
+            console.error('[XP LOG] Error details:', {
+                type,
+                userId: user?.id,
+                username: user?.username,
+                guildId,
+                xpGain,
+                errorMessage: error.message,
+                stack: error.stack
+            });
         }
     }
 
@@ -657,93 +887,6 @@ class XPTracker {
         return canvas;
     }
 
-    // XP Activity Logging
-    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
-        try {
-            // Get guild settings
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            if (!guildSettings?.xpLogEnabled || !guildSettings?.xpLogChannel) return;
-
-            const channel = await this.client.channels.fetch(guildSettings.xpLogChannel).catch(() => null);
-            if (!channel || !channel.isTextBased()) return;
-
-            // Get guild info
-            const guild = this.client.guilds.cache.get(guildId);
-            const guildName = guild?.name || 'Unknown Guild';
-
-            // Create Marine Intelligence embed
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTimestamp()
-                .setFooter({ text: '⚓ Marine Intelligence Division • Activity Monitor' });
-
-            // Configure embed based on XP type
-            switch (type) {
-                case 'message':
-                    embed
-                        .setAuthor({ 
-                            name: '🚨 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('MESSAGE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guildName}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-
-                case 'reaction':
-                    embed
-                        .setAuthor({ 
-                            name: '🚨 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('REACTION ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guildName}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-
-                case 'voice':
-                    const sessionDuration = additionalInfo.sessionDuration || 1;
-                    const dailyCap = additionalInfo.dailyCapped ? ' (DAILY CAP REACHED)' : '';
-                    const memberCount = additionalInfo.memberCount || 'Unknown';
-                    
-                    embed
-                        .setAuthor({ 
-                            name: '🚨 MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('VOICE ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${guildName}\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${sessionDuration} minute(s)\n- MEMBERS PRESENT: ${memberCount}\n- XP AWARDED: +${xpGain}${dailyCap}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-
-                case 'admin':
-                    embed
-                        .setAuthor({ 
-                            name: '⚓ MARINE COMMAND CENTER',
-                            iconURL: additionalInfo.adminUser?.displayAvatarURL({ size: 32 }) || null
-                        })
-                        .setTitle('MANUAL XP ADJUSTMENT')
-                        .setDescription(`\`\`\`diff\n- ADMINISTRATIVE ACTION\n- TARGET: ${user.username}\n- TARGET ID: ${user.id}\n- AUTHORIZED BY: ${additionalInfo.adminUser?.username || 'Unknown Officer'}\n- ADJUSTMENT: ${xpGain > 0 ? '+' : ''}${xpGain} XP\n- REASON: ${additionalInfo.reason || 'No reason specified'}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- NEW LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ADMIN COMMAND\n\`\`\``);
-                    break;
-
-                default:
-                    embed
-                        .setAuthor({ 
-                            name: '❓ MARINE INTELLIGENCE BUREAU',
-                            iconURL: user.displayAvatarURL({ size: 32 })
-                        })
-                        .setTitle('UNKNOWN ACTIVITY DETECTED')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- ACTIVITY TYPE: ${type.toUpperCase()}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n- XP SOURCE: ${type.toUpperCase()}\n\`\`\``);
-                    break;
-            }
-
-            // Send the log
-            await channel.send({ embeds: [embed] });
-            console.log(`[XP LOG] Logged ${type} XP for ${user.username}: +${xpGain}`);
-
-        } catch (error) {
-            console.error('[XP LOG] Failed to send XP log:', error);
-        }
-    }
-
     // Utility methods
     getRandomXP(type) {
         let min, max;
@@ -824,7 +967,7 @@ class XPTracker {
         this.cooldowns.set(key, Date.now());
     }
 
-    // ✅ NEW: Helper method to create progress bars
+    // Helper method to create progress bars
     createProgressBar(current, max, length = 20) {
         const percentage = Math.max(0, Math.min(1, current / max));
         const filled = Math.round(percentage * length);
@@ -836,7 +979,7 @@ class XPTracker {
         return filledChar.repeat(filled) + emptyChar.repeat(empty);
     }
 
-    // ✅ FIXED: Daily voice XP cleanup
+    // Daily voice XP cleanup
     async cleanupDailyVoiceXP() {
         try {
             if (this.dailyResetManager) {
