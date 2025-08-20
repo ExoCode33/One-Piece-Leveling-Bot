@@ -281,7 +281,7 @@ module.exports = {
                     .setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
                     .setTitle(`${diffEmoji[diff]} Question ${qNum}/5 • ${diff}`)
                     .setColor(embedColor)
-                    .setDescription(`## **${q.question}**\n\n*Select your answer using the buttons below*`)
+                    .setDescription(`## **${q.question}**\n\n**Challenge by:** ${member.displayName}\n\n*Select your answer using the buttons below*`)
                     .addFields(
                         {
                             name: '📊 Challenge Progress',
@@ -346,6 +346,29 @@ module.exports = {
                 msg = await interaction.fetchReply(); 
             } else {
                 msg = await interaction.followUp({ embeds: [embed], components: rows });
+                
+                // ✅ NEW: Delete previous embed when continuing to next question
+                if (qNum > 1) {
+                    try {
+                        // Find and delete the previous question message
+                        const messages = await interaction.channel.messages.fetch({ limit: 10 });
+                        const previousMessages = messages.filter(m => 
+                            m.author.id === interaction.client.user.id && 
+                            m.embeds.length > 0 && 
+                            m.embeds[0].title && 
+                            m.embeds[0].title.includes('Question') &&
+                            m.embeds[0].title.includes(`${qNum - 1}/5`) &&
+                            m.id !== msg.id
+                        );
+                        
+                        for (const oldMsg of previousMessages.values()) {
+                            await oldMsg.delete().catch(() => {});
+                            break; // Only delete the most recent previous question
+                        }
+                    } catch (error) {
+                        console.log('[CLEANUP] Could not delete previous embed:', error.message);
+                    }
+                }
             }
 
             // Timer updates every 2 seconds
@@ -423,6 +446,14 @@ module.exports = {
                                 if (contBtn.customId.startsWith('cont_')) {
                                     const [, , nextQNum, passedRerollUsed] = contBtn.customId.split('_');
                                     contColl.stop();
+                                    
+                                    // ✅ NEW: Delete the current message before continuing
+                                    try {
+                                        await btn.message.delete();
+                                    } catch (error) {
+                                        console.log('[CLEANUP] Could not delete current message:', error.message);
+                                    }
+                                    
                                     await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), qNum, passedRerollUsed === 'true');
                                 } else {
                                     const cTier = parseInt(contBtn.customId.split('_')[2]); 
@@ -439,11 +470,24 @@ module.exports = {
                     } else {
                         const fTier = Math.max(0, qNum - 1);
                         if (fTier > 0) await this.apply(userId, guildId, member, fTier); else await this.saveFail(userId, guildId);
-                        const color = fTier > 0 ? TIER_COLORS[fTier] : [156, 163, 175], name = fTier > 0 ? TIER_NAMES[fTier] : 'No Enhancement';
-                        const res = new EmbedBuilder().setTitle(fTier > 0 ? 'Challenge Failed - Previous Tier Applied' : 'Challenge Failed - No Enhancement').setColor(color)
-                            .setDescription(fTier > 0 ? `**${name}** applied from previous progress.` : 'No enhancement earned. Try again tomorrow!')
-                            .addFields({ name: '📊 Results', value: `Score: ${fTier}/5\nCorrect: ${q.answer}\nNext: <t:${getReset()}:R>`, inline: false })
-                            .setFooter({ text: fTier > 0 ? `${name} Active` : 'Challenge Failed' }).setTimestamp();
+                        
+                        // ✅ ENHANCED: Make failure more obvious with tier emoji and better formatting
+                        const name = fTier > 0 ? TIER_NAMES[fTier] : 'No Enhancement';
+                        const tierEmoji = TIER_EMOJIS[fTier] || '⬛';
+                        
+                        const res = new EmbedBuilder()
+                            .setTitle(`❌ Challenge Failed - ${fTier > 0 ? 'Previous Tier Applied' : 'No Enhancement'}`)
+                            .setColor('#FF0000')
+                            .setDescription(fTier > 0 ? 
+                                `**${tierEmoji} ${name} Buff Applied** from previous progress!\n\n*You earned this from reaching question ${fTier + 1}*` : 
+                                '**⬛ No Enhancement** earned. Try again tomorrow!')
+                            .addFields({ 
+                                name: '📊 Final Results', 
+                                value: `**Score:** ${fTier}/5\n**Buff Received:** ${tierEmoji} ${name}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
+                                inline: false 
+                            })
+                            .setFooter({ text: fTier > 0 ? `${tierEmoji} ${name} Active Until Reset` : 'Challenge Failed - No Buff Awarded' })
+                            .setTimestamp();
                         await btn.editReply({ embeds: [res], components: [] });
                     }
                     collector.stop();
