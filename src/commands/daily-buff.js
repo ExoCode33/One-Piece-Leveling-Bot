@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - API Enabled with Better Progress Bar
+// src/commands/daily-buff.js - Updated with 10 Square Countdown and Improved Formatting
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -21,7 +21,7 @@ const FALLBACK = {
     ]
 };
 
-// ✅ TIMEZONE HELPERS IMPLEMENTED
+// ✅ TIMEZONE HELPERS
 function getCurrentDayKey() {
     const now = new Date();
     const estOffset = isESTDaylightSaving(now) ? -4 : -5;
@@ -158,76 +158,88 @@ module.exports = {
         }
     },
 
+    // ✅ UPDATED: Enhanced ask method with 10 square countdown
     async ask(interaction, userId, guildId, member, qNum, tier) {
         try {
             const diffs = ['Easy', 'Medium', 'Medium', 'Hard', 'Hard'], diff = diffs[qNum - 1];
-            const q = await fetchQuestion(diff); // ✅ API CALL HERE
+            const q = await fetchQuestion(diff);
             let time = 20;
 
+            // ✅ NEW: Create 10 square countdown embed
             const makeEmbed = (t) => {
                 const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
-                const diffColor = { 'Easy': [76, 175, 80], 'Medium': [255, 193, 7], 'Hard': [255, 87, 34] };
                 
-                // ✅ IMPROVED PROGRESS BAR - More Visual & Intuitive
+                // Create 10 square countdown
+                const totalTime = 20;
+                const totalSquares = 10;
+                const timePerSquare = totalTime / totalSquares;
+                const remainingSquares = Math.ceil(t / timePerSquare);
+                const filledSquares = Math.max(0, Math.min(totalSquares, remainingSquares));
+                
+                // Color progression: Green → Yellow → Red
+                const percentageRemaining = (t / totalTime) * 100;
+                let squareEmoji, embedColor;
+                if (percentageRemaining > 60) {
+                    squareEmoji = '🟩';
+                    embedColor = [46, 204, 113]; // Green
+                } else if (percentageRemaining > 30) {
+                    squareEmoji = '🟨';
+                    embedColor = [255, 193, 7]; // Yellow
+                } else {
+                    squareEmoji = '🟥';
+                    embedColor = [231, 76, 60]; // Red
+                }
+                
+                // Build the countdown bar
+                const filledBar = squareEmoji.repeat(filledSquares);
+                const emptyBar = '⬛'.repeat(totalSquares - filledSquares);
+                const countdownBar = filledBar + emptyBar;
+                
+                // Challenge progress
                 const createProgressBar = () => {
                     const steps = [];
                     for (let i = 1; i <= 5; i++) {
                         if (i < qNum) {
-                            steps.push('✅'); // Completed
+                            steps.push('✅');
                         } else if (i === qNum) {
-                            steps.push('🔄'); // Current
+                            steps.push('🔄');
                         } else {
-                            steps.push('⬜'); // Not started
+                            steps.push('⬜');
                         }
                     }
                     return steps.join(' ');
                 };
                 
-                const progressBar = createProgressBar();
-                const progressText = `**Question ${qNum} of 5** • ${Math.round((qNum / 5) * 100)}% Complete`;
+                const progressSteps = createProgressBar();
+                const progressText = `Question **${qNum}** of **5** • ${Math.round((qNum / 5) * 100)}% Complete`;
                 
-                // ✅ IMPROVED TIMER BAR - Cleaner Design
-                const tProg = Math.max(0, Math.min(20, t));
-                const percentage = Math.round((tProg / 20) * 100);
-                const bars = Math.round((tProg / 20) * 10); // Shorter bar
-                
-                let timeEmoji, timeColor;
-                if (t > 12) {
-                    timeEmoji = '🟢';
-                    timeColor = diffColor[diff];
-                } else if (t > 6) {
-                    timeEmoji = '🟡';
-                    timeColor = [255, 165, 0];
-                } else {
-                    timeEmoji = '🔴';
-                    timeColor = [231, 76, 60];
-                }
-                
-                const timeBar = '█'.repeat(bars) + '░'.repeat(10 - bars);
-                const timerDisplay = `${timeEmoji} **${t}s** remaining (${percentage}%)\n\`${timeBar}\``;
+                // Format time display
+                const mins = Math.floor(t / 60);
+                const secs = t % 60;
+                const timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
 
                 return new EmbedBuilder()
                     .setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
                     .setTitle(`${diffEmoji[diff]} Question ${qNum}/5 • ${diff}`)
-                    .setColor(timeColor)
-                    .setDescription(`### ${q.question}\n\n*Select your answer below*`)
+                    .setColor(embedColor)
+                    .setDescription(`**${q.question}**\n\n*Select your answer using the buttons below*`)
                     .addFields(
-                        { 
-                            name: '📊 Challenge Progress', 
-                            value: `${progressBar}\n${progressText}`, 
-                            inline: false 
+                        {
+                            name: '📊 Challenge Progress',
+                            value: `${progressSteps}\n${progressText}`,
+                            inline: false
                         },
-                        { 
-                            name: '⏰ Timer', 
-                            value: timerDisplay, 
-                            inline: true 
+                        {
+                            name: '⏰ Time Remaining',
+                            value: `**${timeText}** (${t} seconds)\n${countdownBar}\n\`${filledSquares}/10 squares • ${Math.round(percentageRemaining)}% remaining\``,
+                            inline: false
                         },
-                        { 
-                            name: '🏆 Status', 
+                        {
+                            name: '🎯 Current Target',
                             value: qNum > 1 ? 
-                                `**Secured:** ${TIER_NAMES[qNum - 1]}\n**Target:** ${TIER_NAMES[qNum]}` : 
-                                `**Target:** ${TIER_NAMES[qNum]}\n*${TIER_DESC[qNum]}*`, 
-                            inline: true 
+                                `**Secured:** ${TIER_NAMES[qNum - 1]}\n**Next:** ${TIER_NAMES[qNum]}` : 
+                                `**Target:** ${TIER_NAMES[qNum]}\n*${TIER_DESC[qNum]}*`,
+                            inline: false
                         }
                     )
                     .setFooter({ text: `Enhancement Intelligence • Difficulty: ${diff} • ${new Date().toLocaleTimeString()}` })
@@ -246,10 +258,12 @@ module.exports = {
             if (qNum === 1) { await interaction.editReply({ embeds: [embed], components: rows }); msg = await interaction.fetchReply(); }
             else msg = await interaction.followUp({ embeds: [embed], components: rows });
 
+            // ✅ UPDATED: Timer updates every 2 seconds for smooth countdown
             const timer = setInterval(async () => {
-                time -= 4; if (time <= 0) { clearInterval(timer); return; }
+                time -= 2; // Decrease by 2 seconds
+                if (time <= 0) { clearInterval(timer); return; }
                 try { await msg.edit({ embeds: [makeEmbed(time)], components: rows }).catch(() => clearInterval(timer)); } catch { clearInterval(timer); }
-            }, 4000);
+            }, 2000); // Update every 2 seconds
 
             const collector = msg.createMessageComponentCollector({ time: 20000, filter: i => i.user.id === userId });
 
@@ -334,6 +348,7 @@ module.exports = {
         } catch (error) { console.error('[QUIZ] Question error:', error); }
     },
 
+    // Keep all your existing helper methods
     async checkRoll(userId, guildId) { try { const r = await global.xpTracker.db.query('SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]); return r.rows.length > 0; } catch { return false; } },
 
     async getBuff(userId, guildId, member) {
