@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Updated with 10 Square Countdown and Improved Formatting
+// src/commands/daily-buff.js - Updated with Better Questions and Reroll Feature
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -6,18 +6,25 @@ const TIER_COLORS = { 1: [76, 175, 80], 2: [33, 150, 243], 3: [156, 39, 176], 4:
 const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic', 4: 'Legendary', 5: 'Divine' };
 const TIER_DESC = { 1: '⚓ Common boost', 2: '🔱 Rare power', 3: '🎖️ Epic ability', 4: '⭐ Legendary mastery', 5: '💎 Divine transcendence' };
 
+// Enhanced fallback questions focused on anime lore
 const FALLBACK = {
     'Easy': [
         { question: "Who is the main protagonist of One Piece?", options: ["Monkey D. Luffy", "Roronoa Zoro", "Nami", "Sanji"], answer: "Monkey D. Luffy" },
-        { question: "What is Luffy's Devil Fruit?", options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"], answer: "Gomu Gomu no Mi" }
+        { question: "What is Luffy's Devil Fruit called?", options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"], answer: "Gomu Gomu no Mi" },
+        { question: "What is the name of Luffy's pirate crew?", options: ["Straw Hat Pirates", "Red Hair Pirates", "Whitebeard Pirates", "Heart Pirates"], answer: "Straw Hat Pirates" },
+        { question: "In Naruto, what village is Naruto from?", options: ["Hidden Leaf Village", "Hidden Sand Village", "Hidden Mist Village", "Hidden Cloud Village"], answer: "Hidden Leaf Village" }
     ],
     'Medium': [
-        { question: "What is Eren's Titan form called?", options: ["Attack Titan", "Colossal Titan", "Female Titan", "Beast Titan"], answer: "Attack Titan" },
-        { question: "Who is 'Humanity's Strongest Soldier'?", options: ["Levi Ackerman", "Erwin Smith", "Mikasa Ackerman", "Eren Yeager"], answer: "Levi Ackerman" }
+        { question: "What is the name of the sea where most of One Piece takes place?", options: ["Grand Line", "East Blue", "West Blue", "Red Line"], answer: "Grand Line" },
+        { question: "In Attack on Titan, what is Eren's Titan form called?", options: ["Attack Titan", "Colossal Titan", "Female Titan", "Beast Titan"], answer: "Attack Titan" },
+        { question: "Who is known as 'Humanity's Strongest Soldier' in Attack on Titan?", options: ["Levi Ackerman", "Erwin Smith", "Mikasa Ackerman", "Eren Yeager"], answer: "Levi Ackerman" },
+        { question: "In One Piece, what is the ultimate treasure called?", options: ["One Piece", "All Blue", "Void Century", "Poneglyph"], answer: "One Piece" }
     ],
     'Hard': [
-        { question: "Where do the Straw Hats first meet Brook?", options: ["Thriller Bark", "Sabaody Archipelago", "Water 7", "Enies Lobby"], answer: "Thriller Bark" },
-        { question: "What is the Flame Alchemist's real name?", options: ["Roy Mustang", "Alex Louis Armstrong", "Maes Hughes", "King Bradley"], answer: "Roy Mustang" }
+        { question: "In One Piece, where do the Straw Hats first meet Brook?", options: ["Thriller Bark", "Sabaody Archipelago", "Water 7", "Enies Lobby"], answer: "Thriller Bark" },
+        { question: "What is Roy Mustang's title in Fullmetal Alchemist?", options: ["Flame Alchemist", "Steel Alchemist", "State Alchemist", "Fire Colonel"], answer: "Flame Alchemist" },
+        { question: "In One Piece, what is the name of the island where the World Government is located?", options: ["Mariejois", "Enies Lobby", "Impel Down", "Marineford"], answer: "Mariejois" },
+        { question: "What is the name of the technique Luffy learns during the timeskip?", options: ["Haki", "Rokushiki", "Fishman Karate", "Electro"], answer: "Haki" }
     ]
 };
 
@@ -53,7 +60,10 @@ function getNextResetUnixTimestamp() {
     const nextReset = new Date(estTime);
     nextReset.setHours(3, 0, 0, 0);
     
-    if (estTime.getHours() >= 3) {
+    const currentTimeInMinutes = (estTime.getHours() * 60) + estTime.getMinutes();
+    const resetTimeInMinutes = (3 * 60) + 0;
+    
+    if (currentTimeInMinutes >= resetTimeInMinutes) {
         nextReset.setDate(nextReset.getDate() + 1);
     }
     
@@ -61,72 +71,109 @@ function getNextResetUnixTimestamp() {
     return Math.floor(utcReset.getTime() / 1000);
 }
 
+// ✅ ENHANCED: Fetch question with better filtering for anime lore
 async function fetchQuestion(difficulty) {
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
         
-        const response = await fetch('https://aniquizapi.vercel.app/api/quiz', {
-            method: 'GET',
-            headers: { 'User-Agent': 'DiscordBot-AnimeQuiz/1.0', 'Accept': 'application/json' },
-            signal: controller.signal
-        });
+        // Try multiple API endpoints for better question variety
+        const apiUrls = [
+            'https://opentdb.com/api.php?amount=1&category=31&type=multiple', // Anime & Manga from OpenTDB
+            'https://aniquizapi.vercel.app/api/quiz', // Anime Quiz API
+        ];
         
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-            const data = await response.json();
-            let question, options, answer;
-            
-            if (data.data?.question && data.data?.correct && data.data?.options) {
-                question = data.data.question;
-                options = Array.isArray(data.data.options) ? data.data.options : [];
-                answer = data.data.correct;
-            } else if (data.question && data.correct && data.options) {
-                question = data.question;
-                options = Array.isArray(data.options) ? data.options : [];
-                answer = data.correct;
-            } else {
-                throw new Error('Invalid API response');
+        for (const apiUrl of apiUrls) {
+            try {
+                console.log(`[API] Trying ${apiUrl.includes('opentdb') ? 'OpenTDB' : 'AniQuiz'} API...`);
+                
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: { 'User-Agent': 'DiscordBot-AnimeQuiz/1.0', 'Accept': 'application/json' },
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    let question, options, answer;
+                    
+                    // Handle OpenTDB format
+                    if (data.results && data.results.length > 0) {
+                        const result = data.results[0];
+                        question = result.question;
+                        answer = result.correct_answer;
+                        options = [...result.incorrect_answers, result.correct_answer].sort(() => Math.random() - 0.5);
+                        
+                        // Filter out voice actor questions and other non-lore questions
+                        const badKeywords = ['voice actor', 'voiced by', 'seiyuu', 'dub', 'english dub', 'studio', 'director', 'composer'];
+                        if (badKeywords.some(keyword => question.toLowerCase().includes(keyword))) {
+                            console.log('[API] Skipping voice actor/production question');
+                            continue;
+                        }
+                    }
+                    // Handle AniQuiz format
+                    else if (data.data?.question || data.question) {
+                        const questionData = data.data || data;
+                        question = questionData.question;
+                        options = Array.isArray(questionData.options) ? questionData.options : [];
+                        answer = questionData.correct;
+                        
+                        // Filter out voice actor questions
+                        const badKeywords = ['voice actor', 'voiced by', 'seiyuu', 'dub', 'english dub', 'studio', 'director', 'composer'];
+                        if (badKeywords.some(keyword => question.toLowerCase().includes(keyword))) {
+                            console.log('[API] Skipping voice actor/production question');
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                    
+                    // Clean and validate the question
+                    const clean = (text) => {
+                        if (!text) return '';
+                        return text.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+                            .replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#x([0-9A-Fa-f]+);/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+                            .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(parseInt(d, 10))).trim();
+                    };
+                    
+                    question = clean(question);
+                    answer = clean(answer);
+                    options = options.map(opt => clean(opt)).filter(opt => opt.length > 0);
+                    
+                    if (!question || options.length < 2 || !answer) continue;
+                    
+                    // Ensure answer is in options
+                    if (!options.includes(answer)) {
+                        const match = options.find(opt => opt.toLowerCase() === answer.toLowerCase());
+                        if (match) answer = match;
+                        else if (options.length >= 4) options[3] = answer;
+                        else options.push(answer);
+                    }
+                    
+                    // Limit to 4 options max
+                    if (options.length > 4) {
+                        const correctIndex = options.indexOf(answer);
+                        const others = options.filter((opt, i) => i !== correctIndex);
+                        const randomOthers = others.sort(() => 0.5 - Math.random()).slice(0, 3);
+                        options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
+                    }
+                    
+                    console.log(`[API] ✅ Fetched ${difficulty} anime lore question from ${apiUrl.includes('opentdb') ? 'OpenTDB' : 'AniQuiz'}`);
+                    return { question, options, answer, difficulty };
+                }
+            } catch (error) {
+                console.log(`[API] API ${apiUrl} failed: ${error.message}`);
+                continue;
             }
-            
-            // Clean text
-            const clean = (text) => {
-                if (!text) return '';
-                return text.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-                    .replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#x([0-9A-Fa-f]+);/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
-                    .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(parseInt(d, 10))).trim();
-            };
-            
-            question = clean(question);
-            answer = clean(answer);
-            options = options.map(opt => clean(opt)).filter(opt => opt.length > 0);
-            
-            if (!question || options.length < 2 || !answer) throw new Error('Invalid question data');
-            
-            if (!options.includes(answer)) {
-                const match = options.find(opt => opt.toLowerCase() === answer.toLowerCase());
-                if (match) answer = match;
-                else if (options.length >= 4) options[3] = answer;
-                else options.push(answer);
-            }
-            
-            if (options.length > 4) {
-                const correctIndex = options.indexOf(answer);
-                const others = options.filter((opt, i) => i !== correctIndex);
-                const randomOthers = others.sort(() => 0.5 - Math.random()).slice(0, 3);
-                options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
-            }
-            
-            console.log(`[API] ✅ Fetched ${difficulty} question from API`);
-            return { question, options, answer, difficulty };
         }
     } catch (error) {
-        console.log(`[API] ❌ Failed to fetch from API: ${error.message}`);
+        console.log(`[API] ❌ All APIs failed: ${error.message}`);
     }
     
-    // Fallback
-    console.log(`[API] 🛡️ Using fallback ${difficulty} question`);
+    // Enhanced fallback with better questions
+    console.log(`[API] 🛡️ Using enhanced fallback ${difficulty} question`);
     const fallbacks = FALLBACK[difficulty] || FALLBACK['Medium'];
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
 }
@@ -150,7 +197,7 @@ module.exports = {
                 return await interaction.reply({ embeds: [embed], ephemeral: true });
             }
             await interaction.deferReply();
-            await this.ask(interaction, userId, guildId, member, 1, 0);
+            await this.ask(interaction, userId, guildId, member, 1, 0, false); // Added rerollUsed parameter
         } catch (error) {
             console.error('[DAILY BUFF] Error:', error);
             const content = '❌ Error occurred. Try again.';
@@ -158,14 +205,14 @@ module.exports = {
         }
     },
 
-    // ✅ UPDATED: Enhanced ask method with 10 square countdown
-    async ask(interaction, userId, guildId, member, qNum, tier) {
+    // ✅ ENHANCED: Ask method with reroll functionality
+    async ask(interaction, userId, guildId, member, qNum, tier, rerollUsed = false) {
         try {
             const diffs = ['Easy', 'Medium', 'Medium', 'Hard', 'Hard'], diff = diffs[qNum - 1];
             const q = await fetchQuestion(diff);
             let time = 20;
 
-            // ✅ NEW: Create RGB changing embed with improved layout
+            // ✅ ENHANCED: Create RGB changing embed with reroll button
             const makeEmbed = (t) => {
                 const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
                 
@@ -176,41 +223,36 @@ module.exports = {
                 const remainingSquares = Math.ceil(t / timePerSquare);
                 const filledSquares = Math.max(0, Math.min(totalSquares, remainingSquares));
                 
-                // ✅ RGB Color progression that constantly changes
+                // RGB Color progression
                 const percentageRemaining = (t / totalTime) * 100;
                 let squareEmoji, embedColor;
                 
-                // Smooth RGB transition based on exact time
                 if (percentageRemaining > 66) {
-                    // Green to Green-Yellow transition
-                    const intensity = (percentageRemaining - 66) / 34; // 0-1
+                    const intensity = (percentageRemaining - 66) / 34;
                     squareEmoji = '🟩';
                     embedColor = [
-                        Math.floor(46 + (30 * (1 - intensity))), // 46->76 (more yellow as time decreases)
-                        204, // Keep green high
-                        Math.floor(113 - (50 * (1 - intensity))) // 113->63 (less blue)
+                        Math.floor(46 + (30 * (1 - intensity))),
+                        204,
+                        Math.floor(113 - (50 * (1 - intensity)))
                     ];
                 } else if (percentageRemaining > 33) {
-                    // Yellow transition
-                    const intensity = (percentageRemaining - 33) / 33; // 0-1
+                    const intensity = (percentageRemaining - 33) / 33;
                     squareEmoji = '🟨';
                     embedColor = [
-                        Math.floor(200 + (55 * (1 - intensity))), // 200->255
-                        Math.floor(150 + (50 * intensity)), // 150->200
-                        Math.floor(7 + (50 * intensity)) // 7->57
+                        Math.floor(200 + (55 * (1 - intensity))),
+                        Math.floor(150 + (50 * intensity)),
+                        Math.floor(7 + (50 * intensity))
                     ];
                 } else {
-                    // Red transition
-                    const intensity = percentageRemaining / 33; // 0-1
+                    const intensity = percentageRemaining / 33;
                     squareEmoji = '🟥';
                     embedColor = [
-                        255, // Keep red high
-                        Math.floor(87 * intensity), // 0->87
-                        Math.floor(34 * intensity) // 0->34
+                        255,
+                        Math.floor(87 * intensity),
+                        Math.floor(34 * intensity)
                     ];
                 }
                 
-                // Build the countdown bar
                 const filledBar = squareEmoji.repeat(filledSquares);
                 const emptyBar = '⬛'.repeat(totalSquares - filledSquares);
                 const countdownBar = filledBar + emptyBar;
@@ -231,8 +273,6 @@ module.exports = {
                 };
                 
                 const progressSteps = createProgressBar();
-                
-                // Format time display
                 const mins = Math.floor(t / 60);
                 const secs = t % 60;
                 const timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -240,12 +280,12 @@ module.exports = {
                 return new EmbedBuilder()
                     .setAuthor({ name: '🎌 PROGRESSIVE ANIME MASTERY CHALLENGE' })
                     .setTitle(`${diffEmoji[diff]} Question ${qNum}/5 • ${diff}`)
-                    .setColor(embedColor) // ✅ RGB color that changes every 2 seconds
-                    .setDescription(`## **${q.question}**\n\n*Select your answer using the buttons below*`) // ✅ Large bold text without flickering
+                    .setColor(embedColor)
+                    .setDescription(`## **${q.question}**\n\n*Select your answer using the buttons below*`)
                     .addFields(
                         {
                             name: '📊 Challenge Progress',
-                            value: progressSteps, // ✅ Removed duplicate text
+                            value: progressSteps,
                             inline: false
                         },
                         {
@@ -265,48 +305,96 @@ module.exports = {
                     .setTimestamp();
             };
 
-            // ✅ UPDATED: Create 4 green buttons in 2x2 layout
+            // ✅ ENHANCED: Create answer buttons
             const btns = q.options.map((opt, i) => new ButtonBuilder()
-                .setCustomId(`q_${userId}_${qNum}_${i}_${opt === q.answer}`)
+                .setCustomId(`q_${userId}_${qNum}_${i}_${opt === q.answer}_${rerollUsed}`)
                 .setLabel(opt.substring(0, 70))
-                .setStyle(ButtonStyle.Success) // ✅ Green buttons
+                .setStyle(ButtonStyle.Success)
                 .setEmoji(['🅰️', '🅱️', '🅾️', '🆎'][i]));
 
-            // ✅ NEW: 2x2 button layout (side by side)
+            // ✅ NEW: Create reroll button (only if not used yet)
+            const rerollButton = new ButtonBuilder()
+                .setCustomId(`reroll_${userId}_${qNum}_${rerollUsed}`)
+                .setLabel(rerollUsed ? 'Reroll Used' : 'Reroll Question')
+                .setStyle(rerollUsed ? ButtonStyle.Secondary : ButtonStyle.Primary)
+                .setEmoji('🎲')
+                .setDisabled(rerollUsed);
+
+            // ✅ ENHANCED: Button layout with reroll
             const rows = [
                 new ActionRowBuilder().addComponents(btns.slice(0, 2)), // First row: A, B
                 new ActionRowBuilder().addComponents(btns.slice(2, 4))  // Second row: O, AB
             ];
-            if (qNum > 1) rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder()
-                .setCustomId(`stop_${userId}_${qNum}`).setLabel(`Secure ${TIER_NAMES[qNum - 1]} Buff`).setStyle(ButtonStyle.Secondary).setEmoji('🛡️')));
+            
+            // Add secure tier button if past question 1
+            if (qNum > 1) {
+                rows.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`stop_${userId}_${qNum}`)
+                        .setLabel(`Secure ${TIER_NAMES[qNum - 1]} Buff`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🛡️')
+                ));
+            }
+            
+            // ✅ NEW: Add reroll button as its own row
+            rows.push(new ActionRowBuilder().addComponents(rerollButton));
 
             let msg; const embed = makeEmbed(time);
-            if (qNum === 1) { await interaction.editReply({ embeds: [embed], components: rows }); msg = await interaction.fetchReply(); }
-            else msg = await interaction.followUp({ embeds: [embed], components: rows });
+            if (qNum === 1 && !rerollUsed) { 
+                await interaction.editReply({ embeds: [embed], components: rows }); 
+                msg = await interaction.fetchReply(); 
+            } else {
+                msg = await interaction.followUp({ embeds: [embed], components: rows });
+            }
 
-            // ✅ UPDATED: Timer updates every 2 seconds for smooth countdown
+            // Timer updates every 2 seconds
             const timer = setInterval(async () => {
-                time -= 2; // Decrease by 2 seconds
+                time -= 2;
                 if (time <= 0) { clearInterval(timer); return; }
-                try { await msg.edit({ embeds: [makeEmbed(time)], components: rows }).catch(() => clearInterval(timer)); } catch { clearInterval(timer); }
-            }, 2000); // Update every 2 seconds
+                try { 
+                    await msg.edit({ embeds: [makeEmbed(time)], components: rows }).catch(() => clearInterval(timer)); 
+                } catch { 
+                    clearInterval(timer); 
+                }
+            }, 2000);
 
             const collector = msg.createMessageComponentCollector({ time: 20000, filter: i => i.user.id === userId });
 
             collector.on('collect', async (btn) => {
                 try {
-                    clearInterval(timer); await btn.deferUpdate();
+                    clearInterval(timer); 
+                    await btn.deferUpdate();
+                    
+                    // ✅ NEW: Handle reroll button
+                    if (btn.customId.startsWith('reroll_')) {
+                        const [, , currentQNum, currentRerollUsed] = btn.customId.split('_');
+                        
+                        if (currentRerollUsed === 'true') {
+                            return; // Already used, shouldn't happen due to disabled state
+                        }
+                        
+                        collector.stop();
+                        // Restart the question with reroll marked as used
+                        await this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, true);
+                        return;
+                    }
                     
                     if (btn.customId.startsWith('stop_')) {
-                        const fTier = qNum - 1; await this.apply(userId, guildId, member, fTier);
+                        const fTier = qNum - 1; 
+                        await this.apply(userId, guildId, member, fTier);
                         const res = new EmbedBuilder().setTitle('Strategic Withdrawal - Tier Secured!').setColor(TIER_COLORS[fTier])
                             .setDescription(`**${TIER_NAMES[fTier]}** secured!\n*${TIER_DESC[fTier]}*`)
                             .addFields({ name: '📊 Results', value: `Score: ${fTier}/5\nNext: <t:${getReset()}:R>`, inline: false })
                             .setFooter({ text: `${TIER_NAMES[fTier]} Active` }).setTimestamp();
-                        await btn.editReply({ embeds: [res], components: [] }); collector.stop(); return;
+                        await btn.editReply({ embeds: [res], components: [] }); 
+                        collector.stop(); 
+                        return;
                     }
 
-                    const isCorrect = btn.customId.split('_')[4] === 'true';
+                    const [, , , , isCorrectStr, rerollUsedStr] = btn.customId.split('_');
+                    const isCorrect = isCorrectStr === 'true';
+                    const currentRerollUsed = rerollUsedStr === 'true';
                     
                     if (isCorrect) {
                         if (qNum === 5) {
@@ -323,7 +411,7 @@ module.exports = {
                                 .setFooter({ text: 'Choose your path wisely' }).setTimestamp();
                             
                             const contBtn = new ActionRowBuilder().addComponents(
-                                new ButtonBuilder().setCustomId(`cont_${userId}_${qNum + 1}`).setLabel(`➡️ Continue to Question ${qNum + 1}`).setStyle(ButtonStyle.Success).setEmoji('⚡'),
+                                new ButtonBuilder().setCustomId(`cont_${userId}_${qNum + 1}_${currentRerollUsed}`).setLabel(`➡️ Continue to Question ${qNum + 1}`).setStyle(ButtonStyle.Success).setEmoji('⚡'),
                                 new ButtonBuilder().setCustomId(`claim_${userId}_${qNum}`).setLabel(`Secure ${TIER_NAMES[qNum]} Buff`).setStyle(ButtonStyle.Secondary).setEmoji('🛡️')
                             );
                             
@@ -333,15 +421,18 @@ module.exports = {
                             contColl.on('collect', async (contBtn) => {
                                 await contBtn.deferUpdate();
                                 if (contBtn.customId.startsWith('cont_')) {
-                                    const next = parseInt(contBtn.customId.split('_')[2]); contColl.stop();
-                                    await this.ask(interaction, userId, guildId, member, next, qNum);
+                                    const [, , nextQNum, passedRerollUsed] = contBtn.customId.split('_');
+                                    contColl.stop();
+                                    await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), qNum, passedRerollUsed === 'true');
                                 } else {
-                                    const cTier = parseInt(contBtn.customId.split('_')[2]); await this.apply(userId, guildId, member, cTier);
+                                    const cTier = parseInt(contBtn.customId.split('_')[2]); 
+                                    await this.apply(userId, guildId, member, cTier);
                                     const claim = new EmbedBuilder().setTitle('Strategic Withdrawal - Tier Secured!').setColor(TIER_COLORS[cTier])
                                         .setDescription(`**${TIER_NAMES[cTier]}** secured!\n*${TIER_DESC[cTier]}*`)
                                         .addFields({ name: '📊 Results', value: `Score: ${cTier}/5\nNext: <t:${getReset()}:R>`, inline: false })
                                         .setFooter({ text: `${TIER_NAMES[cTier]} Active` }).setTimestamp();
-                                    await contBtn.editReply({ embeds: [claim], components: [] }); contColl.stop();
+                                    await contBtn.editReply({ embeds: [claim], components: [] }); 
+                                    contColl.stop();
                                 }
                             });
                         }
@@ -356,7 +447,10 @@ module.exports = {
                         await btn.editReply({ embeds: [res], components: [] });
                     }
                     collector.stop();
-                } catch (error) { console.error('[QUIZ] Button error:', error); clearInterval(timer); }
+                } catch (error) { 
+                    console.error('[QUIZ] Button error:', error); 
+                    clearInterval(timer); 
+                }
             });
 
             collector.on('end', async (collected) => {
@@ -371,27 +465,61 @@ module.exports = {
                     await msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
                 }
             });
-        } catch (error) { console.error('[QUIZ] Question error:', error); }
+        } catch (error) { 
+            console.error('[QUIZ] Question error:', error); 
+        }
     },
 
-    // Keep all your existing helper methods
-    async checkRoll(userId, guildId) { try { const r = await global.xpTracker.db.query('SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]); return r.rows.length > 0; } catch { return false; } },
+    // Keep all existing helper methods
+    async checkRoll(userId, guildId) { 
+        try { 
+            const r = await global.xpTracker.db.query('SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]); 
+            return r.rows.length > 0; 
+        } catch { 
+            return false; 
+        } 
+    },
 
     async getBuff(userId, guildId, member) {
         try {
             const r = await global.xpTracker.db.query('SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]);
-            if (r.rows.length > 0) { const t = r.rows[0].tier; return { tier: t, name: t === 0 ? 'Challenge Failed' : TIER_NAMES[t], multiplier: t === 0 ? 'None' : 'Active' }; }
-            for (let i = 1; i <= 5; i++) { const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; if (roleId && member.roles.cache.has(roleId)) return { tier: i, name: TIER_NAMES[i], multiplier: 'Active' }; }
+            if (r.rows.length > 0) { 
+                const t = r.rows[0].tier; 
+                return { tier: t, name: t === 0 ? 'Challenge Failed' : TIER_NAMES[t], multiplier: t === 0 ? 'None' : 'Active' }; 
+            }
+            for (let i = 1; i <= 5; i++) { 
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; 
+                if (roleId && member.roles.cache.has(roleId)) return { tier: i, name: TIER_NAMES[i], multiplier: 'Active' }; 
+            }
             return { tier: 0, name: 'No Enhancement', multiplier: 'None' };
-        } catch { return { tier: 0, name: 'Error', multiplier: 'None' }; }
+        } catch { 
+            return { tier: 0, name: 'Error', multiplier: 'None' }; 
+        }
     },
 
     async apply(userId, guildId, member, tier) {
         try {
-            for (let i = 1; i <= 5; i++) { const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; if (roleId && member.roles.cache.has(roleId)) { const role = member.guild.roles.cache.get(roleId); if (role) await member.roles.remove(role); } }
-            if (tier > 0) { const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`]; if (roleId) { const role = member.guild.roles.cache.get(roleId); if (role) { await member.roles.add(role); console.log(`[DAILY BUFF] ✅ Awarded ${role.name}`); } } }
+            for (let i = 1; i <= 5; i++) { 
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; 
+                if (roleId && member.roles.cache.has(roleId)) { 
+                    const role = member.guild.roles.cache.get(roleId); 
+                    if (role) await member.roles.remove(role); 
+                } 
+            }
+            if (tier > 0) { 
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`]; 
+                if (roleId) { 
+                    const role = member.guild.roles.cache.get(roleId); 
+                    if (role) { 
+                        await member.roles.add(role); 
+                        console.log(`[DAILY BUFF] ✅ Awarded ${role.name}`); 
+                    } 
+                } 
+            }
             await this.save(userId, guildId, tier);
-        } catch (error) { console.error('[DAILY BUFF] Apply error:', error); }
+        } catch (error) { 
+            console.error('[DAILY BUFF] Apply error:', error); 
+        }
     },
 
     async save(userId, guildId, tier) {
@@ -399,13 +527,127 @@ module.exports = {
             await global.xpTracker.db.query('CREATE TABLE IF NOT EXISTS daily_buff_rolls (user_id VARCHAR(20), guild_id VARCHAR(20), date DATE, tier INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, guild_id, date))');
             await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = $4', [userId, guildId, getDay(), tier]);
             console.log(`[DAILY BUFF] ✅ Saved tier ${tier}`);
-        } catch (error) { console.error('[DAILY BUFF] Save error:', error); }
+        } catch (error) { 
+            console.error('[DAILY BUFF] Save error:', error); 
+        }
     },
 
     async saveFail(userId, guildId) {
         try {
             await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier, created_at) VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = 0', [userId, guildId, getDay()]);
             console.log('[DAILY BUFF] ❌ Saved failed attempt');
-        } catch (error) { console.error('[DAILY BUFF] Save failed error:', error); }
+        } catch (error) { 
+            console.error('[DAILY BUFF] Save failed error:', error); 
+        }
+    },
+
+    // ✅ NEW: Export functions for admin command use
+    checkDailyBuffStatus: async function(userId, guildId) {
+        try {
+            const currentDay = getCurrentDayKey();
+            
+            // Check database record
+            const dbResult = await global.xpTracker.db.query(
+                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                [userId, guildId, currentDay]
+            );
+            const hasDBRecord = dbResult.rows.length > 0;
+
+            // Check current roles
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            const currentRoles = [];
+
+            if (member) {
+                for (let i = 1; i <= 6; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = guild.roles.cache.get(roleId);
+                        if (role) {
+                            currentRoles.push({
+                                tier: i,
+                                roleId: roleId,
+                                roleName: role.name
+                            });
+                        }
+                    }
+                }
+            }
+
+            return {
+                hasDBRecord,
+                currentRoles,
+                currentDay,
+                member
+            };
+        } catch (error) {
+            console.error('[DAILY BUFF] Error checking status:', error);
+            return {
+                hasDBRecord: false,
+                currentRoles: [],
+                currentDay: getCurrentDayKey(),
+                member: null
+            };
+        }
+    },
+
+    forceRemoveDailyBuff: async function(userId, guildId, reason) {
+        try {
+            const currentDay = getCurrentDayKey();
+            const removedRoles = [];
+            let dbRecordsRemoved = 0;
+
+            // Get guild and member
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+
+            // Remove all buff roles
+            if (member) {
+                for (let i = 1; i <= 6; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = guild.roles.cache.get(roleId);
+                        if (role) {
+                            try {
+                                await member.roles.remove(role, reason);
+                                removedRoles.push(`Tier ${i}: ${role.name}`);
+                                console.log(`[DAILY BUFF] Removed ${role.name} from ${member.user.username}`);
+                            } catch (error) {
+                                console.error(`[DAILY BUFF] Error removing role ${role.name}:`, error);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Remove database records
+            try {
+                const deleteResult = await global.xpTracker.db.query(
+                    'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2',
+                    [userId, guildId]
+                );
+                dbRecordsRemoved = deleteResult.rowCount || 0;
+                console.log(`[DAILY BUFF] Deleted ${dbRecordsRemoved} daily buff records`);
+            } catch (error) {
+                console.error('[DAILY BUFF] Error deleting database records:', error);
+            }
+
+            return {
+                success: true,
+                removedRoles,
+                dbRecordsRemoved,
+                currentDay
+            };
+
+        } catch (error) {
+            console.error('[DAILY BUFF] Error in forceRemoveDailyBuff:', error);
+            return {
+                success: false,
+                error: error.message,
+                removedRoles: [],
+                dbRecordsRemoved: 0,
+                currentDay: getCurrentDayKey()
+            };
+        }
     }
 };
