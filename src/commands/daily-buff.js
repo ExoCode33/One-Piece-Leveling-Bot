@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Complete Fixed Version with Question X/10
+// src/commands/daily-buff.js - Complete Fixed Version with Proper Syntax
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -193,7 +193,7 @@ async function fetchQuestion(difficulty) {
                     }
                     
                     console.log(`[API] ✅ Fetched ${difficulty} anime lore question from ${apiUrl.includes('opentdb') ? 'OpenTDB' : 'AniQuiz'}`);
-                    console.log(`[QUESTION DEBUG] Q${qNum || 'Unknown'}: "${question}" | Answer: "${answer}" | Options: [${options.join(', ')}]`);
+                    console.log(`[QUESTION DEBUG] Q${difficulty}: "${question}" | Answer: "${answer}" | Options: [${options.join(', ')}]`);
                     return { question, options, answer, difficulty };
                 }
             } catch (error) {
@@ -278,7 +278,7 @@ module.exports = {
             console.log(`[DAILY BUFF] Question ${qNum} loaded: "${q.question}" | Correct: "${q.answer}"`);
             let time = 25;
 
-            // ✅ FIXED: Ensure the embed shows Question X/10
+            // Create embed function
             const makeEmbed = (timeRemaining) => {
                 const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
                 
@@ -349,7 +349,7 @@ module.exports = {
 
                 return new EmbedBuilder()
                     .setAuthor({ name: '🎌 ULTIMATE ANIME MASTERY CHALLENGE' })
-                    .setTitle(`${diffEmoji[diff]} Question ${qNum}/10 • ${diff}`) // ✅ FIXED: This should now show X/10
+                    .setTitle(`${diffEmoji[diff]} Question ${qNum}/10 • ${diff}`)
                     .setColor(embedColor)
                     .setDescription(`## **${q.question}**\n\n**Challenge by:** ${member.displayName}\n\n*Select your answer using the buttons below*`)
                     .addFields(
@@ -511,4 +511,463 @@ module.exports = {
                             .addFields({ 
                                 name: '📊 Results', 
                                 value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
-                                inline: false
+                                inline: false 
+                            })
+                            .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                            .setTimestamp();
+                        await btn.editReply({ embeds: [res], components: [] });
+                        collector.stop(); 
+                        return;
+                    }
+
+                    const [, , , , isCorrectStr, currentRerollsUsed] = btn.customId.split('_');
+                    const isCorrect = isCorrectStr === 'true';
+                    const passedRerollsUsed = parseInt(currentRerollsUsed);
+                    
+                    // Log answer attempt
+                    const selectedOption = q.options[parseInt(btn.customId.split('_')[3])];
+                    console.log(`[DAILY BUFF] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"`);
+                    
+                    if (isCorrect) {
+                        if (qNum === 10) {
+                            // Divine mastery completion
+                            await this.apply(userId, guildId, member, 10);
+                            
+                            let xpMultiplier = 'Unknown';
+                            try {
+                                const roleId = process.env[`DAILY_XP_BUFF_TIER_10_ROLE`];
+                                if (roleId && global.xpBoostManager) {
+                                    const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                    if (boostInfo && boostInfo.boost_multiplier) {
+                                        xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                xpMultiplier = 'Active';
+                            }
+                            
+                            const res = new EmbedBuilder()
+                                .setTitle('🔴 DIVINE PERFECTION ACHIEVED!')
+                                .setColor(TIER_COLORS[10])
+                                .setDescription(`**${TIER_NAMES[10]}** unlocked!\n*${TIER_DESC[10]}*\n\n🏆 **PERFECT MASTERY**\n**XP Multiplier:** ${xpMultiplier}`)
+                                .addFields({ 
+                                    name: '🎖️ Ultimate Achievement', 
+                                    value: `Perfect Score: 10/10\n**Buff Received:** ${this.getTierEmoji(10)} ${TIER_NAMES[10]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                    inline: false 
+                                })
+                                .setFooter({ text: `${this.getTierEmoji(10)} ${TIER_NAMES[10]} ${xpMultiplier} Active • Divine Achievement` })
+                                .setTimestamp();
+                            await btn.editReply({ embeds: [res], components: [] });
+                        } else {
+                            const currentTier = qNum;
+                            const cont = new EmbedBuilder()
+                                .setTitle(`✅ Correct! ${TIER_NAMES[currentTier]} Achieved`)
+                                .setColor([46, 204, 113])
+                                .setDescription(`**${TIER_NAMES[currentTier]}** secured! Continue or claim current tier.`)
+                                .addFields({ name: '🎯 Decision', value: `Next: Question ${qNum + 1}/10\nCurrent: ${TIER_NAMES[currentTier]}`, inline: false })
+                                .setFooter({ text: 'Choose your path wisely' })
+                                .setTimestamp();
+                            
+                            const contBtn = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`cont_${userId}_${qNum + 1}_${passedRerollsUsed}`)
+                                    .setLabel(`➡️ Continue to Question ${qNum + 1}`)
+                                    .setStyle(ButtonStyle.Success)
+                                    .setEmoji('⚡'),
+                                new ButtonBuilder()
+                                    .setCustomId(`claim_${userId}_${currentTier}`)
+                                    .setLabel(`Secure ${TIER_NAMES[currentTier]} Buff`)
+                                    .setStyle(ButtonStyle.Secondary)
+                                    .setEmoji('🛡️')
+                            );
+                            
+                            await btn.editReply({ embeds: [cont], components: [contBtn] });
+                            
+                            const contColl = btn.message.createMessageComponentCollector({ time: 30000, filter: i => i.user.id === userId });
+                            contColl.on('collect', async (contBtn) => {
+                                await contBtn.deferUpdate();
+                                if (contBtn.customId.startsWith('cont_')) {
+                                    const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
+                                    contColl.stop();
+                                    
+                                    try {
+                                        await btn.message.delete();
+                                    } catch (error) {
+                                        console.log('[CLEANUP] Could not delete current message:', error.message);
+                                    }
+                                    
+                                    await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), currentTier, parseInt(passedRerollsUsed));
+                                } else {
+                                    const cTier = parseInt(contBtn.customId.split('_')[2]); 
+                                    await this.apply(userId, guildId, member, cTier);
+                                    
+                                    let xpMultiplier = 'Unknown';
+                                    try {
+                                        const roleId = process.env[`DAILY_XP_BUFF_TIER_${cTier}_ROLE`];
+                                        if (roleId && global.xpBoostManager) {
+                                            const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                            if (boostInfo && boostInfo.boost_multiplier) {
+                                                xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                        xpMultiplier = 'Active';
+                                    }
+                                    
+                                    const claim = new EmbedBuilder()
+                                        .setTitle('Strategic Withdrawal - Tier Secured!')
+                                        .setColor(TIER_COLORS[cTier])
+                                        .setDescription(`**${TIER_NAMES[cTier]}** secured!\n*${TIER_DESC[cTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                        .addFields({ 
+                                            name: '📊 Results', 
+                                            value: `Score: ${cTier}/10\n**Buff Received:** ${this.getTierEmoji(cTier)} ${TIER_NAMES[cTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                            inline: false 
+                                        })
+                                        .setFooter({ text: `${this.getTierEmoji(cTier)} ${TIER_NAMES[cTier]} ${xpMultiplier} Active` })
+                                        .setTimestamp();
+                                    await contBtn.editReply({ embeds: [claim], components: [] }); 
+                                    contColl.stop();
+                                }
+                            });
+                        }
+                    } else {
+                        // Show answer reveal for 20 seconds before proceeding
+                        console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"`);
+                        await this.showAnswerReveal(btn, q, qNum, member);
+                        
+                        // Wait 20 seconds before proceeding
+                        setTimeout(async () => {
+                            // Failure handling with tier 1 consolation prize
+                            let fTier = Math.max(0, qNum - 1);
+                            
+                            // Failing on question 1 still gives tier 1 as consolation
+                            if (qNum === 1) {
+                                fTier = 1; // Give tier 1 even on first question failure
+                            }
+                            
+                            if (fTier > 0) {
+                                await this.apply(userId, guildId, member, fTier);
+                                console.log(`[DAILY BUFF] Q${qNum} FAILURE RESULT: Applied tier ${fTier} for ${member.displayName}`);
+                            } else {
+                                await this.saveFail(userId, guildId);
+                                console.log(`[DAILY BUFF] Q${qNum} COMPLETE FAILURE: No tier for ${member.displayName}`);
+                            }
+                            
+                            const name = fTier > 0 ? TIER_NAMES[fTier] : 'No Enhancement';
+                            const tierEmoji = this.getTierEmoji(fTier);
+                            
+                            let xpMultiplier = 'Unknown';
+                            if (fTier > 0) {
+                                try {
+                                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${fTier}_ROLE`];
+                                    if (roleId && global.xpBoostManager) {
+                                        const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                        if (boostInfo && boostInfo.boost_multiplier) {
+                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                    xpMultiplier = 'Active';
+                                }
+                            }
+                            
+                            const res = new EmbedBuilder()
+                                .setTitle(`❌ Challenge Failed - ${fTier > 0 ? (qNum === 1 ? 'Consolation Prize' : 'Previous Tier Applied') : 'No Enhancement'}`)
+                                .setColor('#FF0000')
+                                .setDescription(fTier > 0 ? 
+                                    (qNum === 1 ? 
+                                        `**${tierEmoji} ${name} Buff Applied** as consolation prize!\n\n*Even pirates who fail their first challenge deserve recognition*\n**XP Multiplier:** ${xpMultiplier}` :
+                                        `**${tierEmoji} ${name} Buff Applied** from previous progress!\n\n*You earned this from reaching question ${qNum}*\n**XP Multiplier:** ${xpMultiplier}`) : 
+                                    '**⬛ No Enhancement** earned. Try again tomorrow!')
+                                .addFields({ 
+                                    name: '📊 Final Results', 
+                                    value: `**Score:** ${fTier}/10\n**Buff Received:** ${tierEmoji} ${name}${fTier > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
+                                    inline: false 
+                                })
+                                .setFooter({ text: fTier > 0 ? `${tierEmoji} ${name} ${xpMultiplier} Active Until Reset` : 'Challenge Failed - No Buff Awarded' })
+                                .setTimestamp();
+                                
+                            try {
+                                await btn.editReply({ embeds: [res], components: [] });
+                            } catch (error) {
+                                console.error('[DAILY BUFF] Error editing reply after answer reveal:', error);
+                            }
+                        }, 20000); // 20 second delay
+                    }
+                    collector.stop();
+                } catch (error) { 
+                    console.error('[QUIZ] Button error:', error); 
+                    clearInterval(timer); 
+                }
+            });
+
+            collector.on('end', async (collected) => {
+                clearInterval(timer);
+                if (collected.size === 0) {
+                    let fTier = Math.max(0, qNum - 1);
+                    
+                    // Timeout on question 1 still gives tier 1
+                    if (qNum === 1) {
+                        fTier = 1;
+                    }
+                    
+                    if (fTier > 0) await this.apply(userId, guildId, member, fTier); else await this.saveFail(userId, guildId);
+                    const timeout = new EmbedBuilder()
+                        .setColor([231, 76, 60])
+                        .setTitle('⏰ Time\'s Up!')
+                        .setDescription(fTier > 0 ? 
+                            (qNum === 1 ? 
+                                `Consolation prize (**${TIER_NAMES[fTier]}**) applied for attempting the challenge.` :
+                                `Previous tier (**${TIER_NAMES[fTier]}**) applied.`) : 
+                            'No enhancement earned.')
+                        .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
+                        .setFooter({ text: 'Enhancement Intelligence' })
+                        .setTimestamp();
+                    await msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
+                }
+            });
+        } catch (error) { 
+            console.error('[QUIZ] Question error:', error); 
+        }
+    },
+
+    // Show answer reveal for 20 seconds
+    async showAnswerReveal(btnInteraction, question, questionNum, member) {
+        try {
+            console.log(`[ANSWER REVEAL] Showing correct answer for Q${questionNum}: "${question.answer}" to ${member.displayName}`);
+            const revealEmbed = new EmbedBuilder()
+                .setColor('#FF0000')
+                .setTitle(`❌ Incorrect! Question ${questionNum}/10`)
+                .setDescription(`**Question:** ${question.question}\n\n**Correct Answer:** 🎯 ${question.answer}`)
+                .addFields({
+                    name: '📚 Answer Revealed',
+                    value: `The correct answer was **${question.answer}**. Study up for next time!`,
+                    inline: false
+                }, {
+                    name: '⏳ Processing Results',
+                    value: 'Results will be shown in 20 seconds...',
+                    inline: false
+                })
+                .setFooter({ text: 'Learn from your mistakes • Challenge continues...' })
+                .setTimestamp();
+
+            await btnInteraction.editReply({ embeds: [revealEmbed], components: [] });
+        } catch (error) {
+            console.error('[ANSWER REVEAL] Error showing answer:', error);
+        }
+    },
+
+    // Helper method to get tier emoji with correct colors
+    getTierEmoji(tier) {
+        const tierEmojis = { 
+            0: '⬛',    // None
+            1: '⚪',    // Common - White
+            2: '🟢',    // Uncommon - Green
+            3: '🔵',    // Rare - Blue
+            4: '🟣',    // Epic - Purple
+            5: '🟡',    // Legendary - Yellow
+            6: '🟡',    // Legendary - Yellow
+            7: '🟠',    // Mythic - Orange
+            8: '🟠',    // Mythic - Orange
+            9: '🔴',    // Divine - Red
+            10: '🔴'    // Divine - Red
+        };
+        return tierEmojis[tier] || '⬛';
+    },
+
+    // Check roll but return the record details
+    async checkRoll(userId, guildId) { 
+        try { 
+            const r = await global.xpTracker.db.query('SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]); 
+            if (r.rows.length > 0) {
+                return { tier: r.rows[0].tier };
+            }
+            return null;
+        } catch { 
+            return null; 
+        } 
+    },
+
+    // Delete failed attempt to allow retry
+    async deleteFailedAttempt(userId, guildId) {
+        try {
+            await global.xpTracker.db.query('DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 AND tier = 0', [userId, guildId, getDay()]);
+            console.log(`[DAILY BUFF] Deleted failed attempt for user ${userId} to allow retry`);
+        } catch (error) {
+            console.error('[DAILY BUFF] Error deleting failed attempt:', error);
+        }
+    },
+
+    async getBuff(userId, guildId, member) {
+        try {
+            const r = await global.xpTracker.db.query('SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]);
+            if (r.rows.length > 0) { 
+                const t = r.rows[0].tier; 
+                return { tier: t, name: t === 0 ? 'Challenge Failed' : TIER_NAMES[t], multiplier: t === 0 ? 'None' : 'Active' }; 
+            }
+            // Check for all 10 tiers
+            for (let i = 1; i <= 10; i++) { 
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; 
+                if (roleId && member.roles.cache.has(roleId)) return { tier: i, name: TIER_NAMES[i], multiplier: 'Active' }; 
+            }
+            return { tier: 0, name: 'No Enhancement', multiplier: 'None' };
+        } catch { 
+            return { tier: 0, name: 'Error', multiplier: 'None' }; 
+        }
+    },
+
+    async apply(userId, guildId, member, tier) {
+        try {
+            // Remove all tier roles including tier 10
+            for (let i = 1; i <= 10; i++) { 
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; 
+                if (roleId && member.roles.cache.has(roleId)) { 
+                    const role = member.guild.roles.cache.get(roleId); 
+                    if (role) await member.roles.remove(role); 
+                } 
+            }
+            if (tier > 0) { 
+                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`]; 
+                if (roleId) { 
+                    const role = member.guild.roles.cache.get(roleId); 
+                    if (role) { 
+                        await member.roles.add(role); 
+                        console.log(`[DAILY BUFF] ✅ Awarded ${role.name}`); 
+                    } 
+                } 
+            }
+            await this.save(userId, guildId, tier);
+        } catch (error) { 
+            console.error('[DAILY BUFF] Apply error:', error); 
+        }
+    },
+
+    async save(userId, guildId, tier) {
+        try {
+            await global.xpTracker.db.query('CREATE TABLE IF NOT EXISTS daily_buff_rolls (user_id VARCHAR(20), guild_id VARCHAR(20), date DATE, tier INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, guild_id, date))');
+            await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = $4', [userId, guildId, getDay(), tier]);
+            console.log(`[DAILY BUFF] ✅ Saved tier ${tier}`);
+        } catch (error) { 
+            console.error('[DAILY BUFF] Save error:', error); 
+        }
+    },
+
+    async saveFail(userId, guildId) {
+        try {
+            await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier, created_at) VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = 0', [userId, guildId, getDay()]);
+            console.log('[DAILY BUFF] ❌ Saved failed attempt');
+        } catch (error) { 
+            console.error('[DAILY BUFF] Save failed error:', error); 
+        }
+    },
+
+    // Export functions for admin command use
+    checkDailyBuffStatus: async function(userId, guildId) {
+        try {
+            const currentDay = getCurrentDayKey();
+            
+            const dbResult = await global.xpTracker.db.query(
+                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                [userId, guildId, currentDay]
+            );
+            const hasDBRecord = dbResult.rows.length > 0;
+
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            const currentRoles = [];
+
+            if (member) {
+                // Check for all 10 tiers
+                for (let i = 1; i <= 10; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = guild.roles.cache.get(roleId);
+                        if (role) {
+                            currentRoles.push({
+                                tier: i,
+                                roleId: roleId,
+                                roleName: role.name
+                            });
+                        }
+                    }
+                }
+            }
+
+            return {
+                hasDBRecord,
+                currentRoles,
+                currentDay,
+                member
+            };
+        } catch (error) {
+            console.error('[DAILY BUFF] Error checking status:', error);
+            return {
+                hasDBRecord: false,
+                currentRoles: [],
+                currentDay: getCurrentDayKey(),
+                member: null
+            };
+        }
+    },
+
+    forceRemoveDailyBuff: async function(userId, guildId, reason) {
+        try {
+            const currentDay = getCurrentDayKey();
+            const removedRoles = [];
+            let dbRecordsRemoved = 0;
+
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+
+            if (member) {
+                // Remove all 10 tier roles
+                for (let i = 1; i <= 10; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = guild.roles.cache.get(roleId);
+                        if (role) {
+                            try {
+                                await member.roles.remove(role, reason);
+                                removedRoles.push(`Tier ${i}: ${role.name}`);
+                                console.log(`[DAILY BUFF] Removed ${role.name} from ${member.user.username}`);
+                            } catch (error) {
+                                console.error(`[DAILY BUFF] Error removing role ${role.name}:`, error);
+                            }
+                        }
+                    }
+                }
+            }
+
+            try {
+                const deleteResult = await global.xpTracker.db.query(
+                    'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2',
+                    [userId, guildId]
+                );
+                dbRecordsRemoved = deleteResult.rowCount || 0;
+                console.log(`[DAILY BUFF] Deleted ${dbRecordsRemoved} daily buff records`);
+            } catch (error) {
+                console.error('[DAILY BUFF] Error deleting database records:', error);
+            }
+
+            return {
+                success: true,
+                removedRoles,
+                dbRecordsRemoved,
+                currentDay
+            };
+
+        } catch (error) {
+            console.error('[DAILY BUFF] Error in forceRemoveDailyBuff:', error);
+            return {
+                success: false,
+                error: error.message,
+                removedRoles: [],
+                dbRecordsRemoved: 0,
+                currentDay: getCurrentDayKey()
+            };
+        }
+    }
+};
