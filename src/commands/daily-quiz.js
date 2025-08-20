@@ -319,14 +319,14 @@ module.exports = {
             console.log(`[DAILY BUFF] Starting Question ${qNum}/10 - Difficulty: ${diff} - User: ${member.displayName}`);
             const q = await fetchQuestion(diff);
             console.log(`[DAILY BUFF] Question ${qNum} loaded: "${q.question}" | Correct: "${q.answer}"`);
-            let time = 25;
+            let time = 20;
 
             // Create embed function
             const makeEmbed = (timeRemaining) => {
                 const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
                 
                 // Create countdown bar
-                const totalTime = 25;
+                const totalTime = 20;
                 const totalSquares = 10;
                 const timePerSquare = totalTime / totalSquares;
                 const remainingSquares = Math.ceil(timeRemaining / timePerSquare);
@@ -435,13 +435,13 @@ module.exports = {
             // Create action buttons
             const actionButtons = [];
             
-            // Add secure tier button if past question 1
-            if (qNum > 1) {
-                const securedTier = qNum - 1;
+            // Add secure tier button if past question 1 AND have successful answers
+            const successfulAnswers = questionResults.filter(result => result === true).length;
+            if (qNum > 1 && successfulAnswers > 0) {
                 actionButtons.push(
                     new ButtonBuilder()
                         .setCustomId(`stop_${userId}_${qNum}`)
-                        .setLabel(`🛡️ Secure ${TIER_NAMES[securedTier]} Buff`)
+                        .setLabel(`🛡️ Secure ${TIER_NAMES[successfulAnswers]} Buff`)
                         .setStyle(ButtonStyle.Success)
                         .setEmoji('🛡️')
                 );
@@ -498,7 +498,7 @@ module.exports = {
                 }
             }, 2000);
 
-            const collector = msg.createMessageComponentCollector({ time: 25000, filter: i => i.user.id === userId });
+            const collector = msg.createMessageComponentCollector({ time: 20000, filter: i => i.user.id === userId });
 
             collector.on('collect', async (btn) => {
                 try {
@@ -518,7 +518,7 @@ module.exports = {
                         
                         // Immediate transition - delete current message and start new question simultaneously
                         const deletePromise = btn.message.delete().catch(() => {});
-                        const rerollPromise = this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1);
+                        const rerollPromise = this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
                         
                         // Execute both in parallel for fastest transition
                         await Promise.all([deletePromise, rerollPromise]);
@@ -526,7 +526,10 @@ module.exports = {
                     }
                     
                     if (btn.customId.startsWith('stop_')) {
-                        const securedTier = qNum - 1;
+                        // Calculate secured tier based on SUCCESSFUL answers only
+                        const successfulAnswers = questionResults.filter(result => result === true).length;
+                        const securedTier = successfulAnswers; // Use actual successful count, not question number
+                        
                         await this.apply(userId, guildId, member, securedTier);
                         
                         let xpMultiplier = 'Unknown';
@@ -656,11 +659,15 @@ module.exports = {
                                     await Promise.all([deletePromise, nextQuestionPromise]);
                                 } else {
                                     const cTier = parseInt(contBtn.customId.split('_')[2]); 
-                                    await this.apply(userId, guildId, member, cTier);
+                                    // Double-check: only award tier based on actual successful answers
+                                    const actualSuccessful = newResults.filter(r => r === true).length;
+                                    const finalTier = Math.min(cTier, actualSuccessful); // Safety check
+                                    
+                                    await this.apply(userId, guildId, member, finalTier);
                                     
                                     let xpMultiplier = 'Unknown';
                                     try {
-                                        const roleId = process.env[`DAILY_QUIZ_TIER_${cTier}_ROLE`];
+                                        const roleId = process.env[`DAILY_QUIZ_TIER_${finalTier}_ROLE`];
                                         if (roleId && global.xpBoostManager) {
                                             const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
                                             if (boostInfo && boostInfo.boost_multiplier) {
@@ -674,14 +681,14 @@ module.exports = {
                                     
                                     const claim = new EmbedBuilder()
                                         .setTitle('Strategic Withdrawal - Tier Secured!')
-                                        .setColor(TIER_COLORS[cTier] || '#FF0000')
-                                        .setDescription(`**${TIER_NAMES[cTier] || 'Enhancement'}** secured!\n*${TIER_DESC[cTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                        .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                        .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
                                         .addFields({ 
                                             name: '📊 Results', 
-                                            value: `Successful Answers: ${cTier}/10\n**Buff Received:** ${this.getTierEmoji(cTier)} ${TIER_NAMES[cTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                            value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
                                             inline: false 
                                         })
-                                        .setFooter({ text: `${this.getTierEmoji(cTier)} ${TIER_NAMES[cTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                        .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
                                         .setTimestamp();
                                     await contBtn.editReply({ embeds: [claim], components: [] }); 
                                     contColl.stop();
@@ -696,10 +703,71 @@ module.exports = {
                         console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"`);
                         await this.showAnswerReveal(btn, q, qNum, member);
                         
-                        // Wait 3 seconds before proceeding (faster for better flow)
+                        // Wait 3 seconds then show continue prompt before proceeding
                         setTimeout(async () => {
-                            if (qNum === 10) {
-                                // Challenge complete - calculate final tier based on successful answers
+                            // Show continue prompt for failed questions (except last question)
+                            if (qNum < 10) {
+                                const successfulAnswers = newResults.filter(r => r === true).length;
+                                const failurePrompt = new EmbedBuilder()
+                                    .setColor('#FF6B6B')
+                                    .setTitle(`❌ Question ${qNum} Failed`)
+                                    .setDescription(`**Correct Answer:** ${q.answer}\n\n**Progress:** ${successfulAnswers} successful answers out of ${qNum} attempted.`)
+                                    .addFields({ 
+                                        name: '🎯 Next Step', 
+                                        value: `Question ${qNum + 1}/10 is ready.\nAre you ready to continue?`, 
+                                        inline: false 
+                                    })
+                                    .setFooter({ text: 'Take your time to review before continuing' })
+                                    .setTimestamp();
+                                
+                                const continueBtn = new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(`continue_after_fail_${userId}_${qNum + 1}`)
+                                        .setLabel(`Continue to Question ${qNum + 1}`)
+                                        .setStyle(ButtonStyle.Primary)
+                                        .setEmoji('▶️')
+                                );
+                                
+                                try {
+                                    await btn.editReply({ embeds: [failurePrompt], components: [continueBtn] });
+                                    
+                                    // Wait for continue button
+                                    const continueCollector = btn.message.createMessageComponentCollector({ 
+                                        time: 30000, 
+                                        filter: i => i.user.id === userId && i.customId.startsWith('continue_after_fail_')
+                                    });
+                                    
+                                    continueCollector.on('collect', async (continueBtn) => {
+                                        await continueBtn.deferUpdate();
+                                        continueCollector.stop();
+                                        
+                                        // Continue to next question
+                                        const deletePromise = btn.message.delete().catch(() => {});
+                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                        
+                                        await Promise.all([deletePromise, nextQuestionPromise]);
+                                    });
+                                    
+                                    continueCollector.on('end', async (collected) => {
+                                        if (collected.size === 0) {
+                                            // Auto-continue after timeout
+                                            const deletePromise = btn.message.delete().catch(() => {});
+                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                            
+                                            await Promise.all([deletePromise, nextQuestionPromise]);
+                                        }
+                                    });
+                                    
+                                } catch (error) {
+                                    console.error('[DAILY BUFF] Error showing continue prompt:', error);
+                                    // Fallback: continue automatically
+                                    const deletePromise = btn.message.delete().catch(() => {});
+                                    const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                    
+                                    await Promise.all([deletePromise, nextQuestionPromise]);
+                                }
+                            } else {
+                                // Last question - handle completion
                                 const totalSuccessful = newResults.filter(r => r === true).length;
                                 
                                 if (totalSuccessful > 0) {
@@ -746,13 +814,6 @@ module.exports = {
                                 } catch (error) {
                                     console.error('[DAILY BUFF] Error editing reply after final answer:', error);
                                 }
-                            } else {
-                                // Continue to next question
-                                const deletePromise = btn.message.delete().catch(() => {});
-                                const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                
-                                // Execute both simultaneously for fastest transition
-                                await Promise.all([deletePromise, nextQuestionPromise]);
                             }
                         }, 3000); // 3 second delay for answer reveal
                     }
@@ -786,6 +847,11 @@ module.exports = {
                             .setDescription(totalSuccessful > 0 ? 
                                 `**${tierName}** earned based on your ${totalSuccessful} correct answers.` :
                                 'No enhancement earned.')
+                            .addFields({ 
+                                name: '📊 Final Results', 
+                                value: `**Correct Answers:** ${totalSuccessful}/10\n**Questions Attempted:** ${qNum}/10\n**Tier Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}`, 
+                                inline: false 
+                            })
                             .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
                             .setFooter({ text: 'Daily Quiz System' })
                             .setTimestamp();
