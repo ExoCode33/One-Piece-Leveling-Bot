@@ -1,6 +1,7 @@
 // src/commands/daily-buff.js - Updated with Better Questions and Reroll Feature
 
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+// Add missing import for StringSelectMenuBuilder
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 
 const TIER_COLORS = { 1: [76, 175, 80], 2: [33, 150, 243], 3: [156, 39, 176], 4: [255, 193, 7], 5: [255, 87, 34] };
 const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic', 4: 'Legendary', 5: 'Divine' };
@@ -305,40 +306,50 @@ module.exports = {
                     .setTimestamp();
             };
 
-            // ✅ ENHANCED: Create answer buttons
-            const btns = q.options.map((opt, i) => new ButtonBuilder()
-                .setCustomId(`q_${userId}_${qNum}_${i}_${opt === q.answer}_${rerollUsed}`)
-                .setLabel(opt.substring(0, 70))
-                .setStyle(ButtonStyle.Success)
-                .setEmoji(['🅰️', '🅱️', '🅾️', '🆎'][i]));
+            // ✅ ENHANCED: Create answer dropdown instead of buttons
+            const answerDropdown = new ActionRowBuilder()
+                .addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId(`answer_${userId}_${qNum}_${rerollUsed}`)
+                        .setPlaceholder('🎯 Select your answer...')
+                        .addOptions(
+                            q.options.map((opt, i) => ({
+                                label: opt.substring(0, 100), // Discord limit
+                                description: `Option ${['A', 'B', 'C', 'D'][i]}`,
+                                value: `${i}_${opt === q.answer}_${opt}`
+                            }))
+                        )
+                );
 
-            // ✅ NEW: Create reroll button (only if not used yet)
-            const rerollButton = new ButtonBuilder()
-                .setCustomId(`reroll_${userId}_${qNum}_${rerollUsed}`)
-                .setLabel(rerollUsed ? 'Reroll Used' : 'Reroll Question')
-                .setStyle(rerollUsed ? ButtonStyle.Secondary : ButtonStyle.Primary)
-                .setEmoji('🎲')
-                .setDisabled(rerollUsed);
-
-            // ✅ ENHANCED: Button layout with reroll
-            const rows = [
-                new ActionRowBuilder().addComponents(btns.slice(0, 2)), // First row: A, B
-                new ActionRowBuilder().addComponents(btns.slice(2, 4))  // Second row: O, AB
-            ];
+            // ✅ ENHANCED: Create action buttons (green, below dropdown)
+            const actionButtons = [];
             
             // Add secure tier button if past question 1
             if (qNum > 1) {
-                rows.push(new ActionRowBuilder().addComponents(
+                actionButtons.push(
                     new ButtonBuilder()
                         .setCustomId(`stop_${userId}_${qNum}`)
-                        .setLabel(`Secure ${TIER_NAMES[qNum - 1]} Buff`)
-                        .setStyle(ButtonStyle.Secondary)
+                        .setLabel(`🛡️ Secure ${TIER_NAMES[qNum - 1]} Buff`)
+                        .setStyle(ButtonStyle.Success) // Green
                         .setEmoji('🛡️')
-                ));
+                );
             }
             
-            // ✅ NEW: Add reroll button as its own row
-            rows.push(new ActionRowBuilder().addComponents(rerollButton));
+            // Add reroll button
+            actionButtons.push(
+                new ButtonBuilder()
+                    .setCustomId(`reroll_${userId}_${qNum}_${rerollUsed}`)
+                    .setLabel(rerollUsed ? '🎲 Reroll Used' : '🎲 Reroll Question')
+                    .setStyle(ButtonStyle.Success) // Green
+                    .setEmoji('🎲')
+                    .setDisabled(rerollUsed)
+            );
+
+            // ✅ NEW: Component layout with dropdown first, then buttons
+            const rows = [answerDropdown];
+            if (actionButtons.length > 0) {
+                rows.push(new ActionRowBuilder().addComponents(actionButtons));
+            }
 
             let msg; const embed = makeEmbed(time);
             if (qNum === 1 && !rerollUsed) { 
@@ -426,10 +437,11 @@ module.exports = {
                             .setDescription(`**${TIER_NAMES[fTier]}** secured!\n*${TIER_DESC[fTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
                             .addFields({ 
                                 name: '📊 Results', 
-                                value: `Score: ${fTier}/5\n**Buff Received:** ${TIER_EMOJIS[fTier]} ${TIER_NAMES[fTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                value: `Score: ${fTier}/5\n**Buff Received:** ${this.getTierEmoji(fTier)} ${TIER_NAMES[fTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
                                 inline: false 
                             })
-                            .setFooter({ text: `${TIER_EMOJIS[fTier]} ${TIER_NAMES[fTier]} ${xpMultiplier} Active` }).setTimestamp();
+                            .setFooter({ text: `${this.getTierEmoji(fTier)} ${TIER_NAMES[fTier]} ${xpMultiplier} Active` }).setTimestamp();
+                        await btn.editReply({ embeds: [res], components: [] });
                         await btn.editReply({ embeds: [res], components: [] }); 
                         collector.stop(); 
                         return;
@@ -462,10 +474,10 @@ module.exports = {
                                 .setDescription(`**${TIER_NAMES[5]}** unlocked!\n*${TIER_DESC[5]}*\n\n🏆 **FLAWLESS VICTORY**\n**XP Multiplier:** ${xpMultiplier}`)
                                 .addFields({ 
                                     name: '🎖️ Achievement', 
-                                    value: `Perfect Score: 5/5\n**Buff Received:** ${TIER_EMOJIS[5]} ${TIER_NAMES[5]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                    value: `Perfect Score: 5/5\n**Buff Received:** 🟧 ${TIER_NAMES[5]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
                                     inline: false 
                                 })
-                                .setFooter({ text: `${TIER_EMOJIS[5]} ${TIER_NAMES[5]} ${xpMultiplier} Active • Divine Achievement` }).setTimestamp();
+                                .setFooter({ text: `🟧 ${TIER_NAMES[5]} ${xpMultiplier} Active • Divine Achievement` }).setTimestamp();
                             await btn.editReply({ embeds: [res], components: [] });
                         } else {
                             const cont = new EmbedBuilder().setTitle(`✅ Correct! Tier ${qNum} Achieved`).setColor([46, 204, 113])
@@ -518,10 +530,10 @@ module.exports = {
                                         .setDescription(`**${TIER_NAMES[cTier]}** secured!\n*${TIER_DESC[cTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
                                         .addFields({ 
                                             name: '📊 Results', 
-                                            value: `Score: ${cTier}/5\n**Buff Received:** ${TIER_EMOJIS[cTier]} ${TIER_NAMES[cTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                            value: `Score: ${cTier}/5\n**Buff Received:** ${this.getTierEmoji(cTier)} ${TIER_NAMES[cTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
                                             inline: false 
                                         })
-                                        .setFooter({ text: `${TIER_EMOJIS[cTier]} ${TIER_NAMES[cTier]} ${xpMultiplier} Active` }).setTimestamp();
+                                        .setFooter({ text: `${this.getTierEmoji(cTier)} ${TIER_NAMES[cTier]} ${xpMultiplier} Active` }).setTimestamp();
                                     await contBtn.editReply({ embeds: [claim], components: [] }); 
                                     contColl.stop();
                                 }
@@ -533,7 +545,7 @@ module.exports = {
                         
                         // ✅ ENHANCED: Make failure more obvious with tier emoji and XP multiplier info
                         const name = fTier > 0 ? TIER_NAMES[fTier] : 'No Enhancement';
-                        const tierEmoji = TIER_EMOJIS[fTier] || '⬛';
+                        const tierEmoji = this.getTierEmoji(fTier);
                         
                         // ✅ NEW: Get XP multiplier from database
                         let xpMultiplier = 'Unknown';
@@ -589,6 +601,12 @@ module.exports = {
         } catch (error) { 
             console.error('[QUIZ] Question error:', error); 
         }
+    },
+
+    // ✅ NEW: Helper method to get tier emoji (fixes scope issue)
+    getTierEmoji(tier) {
+        const tierEmojis = { 0: '⬛', 1: '🟩', 2: '🟦', 3: '🟪', 4: '🟨', 5: '🟧' };
+        return tierEmojis[tier] || '⬛';
     },
 
     // Keep all existing helper methods
