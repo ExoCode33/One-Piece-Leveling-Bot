@@ -661,6 +661,37 @@ module.exports = {
                         const finalTier = Math.max(0, parseInt(questionNum) - 1);
                         
                         if (finalTier > 0) {
+                            await this.applyBuffRole(userId, guildId, member, finalTier);
+                        } else {
+                            await this.saveFailedAttempt(userId, guildId);
+                        }
+                        
+                        const resultEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
+                            false, questionData, finalTier, member, parseInt(questionNum)
+                        );
+                        
+                        await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
+                    }
+                    
+                    collector.stop();
+                    
+                } catch (error) {
+                    console.error('[PROGRESSIVE QUIZ] Button interaction error:', error);
+                    clearInterval(timerInterval);
+                    await buttonInteraction.editReply({
+                        content: '❌ **Error processing answer**\n\nPlease try the quiz again.',
+                        components: []
+                    });
+                }
+            });
+
+            collector.on('end', async (collected) => {
+                clearInterval(timerInterval);
+                
+                if (collected.size === 0) {
+                    const finalTier = Math.max(0, currentTier);
+                    
+                    if (finalTier > 0) {
                         await this.applyBuffRole(userId, guildId, member, finalTier);
                     } else {
                         await this.saveFailedAttempt(userId, guildId);
@@ -977,35 +1008,4 @@ function getNextResetUnixTimestamp() {
     
     const utcReset = new Date(nextReset.getTime() - (estOffset * 60 * 60 * 1000));
     return Math.floor(utcReset.getTime() / 1000);
-} {
-                            await this.applyBuffRole(userId, guildId, member, finalTier);
-                        } else {
-                            await this.saveFailedAttempt(userId, guildId);
-                        }
-                        
-                        const resultEmbed = ProgressiveQuizSystem.createProgressiveResultEmbed(
-                            false, questionData, finalTier, member, parseInt(questionNum)
-                        );
-                        
-                        await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
-                    }
-                    
-                    collector.stop();
-                    
-                } catch (error) {
-                    console.error('[PROGRESSIVE QUIZ] Button interaction error:', error);
-                    clearInterval(timerInterval);
-                    await buttonInteraction.editReply({
-                        content: '❌ **Error processing answer**\n\nPlease try the quiz again.',
-                        components: []
-                    });
-                }
-            });
-
-            collector.on('end', async (collected) => {
-                clearInterval(timerInterval);
-                
-                if (collected.size === 0) {
-                    const finalTier = Math.max(0, currentTier);
-                    
-                    if (finalTier > 0)
+}
