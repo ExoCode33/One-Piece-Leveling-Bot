@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Complete Fixed Version with Proper Syntax
+// src/commands/daily-buff.js - FIXED VERSION - Removed duplicate if statement causing syntax error
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -528,7 +528,7 @@ module.exports = {
                     const selectedOption = q.options[parseInt(btn.customId.split('_')[3])];
                     console.log(`[DAILY BUFF] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"`);
                     
-                    if (isCorrect) {
+                    // FIXED: Removed the duplicate if statement that was causing the syntax error
                     if (isCorrect) {
                         // ✅ NEW: Award XP for correct answer (single configurable amount for all difficulties)
                         const correctAnswerXP = parseInt(process.env.DAILY_BUFF_CORRECT_ANSWER_XP) || 100;
