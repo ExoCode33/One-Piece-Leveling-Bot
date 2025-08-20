@@ -4,7 +4,40 @@ collector.on('end', async (collected) => {
                     // Time's up - record as failed answer and continue or end
                     const newResults = [...questionResults, false];
                     
-                    if                
+                    if (qNum === 10) {
+                        // Challenge complete due to timeout on last question
+                        const totalSuccessful = newResults.filter(r => r === true).length;
+                        
+                        if (totalSuccessful > 0) {
+                            await this.apply(userId, guildId, member, totalSuccessful);
+                        } else {
+                            await this.saveFail(userId, guildId);
+                        }
+                        
+                        const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                        const timeout = new EmbedBuilder()
+                            .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
+                            .setTitle('⏰ Time\'s Up! Challenge Complete')
+                            .setDescription(totalSuccessful > 0 ? 
+                                `**${tierName}** earned based on your ${totalSuccessful} correct answers.` :
+                                'No enhancement earned.')
+                            .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
+                            .setFooter({ text: 'Daily Quiz System' })
+                            .setTimestamp();
+                        await msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
+                    } else {
+                        // Continue to next question after timeout
+                        const deletePromise = msg.delete().catch(() => {});
+                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                        
+                        await Promise.all([deletePromise, nextQuestionPromise]);
+                    }
+                }
+            });
+        } catch (error) { 
+            console.error('[QUIZ] Question error:', error); 
+        }
+    },                
                 // ✅ FIXED: Delete ALL daily voice XP records for fresh start
                 const voiceDeleteResult = await global.xpTracker.db.query('DELETE FROM daily_voice_xp');
                 console.log(`[DAILY CAP] ✅ FORCE DELETED ALL ${voiceDeleteResult.rowCount} voice XP records for complete reset`);// src/commands/daily-quiz.js - Enhanced Daily Quiz System with Channel Restriction
@@ -940,9 +973,9 @@ module.exports = {
     async deleteFailedAttempt(userId, guildId) {
         try {
             await global.xpTracker.db.query('DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 AND tier = 0', [userId, guildId, getDay()]);
-            console.log(`[DAILY BUFF] Deleted failed attempt for user ${userId} to allow retry`);
+            console.log(`[DAILY QUIZ] Deleted failed attempt for user ${userId} to allow retry`);
         } catch (error) {
-            console.error('[DAILY BUFF] Error deleting failed attempt:', error);
+            console.error('[DAILY QUIZ] Error deleting failed attempt:', error);
         }
     },
 
@@ -991,7 +1024,7 @@ module.exports = {
             }
             await this.save(userId, guildId, tier);
         } catch (error) { 
-            console.error('[DAILY BUFF] Apply error:', error); 
+            console.error('[DAILY QUIZ] Apply error:', error); 
         }
     },
 
@@ -1037,7 +1070,7 @@ module.exports = {
             console.log(`[DAILY QUIZ] Set tier ${tier} XP cap: ${tierXPCap.toLocaleString()} XP for ${guildId}:${userId}`);
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error setting tier XP cap:', error);
+            console.error('[DAILY QUIZ] Error setting tier XP cap:', error);
         }
     },
 
@@ -1073,7 +1106,7 @@ module.exports = {
             };
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error getting tier XP cap:', error);
+            console.error('[DAILY QUIZ] Error getting tier XP cap:', error);
             const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
             return {
                 tier: 0,
@@ -1097,7 +1130,7 @@ module.exports = {
             `, [xpGained, userId, guildId, currentDay]);
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error updating tier XP usage:', error);
+            console.error('[DAILY QUIZ] Error updating tier XP usage:', error);
         }
     },
 
@@ -1105,18 +1138,18 @@ module.exports = {
         try {
             await global.xpTracker.db.query('CREATE TABLE IF NOT EXISTS daily_buff_rolls (user_id VARCHAR(20), guild_id VARCHAR(20), date DATE, tier INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, guild_id, date))');
             await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = $4', [userId, guildId, getDay(), tier]);
-            console.log(`[DAILY BUFF] ✅ Saved tier ${tier}`);
+            console.log(`[DAILY QUIZ] ✅ Saved tier ${tier}`);
         } catch (error) { 
-            console.error('[DAILY BUFF] Save error:', error); 
+            console.error('[DAILY QUIZ] Save error:', error); 
         }
     },
 
     async saveFail(userId, guildId) {
         try {
             await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier, created_at) VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = 0', [userId, guildId, getDay()]);
-            console.log('[DAILY BUFF] ❌ Saved failed attempt');
+            console.log('[DAILY QUIZ] ❌ Saved failed attempt');
         } catch (error) { 
-            console.error('[DAILY BUFF] Save failed error:', error); 
+            console.error('[DAILY QUIZ] Save failed error:', error); 
         }
     },
 
@@ -1159,7 +1192,7 @@ module.exports = {
                 member
             };
         } catch (error) {
-            console.error('[DAILY BUFF] Error checking status:', error);
+            console.error('[DAILY QUIZ] Error checking status:', error);
             return {
                 hasDBRecord: false,
                 currentRoles: [],
@@ -1203,9 +1236,9 @@ module.exports = {
                     [userId, guildId]
                 );
                 dbRecordsRemoved = deleteResult.rowCount || 0;
-                console.log(`[DAILY BUFF] Deleted ${dbRecordsRemoved} daily buff records`);
+                console.log(`[DAILY QUIZ] Deleted ${dbRecordsRemoved} daily quiz records`);
             } catch (error) {
-                console.error('[DAILY BUFF] Error deleting database records:', error);
+                console.error('[DAILY QUIZ] Error deleting database records:', error);
             }
 
             return {
@@ -1216,7 +1249,7 @@ module.exports = {
             };
 
         } catch (error) {
-            console.error('[DAILY BUFF] Error in forceRemoveDailyBuff:', error);
+            console.error('[DAILY QUIZ] Error in forceRemoveDailyBuff:', error);
             return {
                 success: false,
                 error: error.message,
