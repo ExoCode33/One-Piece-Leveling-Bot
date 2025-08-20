@@ -743,12 +743,24 @@ module.exports = {
                                     const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
                                     contColl.stop();
                                     
-                                    // OPTIMIZED: Immediate transition with parallel execution
-                                    const deletePromise = btn.message.delete().catch(() => {});
-                                    const nextQuestionPromise = this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
+                                    // ✅ FIXED: Immediate transition for correct answer continue
+                                    console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
                                     
-                                    // Execute both simultaneously for fastest transition
-                                    await Promise.all([deletePromise, nextQuestionPromise]);
+                                    // Show immediate loading message
+                                    const loadingEmbed = new EmbedBuilder()
+                                        .setColor('#00FF00')
+                                        .setTitle(`⚡ Loading Question ${nextQNum}/10...`)
+                                        .setDescription('Preparing next question...')
+                                        .setFooter({ text: testingMode ? '🧪 Testing Mode - Loading...' : 'Loading next question...' });
+                                    
+                                    await contBtn.editReply({ embeds: [loadingEmbed], components: [] });
+                                    
+                                    // Small delay to show loading, then immediate transition
+                                    setTimeout(async () => {
+                                        // Start next question immediately without cleanup
+                                        await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
+                                    }, 500);
+                                    
                                 } else {
                                     // ✅ MODIFIED: Only allow claiming in non-testing mode
                                     if (testingMode) {
@@ -1073,9 +1085,9 @@ module.exports = {
                             
                             await msg.edit({ embeds: [timeoutPrompt], components: [timeoutContinueBtn] });
                             
-                            // Wait for continue button with auto-continue fallback
+                            // Wait for continue button with quiz closure after 60 seconds
                             const timeoutContinueCollector = msg.createMessageComponentCollector({ 
-                                time: 15000, // 15 seconds to click continue, then auto-continue
+                                time: 60000, // ✅ CHANGED: 60 seconds instead of 15 seconds
                                 filter: i => i.user.id === userId && i.customId.startsWith('continue_after_timeout_')
                             });
                             
@@ -1084,11 +1096,24 @@ module.exports = {
                                     await continueBtn.deferUpdate();
                                     timeoutContinueCollector.stop();
                                     
-                                    // Continue to next question
-                                    const deletePromise = msg.delete().catch(() => {});
-                                    const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                    // ✅ FIXED: Immediate transition without cleanup delay
+                                    console.log(`[DAILY QUIZ] User clicked continue after timeout, proceeding to Q${qNum + 1} immediately`);
                                     
-                                    await Promise.all([deletePromise, nextQuestionPromise]);
+                                    // Show immediate loading message
+                                    const loadingEmbed = new EmbedBuilder()
+                                        .setColor('#00FF00')
+                                        .setTitle(`⚡ Loading Question ${qNum + 1}/10...`)
+                                        .setDescription('Preparing next question...')
+                                        .setFooter({ text: testingMode ? '🧪 Testing Mode - Loading...' : 'Loading next question...' });
+                                    
+                                    await continueBtn.editReply({ embeds: [loadingEmbed], components: [] });
+                                    
+                                    // Small delay to show loading, then immediate transition
+                                    setTimeout(async () => {
+                                        // Start next question immediately without cleanup
+                                        await this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                    }, 500);
+                                    
                                 } catch (collectError) {
                                     console.error('[DAILY QUIZ] Error in timeout continue button collector:', collectError);
                                     // Fallback: continue automatically
@@ -1099,32 +1124,84 @@ module.exports = {
                             
                             timeoutContinueCollector.on('end', async (collected) => {
                                 if (collected.size === 0) {
-                                    // Auto-continue after 15 seconds if no button click
+                                    // ✅ CHANGED: Close quiz with current results instead of auto-continuing
                                     try {
-                                        console.log(`[DAILY QUIZ] Auto-continuing Q${qNum + 1} after timeout (15s wait)`);
+                                        console.log(`[DAILY QUIZ] Quiz closed after 60 seconds of inactivity at Q${qNum}`);
                                         
-                                        // Show auto-continue message briefly
-                                        const autoContinueEmbed = new EmbedBuilder()
-                                            .setColor('#FFA500')
-                                            .setTitle(`⏰ Auto-Continuing to Question ${qNum + 1}${testingMode ? ' [Testing]' : ''}`)
-                                            .setDescription('Moving to the next question automatically...')
-                                            .setFooter({ text: testingMode ? '🧪 Testing Mode - Auto-continuing' : 'Auto-continuing' });
+                                        const totalSuccessful = newResults.filter(r => r === true).length;
                                         
-                                        await msg.edit({ embeds: [autoContinueEmbed], components: [] });
-                                        
-                                        // Wait 2 seconds then continue
-                                        setTimeout(async () => {
-                                            const deletePromise = msg.delete().catch(() => {});
-                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                        // ✅ MODIFIED: Apply rewards for current progress in non-testing mode
+                                        if (!testingMode) {
+                                            if (totalSuccessful > 0) {
+                                                await this.apply(userId, guildId, member, totalSuccessful);
+                                            } else {
+                                                await this.saveFail(userId, guildId);
+                                            }
                                             
-                                            await Promise.all([deletePromise, nextQuestionPromise]);
-                                        }, 2000);
+                                            let xpMultiplier = 'Unknown';
+                                            if (totalSuccessful > 0) {
+                                                try {
+                                                    const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
+                                                    if (roleId && global.xpBoostManager) {
+                                                        const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                                        if (boostInfo && boostInfo.boost_multiplier) {
+                                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                                        }
+                                                    }
+                                                } catch (error) {
+                                                    console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                    xpMultiplier = 'Active';
+                                                }
+                                            }
+                                            
+                                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                                            const inactivityEmbed = new EmbedBuilder()
+                                                .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF6B6B')
+                                                .setTitle('💤 Quiz Closed Due to Inactivity')
+                                                .setDescription(totalSuccessful > 0 ? 
+                                                    `**${tierName}** earned based on your progress!\n*${TIER_DESC[totalSuccessful] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}` :
+                                                    '**No Enhancement** earned due to inactivity.')
+                                                .addFields({ 
+                                                    name: '📊 Final Results', 
+                                                    value: `**Correct Answers:** ${totalSuccessful}/${qNum}\n**Questions Attempted:** ${qNum}/10\n**Buff Received:** ${this.getTierEmoji(totalSuccessful)} ${tierName}${totalSuccessful > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
+                                                    inline: false 
+                                                })
+                                                .setFooter({ text: totalSuccessful > 0 ? `${this.getTierEmoji(totalSuccessful)} ${tierName} ${xpMultiplier} Active Until Reset` : 'Quiz Closed - Inactivity Timeout' })
+                                                .setTimestamp();
+                                                
+                                            await msg.edit({ embeds: [inactivityEmbed], components: [] });
+                                        } else {
+                                            // ✅ NEW: Testing mode inactivity closure
+                                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                                            const testingInactivityEmbed = new EmbedBuilder()
+                                                .setColor('#FFA500')
+                                                .setTitle('💤 Testing Closed Due to Inactivity')
+                                                .setDescription(`**Testing Results:** ${totalSuccessful}/${qNum} correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
+                                                .addFields({ 
+                                                    name: '📊 Test Results', 
+                                                    value: `**Correct Answers:** ${totalSuccessful}/${qNum}\n**Questions Attempted:** ${qNum}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
+                                                    inline: false 
+                                                })
+                                                .setFooter({ text: '🧪 Testing Mode Closed - Inactivity Timeout' })
+                                                .setTimestamp();
+                                                
+                                            await msg.edit({ embeds: [testingInactivityEmbed], components: [] });
+                                        }
                                         
-                                    } catch (timeoutError) {
-                                        console.error(`[DAILY QUIZ] Error in auto-continue after timeout:`, timeoutError);
-                                        // Ultimate fallback
-                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
-                                        await nextQuestionPromise;
+                                    } catch (inactivityError) {
+                                        console.error(`[DAILY QUIZ] Error handling inactivity closure:`, inactivityError);
+                                        // Fallback: just show a simple closure message
+                                        try {
+                                            const simpleClosureEmbed = new EmbedBuilder()
+                                                .setColor('#FF6B6B')
+                                                .setTitle('💤 Quiz Closed')
+                                                .setDescription('Quiz ended due to inactivity (60 seconds).')
+                                                .setFooter({ text: testingMode ? '🧪 Testing Mode - Timeout' : 'Daily Quiz - Timeout' });
+                                            
+                                            await msg.edit({ embeds: [simpleClosureEmbed], components: [] });
+                                        } catch (fallbackError) {
+                                            console.error('[DAILY QUIZ] Even fallback closure failed:', fallbackError);
+                                        }
                                     }
                                 }
                             });
