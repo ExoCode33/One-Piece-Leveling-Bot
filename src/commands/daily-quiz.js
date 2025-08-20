@@ -468,42 +468,87 @@ module.exports = {
             }
 
             let msg; 
-            const embed = makeEmbed(time);
+            let embed = makeEmbed(time);
             
-            if (qNum === 1 && rerollsUsed === 0) { 
-                await interaction.editReply({ embeds: [embed], components: rows }); 
-                msg = await interaction.fetchReply(); 
-            } else {
-                // Parallel execution: cleanup old messages while preparing new embed
-                const cleanupPromise = (qNum > 1 || rerollsUsed > 0) ? 
-                    this.cleanupOldQuestionMessages(interaction, qNum, rerollsUsed) : 
-                    Promise.resolve();
+            // Ensure message is properly sent before starting timer
+            try {
+                if (qNum === 1 && rerollsUsed === 0) { 
+                    await interaction.editReply({ embeds: [embed], components: rows }); 
+                    msg = await interaction.fetchReply(); 
+                } else {
+                    // Parallel execution: cleanup old messages while preparing new embed
+                    const cleanupPromise = (qNum > 1 || rerollsUsed > 0) ? 
+                        this.cleanupOldQuestionMessages(interaction, qNum, rerollsUsed) : 
+                        Promise.resolve();
+                    
+                    // Send new message immediately without waiting for cleanup
+                    const sendPromise = interaction.followUp({ embeds: [embed], components: rows });
+                    
+                    // Wait for both to complete (cleanup runs in background)
+                    const [, newMsg] = await Promise.all([cleanupPromise, sendPromise]);
+                    msg = newMsg;
+                }
                 
-                // Send new message immediately without waiting for cleanup
-                const sendPromise = interaction.followUp({ embeds: [embed], components: rows });
+                // Wait a moment to ensure the message is fully loaded
+                await new Promise(resolve => setTimeout(resolve, 500));
+                console.log(`[DAILY QUIZ] Q${qNum} message loaded successfully for ${member.displayName}`);
                 
-                // Wait for both to complete (cleanup runs in background)
-                const [, newMsg] = await Promise.all([cleanupPromise, sendPromise]);
-                msg = newMsg;
+            } catch (error) {
+                console.error(`[DAILY QUIZ] Error loading Q${qNum} message:`, error);
+                // If message fails to load, try again with simpler approach
+                try {
+                    msg = await interaction.followUp({ 
+                        content: `⚠️ Loading Question ${qNum}...`, 
+                        embeds: [embed], 
+                        components: rows 
+                    });
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (retryError) {
+                    console.error(`[DAILY QUIZ] Retry failed for Q${qNum}:`, retryError);
+                    return; // Exit if we can't send the message
+                }
             }
 
-            // Timer updates
+            // Timer updates with safety checks
             const timer = setInterval(async () => {
                 time -= 2;
-                if (time <= 0) { clearInterval(timer); return; }
+                if (time <= 0) { 
+                    clearInterval(timer); 
+                    return; 
+                }
                 try { 
-                    await msg.edit({ embeds: [makeEmbed(time)], components: rows }).catch(() => clearInterval(timer)); 
-                } catch { 
+                    // Check if message still exists before updating
+                    if (msg && msg.edit) {
+                        await msg.edit({ embeds: [makeEmbed(time)], components: rows }).catch(() => {
+                            console.log(`[DAILY QUIZ] Timer update failed for Q${qNum}, stopping timer`);
+                            clearInterval(timer);
+                        }); 
+                    } else {
+                        console.log(`[DAILY QUIZ] Message no longer valid for Q${qNum}, stopping timer`);
+                        clearInterval(timer);
+                    }
+                } catch (error) { 
+                    console.error(`[DAILY QUIZ] Timer error for Q${qNum}:`, error);
                     clearInterval(timer); 
                 }
             }, 2000);
 
-            const collector = msg.createMessageComponentCollector({ time: 20000, filter: i => i.user.id === userId });
+            // Collector with extended time and better error handling
+            const collector = msg.createMessageComponentCollector({ 
+                time: 22000, // Extended to 22 seconds to account for loading time
+                filter: i => i.user.id === userId 
+            });
 
             collector.on('collect', async (btn) => {
                 try {
                     clearInterval(timer); 
-                    await btn.deferUpdate();
+                    
+                    // Ensure we can respond to the interaction
+                    if (!btn.deferred && !btn.replied) {
+                        await btn.deferUpdate();
+                    }
+                    
+                    console.log(`[DAILY QUIZ] Q${qNum} button clicked by ${member.displayName}: ${btn.customId}`);
                     
                     // Handle reroll button - OPTIMIZED
                     if (btn.customId.startsWith('reroll_')) {
@@ -827,6 +872,8 @@ module.exports = {
             collector.on('end', async (collected) => {
                 clearInterval(timer);
                 if (collected.size === 0) {
+                    console.log(`[DAILY QUIZ] Q${qNum} timed out for ${member.displayName} after 22 seconds`);
+                    
                     // Time's up - record as failed answer and continue or end
                     const newResults = [...questionResults, false];
                     
@@ -853,16 +900,44 @@ module.exports = {
                                 inline: false 
                             })
                             .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
-                            .setFooter({ text: 'Daily Quiz System' })
+                            .setFooter({ text: 'Daily Quiz System • Timed Out' })
                             .setTimestamp();
-                        await msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
+                            
+                        try {
+                            await msg.edit({ embeds: [timeout], components: [] });
+                        } catch (error) {
+                            console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
+                        }
                     } else {
-                        // Continue to next question after timeout
-                        const deletePromise = msg.delete().catch(() => {});
-                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
-                        
-                        await Promise.all([deletePromise, nextQuestionPromise]);
+                        // Continue to next question after timeout, but show brief timeout notice
+                        try {
+                            const timeoutNotice = new EmbedBuilder()
+                                .setColor('#FF6B6B')
+                                .setTitle(`⏰ Question ${qNum} Timed Out`)
+                                .setDescription(`Moving to Question ${qNum + 1}/10...`)
+                                .setFooter({ text: 'Auto-continuing in 2 seconds' });
+                            
+                            await msg.edit({ embeds: [timeoutNotice], components: [] });
+                            
+                            // Wait 2 seconds then continue
+                            setTimeout(async () => {
+                                const deletePromise = msg.delete().catch(() => {});
+                                const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                
+                                await Promise.all([deletePromise, nextQuestionPromise]);
+                            }, 2000);
+                            
+                        } catch (error) {
+                            console.error(`[DAILY QUIZ] Error handling timeout transition:`, error);
+                            // Fallback: continue immediately
+                            const deletePromise = msg.delete().catch(() => {});
+                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                            
+                            await Promise.all([deletePromise, nextQuestionPromise]);
+                        }
                     }
+                } else {
+                    console.log(`[DAILY QUIZ] Q${qNum} completed by ${member.displayName} with ${collected.size} interaction(s)`);
                 }
             });
         } catch (error) { 
