@@ -1,4 +1,4 @@
-// src/utils/voiceXPManager.js - COMPLETE Voice XP System with Tier-Specific Daily Caps
+// src/utils/voiceXPManager.js - FIXED Voice XP System with Unified Tier-Specific Daily Caps
 
 class VoiceXPManager {
     constructor(xpTracker) {
@@ -66,69 +66,87 @@ class VoiceXPManager {
         }
     }
 
-    // ✅ FIXED: Get user's daily cap based on their tier-specific boost or default
+    // ✅ COMPLETELY FIXED: Get user's daily cap - UNIFIED SYSTEM
     async getUserDailyCap(userId, guildId, member) {
         try {
-            // First check if user has a tier-specific XP cap from daily quiz
+            // PRIORITY 1: Check tier-specific XP cap from daily quiz system
             const dailyQuizCommand = require('../commands/daily-quiz');
             if (dailyQuizCommand && dailyQuizCommand.getTierXPCap) {
                 const tierCapInfo = await dailyQuizCommand.getTierXPCap(userId, guildId);
                 
                 if (tierCapInfo.hasCustomCap && tierCapInfo.cap > 0) {
-                    console.log(`[VOICE XP] ${member.displayName} has tier ${tierCapInfo.tier} cap: ${tierCapInfo.cap.toLocaleString()} XP`);
+                    console.log(`[VOICE XP] ${member.displayName} has TIER ${tierCapInfo.tier} cap: ${tierCapInfo.cap.toLocaleString()} XP (current: ${tierCapInfo.currentXP})`);
                     return {
                         cap: tierCapInfo.cap,
                         currentXP: tierCapInfo.currentXP,
                         tier: tierCapInfo.tier,
-                        hasCustomCap: true
+                        hasCustomCap: true,
+                        capType: 'tier-specific'
                     };
                 }
             }
             
-            // Fall back to default cap
+            // PRIORITY 2: Fall back to default cap - BUT CHECK BOTH TABLES
             const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            const currentDailyXP = this.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId);
+            
+            // Check old daily_voice_xp table for current progress
+            let currentDailyXP = 0;
+            if (this.xpTracker.dailyResetManager) {
+                currentDailyXP = this.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId);
+            }
+            
+            console.log(`[VOICE XP] ${member.displayName} using DEFAULT cap: ${defaultCap.toLocaleString()} XP (current: ${currentDailyXP})`);
             
             return {
                 cap: defaultCap,
                 currentXP: currentDailyXP,
                 tier: 0,
-                hasCustomCap: false
+                hasCustomCap: false,
+                capType: 'default'
             };
             
         } catch (error) {
             console.error('[VOICE XP] Error getting user daily cap:', error);
             const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            const currentDailyXP = this.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId);
             
             return {
                 cap: defaultCap,
-                currentXP: currentDailyXP,
+                currentXP: 0,
                 tier: 0,
-                hasCustomCap: false
+                hasCustomCap: false,
+                capType: 'error-fallback'
             };
         }
     }
 
-    // ✅ FIXED: Update tier XP usage when user has custom cap
-    async updateTierXPUsage(userId, guildId, xpGained) {
+    // ✅ COMPLETELY FIXED: Update XP usage - UNIFIED SYSTEM
+    async updateXPUsage(userId, guildId, xpGained, capInfo) {
         try {
-            const dailyQuizCommand = require('../commands/daily-quiz');
-            if (dailyQuizCommand && dailyQuizCommand.updateTierXPUsage) {
-                await dailyQuizCommand.updateTierXPUsage(userId, guildId, xpGained);
+            if (capInfo.hasCustomCap) {
+                // Update tier-specific XP usage (daily_buff_xp_caps table)
+                console.log(`[VOICE XP] Updating TIER ${capInfo.tier} XP usage: +${xpGained} for ${userId}`);
+                const dailyQuizCommand = require('../commands/daily-quiz');
+                if (dailyQuizCommand && dailyQuizCommand.updateTierXPUsage) {
+                    await dailyQuizCommand.updateTierXPUsage(userId, guildId, xpGained);
+                }
+            } else {
+                // Update default voice XP tracking (daily_voice_xp table)
+                console.log(`[VOICE XP] Updating DEFAULT XP usage: +${xpGained} for ${userId}`);
+                const currentDay = this.xpTracker.dailyResetManager.getCurrentDay();
+                const newDailyTotal = capInfo.currentXP + xpGained;
+                await this.xpTracker.dailyResetManager.setDailyVoiceXP(userId, guildId, newDailyTotal, currentDay);
             }
         } catch (error) {
-            console.error('[VOICE XP] Error updating tier XP usage:', error);
+            console.error('[VOICE XP] Error updating XP usage:', error);
         }
     }
 
-    // ✅ FIXED: Process voice XP with tier-specific daily caps
+    // ✅ COMPLETELY FIXED: Process voice XP with unified cap system
     async processVoiceXP() {
         const now = Date.now();
         const voiceXPCooldown = parseInt(process.env.VOICE_COOLDOWN) || 60000;
         const minMembers = parseInt(process.env.VOICE_MIN_MEMBERS) || 2;
         const antiAFK = process.env.VOICE_ANTI_AFK === 'true';
-        const currentDay = this.xpTracker.dailyResetManager.getCurrentDay();
 
         for (const [userId, session] of this.voiceSessions.entries()) {
             try {
@@ -161,13 +179,13 @@ class VoiceXPManager {
                 const member = await guild.members.fetch(userId).catch(() => null);
                 if (!member) continue;
 
-                // ✅ FIXED: Get user's specific daily cap (tier-specific or default)
+                // ✅ FIXED: Get unified daily cap info
                 const capInfo = await this.getUserDailyCap(userId, session.guildId, member);
                 const dailyCap = capInfo.cap;
                 const currentDailyXP = capInfo.currentXP;
                 
                 if (currentDailyXP >= dailyCap) {
-                    console.log(`[VOICE XP] ${member.displayName} reached ${capInfo.hasCustomCap ? `tier ${capInfo.tier}` : 'default'} cap: ${currentDailyXP}/${dailyCap}`);
+                    console.log(`[VOICE XP] ${member.displayName} reached ${capInfo.capType} cap: ${currentDailyXP}/${dailyCap} (tier ${capInfo.tier})`);
                     continue;
                 }
 
@@ -210,7 +228,7 @@ class VoiceXPManager {
                     }
                 }
 
-                // ✅ FIXED: Apply tier-specific daily cap properly
+                // ✅ FIXED: Apply unified daily cap properly
                 const newDailyTotal = currentDailyXP + finalXP;
                 let actualXPGain = finalXP;
                 let hitCap = false;
@@ -224,15 +242,8 @@ class VoiceXPManager {
                     continue;
                 }
 
-                // ✅ FIXED: Update the correct daily XP tracking system
-                if (capInfo.hasCustomCap) {
-                    // Update tier-specific XP usage
-                    await this.updateTierXPUsage(userId, session.guildId, actualXPGain);
-                } else {
-                    // Update regular daily voice XP tracking
-                    const updatedDailyXP = currentDailyXP + actualXPGain;
-                    await this.xpTracker.dailyResetManager.setDailyVoiceXP(userId, session.guildId, updatedDailyXP, currentDay);
-                }
+                // ✅ FIXED: Update the correct XP tracking system
+                await this.updateXPUsage(userId, session.guildId, actualXPGain, capInfo);
 
                 // Award the XP (skip multiplier since this is raw voice XP)
                 await this.xpTracker.awardXP(userId, session.guildId, actualXPGain, 'voice', user, true);
@@ -248,6 +259,63 @@ class VoiceXPManager {
             } catch (error) {
                 console.error(`[VOICE XP] Error processing user ${userId}:`, error);
             }
+        }
+    }
+
+    // ✅ NEW: Debug method to check cap conflicts
+    async debugCapConflict(userId, guildId) {
+        try {
+            const guild = this.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
+            if (!member) {
+                console.log(`[CAP DEBUG] User ${userId} not found in guild ${guildId}`);
+                return;
+            }
+
+            console.log(`\n🔍 CAP CONFLICT DEBUG for ${member.displayName}:`);
+            
+            // Check tier-specific cap
+            const dailyQuizCommand = require('../commands/daily-quiz');
+            let tierCapInfo = null;
+            if (dailyQuizCommand && dailyQuizCommand.getTierXPCap) {
+                tierCapInfo = await dailyQuizCommand.getTierXPCap(userId, guildId);
+            }
+            
+            // Check default voice XP
+            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+            const currentDay = this.xpTracker.dailyResetManager.getCurrentDay();
+            const defaultXP = this.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay);
+            
+            console.log(`📊 TIER CAP SYSTEM:`);
+            console.log(`   Has Custom Cap: ${tierCapInfo?.hasCustomCap || false}`);
+            console.log(`   Tier: ${tierCapInfo?.tier || 'N/A'}`);
+            console.log(`   Cap: ${tierCapInfo?.cap?.toLocaleString() || 'N/A'} XP`);
+            console.log(`   Current XP: ${tierCapInfo?.currentXP || 0} XP`);
+            
+            console.log(`📊 DEFAULT CAP SYSTEM:`);
+            console.log(`   Cap: ${defaultCap.toLocaleString()} XP`);
+            console.log(`   Current XP: ${defaultXP} XP`);
+            
+            console.log(`🚨 CONFLICT ANALYSIS:`);
+            if (tierCapInfo?.hasCustomCap) {
+                console.log(`   ✅ User should use TIER ${tierCapInfo.tier} cap (${tierCapInfo.cap.toLocaleString()} XP)`);
+                console.log(`   ❌ System was using DEFAULT cap (${defaultCap.toLocaleString()} XP) - CONFLICT!`);
+                console.log(`   🔧 SOLUTION: Voice XP system should use tier cap instead of default cap`);
+            } else {
+                console.log(`   ✅ User should use DEFAULT cap (${defaultCap.toLocaleString()} XP)`);
+                console.log(`   ✅ No conflict detected`);
+            }
+            console.log(`───────────────────────────────────────\n`);
+            
+            return {
+                tierCap: tierCapInfo,
+                defaultCap: { cap: defaultCap, currentXP: defaultXP },
+                hasConflict: tierCapInfo?.hasCustomCap && tierCapInfo?.cap !== defaultCap
+            };
+            
+        } catch (error) {
+            console.error('[CAP DEBUG] Error in debug analysis:', error);
         }
     }
 }
