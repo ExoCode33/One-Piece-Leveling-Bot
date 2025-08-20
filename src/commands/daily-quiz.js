@@ -1,28 +1,4 @@
-// src/commands/daily-quiz.js - Enhanced Daily Quiz System with Channel Restriction
-// 
-// ✅ NEW ENVIRONMENT VARIABLES NEEDED:
-// 
-// CHANNEL RESTRICTION:
-// DAILY_QUIZ_CHANNEL="123456789012345678"  # Channel ID where quiz can be used
-//
-// FLAT XP REWARD (bypasses all multipliers):
-// DAILY_QUIZ_CORRECT_ANSWER_XP="500"  # Flat 500 XP per correct answer, no multipliers
-//
-// INDIVIDUAL TIER XP CAPS (replace default daily voice XP cap when you have a buff):
-// DAILY_QUIZ_TIER_1_XP_CAP="2000"    # Common buff increases cap to 2,000 XP
-// DAILY_QUIZ_TIER_2_XP_CAP="3000"    # Uncommon buff increases cap to 3,000 XP  
-// DAILY_QUIZ_TIER_3_XP_CAP="5000"    # Rare buff increases cap to 5,000 XP
-// DAILY_QUIZ_TIER_4_XP_CAP="8000"    # Epic buff increases cap to 8,000 XP
-// DAILY_QUIZ_TIER_5_XP_CAP="15000"   # Legendary buff increases cap to 15,000 XP
-// DAILY_QUIZ_TIER_6_XP_CAP="25000"   # Legendary+ buff increases cap to 25,000 XP
-// DAILY_QUIZ_TIER_7_XP_CAP="40000"   # Mythic buff increases cap to 40,000 XP
-// DAILY_QUIZ_TIER_8_XP_CAP="60000"   # Mythic+ buff increases cap to 60,000 XP
-// DAILY_QUIZ_TIER_9_XP_CAP="90000"   # Divine buff increases cap to 90,000 XP
-// DAILY_QUIZ_TIER_10_XP_CAP="150000" # Divine Perfect buff increases cap to 150,000 XP
-//
-// EXISTING VARIABLES (updated naming):
-// DAILY_QUIZ_TIER_1_ROLE="role_id" # Role IDs for each tier
-// DAILY_QUIZ_TIER_2_ROLE="role_id" # etc...
+// src/commands/daily-quiz.js - COMPLETE Fixed Daily Quiz System with Full Tier 1-10 Support
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -1088,6 +1064,7 @@ module.exports = {
         }
     },
 
+    // ✅ FIXED: Check for ALL 10 tiers in getBuff function
     async getBuff(userId, guildId, member) {
         try {
             const r = await global.xpTracker.db.query('SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]);
@@ -1095,10 +1072,12 @@ module.exports = {
                 const t = r.rows[0].tier; 
                 return { tier: t, name: t === 0 ? 'Challenge Failed' : TIER_NAMES[t], multiplier: t === 0 ? 'None' : 'Active' }; 
             }
-            // Check for all 10 tiers
+            // ✅ CHANGED: Check for ALL 10 tiers instead of just 6
             for (let i = 1; i <= 10; i++) { 
                 const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`]; 
-                if (roleId && member.roles.cache.has(roleId)) return { tier: i, name: TIER_NAMES[i], multiplier: 'Active' }; 
+                if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                    return { tier: i, name: TIER_NAMES[i], multiplier: 'Active' }; 
+                }
             }
             return { tier: 0, name: 'No Enhancement', multiplier: 'None' };
         } catch { 
@@ -1106,12 +1085,13 @@ module.exports = {
         }
     },
 
+    // ✅ FIXED: Handle ALL 10 tiers in apply function
     async apply(userId, guildId, member, tier) {
         try {
-            // Remove all tier roles including tier 10
+            // ✅ CHANGED: Remove all tier roles including tier 10
             for (let i = 1; i <= 10; i++) { 
                 const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`]; 
-                if (roleId && member.roles.cache.has(roleId)) { 
+                if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) { 
                     const role = member.guild.roles.cache.get(roleId); 
                     if (role) await member.roles.remove(role); 
                 } 
@@ -1119,12 +1099,12 @@ module.exports = {
 
             if (tier > 0) { 
                 const roleId = process.env[`DAILY_QUIZ_TIER_${tier}_ROLE`]; 
-                if (roleId) { 
+                if (roleId && roleId !== `role_id_${tier}`) { 
                     const role = member.guild.roles.cache.get(roleId); 
                     if (role) { 
                         await member.roles.add(role); 
                         
-                        // ✅ NEW: Set individual XP cap based on tier
+                        // ✅ Set individual XP cap based on tier
                         await this.setTierXPCap(userId, guildId, tier);
                         
                         console.log(`[DAILY BUFF] ✅ Awarded ${role.name} with tier-specific XP cap`); 
@@ -1137,7 +1117,7 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Set individual XP cap based on daily buff tier
+    // ✅ Set individual XP cap based on tier
     async setTierXPCap(userId, guildId, tier) {
         try {
             // Get tier-specific XP cap from environment variables
@@ -1183,7 +1163,7 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Get current tier XP cap for a user
+    // ✅ FIXED: Get current tier XP cap for a user - Check ALL 10 tiers
     async getTierXPCap(userId, guildId) {
         try {
             const currentDay = getCurrentDayKey();
@@ -1202,6 +1182,30 @@ module.exports = {
                     remaining: Math.max(0, xp_cap - current_xp),
                     hasCustomCap: true
                 };
+            }
+
+            // ✅ NEW: Check if user has any tier role (1-10) and get corresponding cap
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            
+            if (member) {
+                // ✅ CHANGED: Check ALL 10 tiers from highest to lowest
+                for (let i = 10; i >= 1; i--) { 
+                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const tierXPCap = parseInt(process.env[`DAILY_QUIZ_TIER_${i}_XP_CAP`]);
+                        if (tierXPCap && tierXPCap > 0) {
+                            console.log(`[TIER CAP DEBUG] Found user ${member.displayName} with tier ${i} role, cap: ${tierXPCap}`);
+                            return {
+                                tier: i,
+                                cap: tierXPCap,
+                                currentXP: 0,
+                                remaining: tierXPCap,
+                                hasCustomCap: true
+                            };
+                        }
+                    }
+                }
             }
 
             // Fall back to default cap if no tier-specific cap
@@ -1227,7 +1231,7 @@ module.exports = {
         }
     },
 
-    // ✅ NEW: Update tier XP usage
+    // ✅ Update tier XP usage
     async updateTierXPUsage(userId, guildId, xpGained) {
         try {
             const currentDay = getCurrentDayKey();
@@ -1278,7 +1282,7 @@ module.exports = {
             const currentRoles = [];
 
             if (member) {
-                // Check for all 10 tiers
+                // ✅ CHANGED: Check for all 10 tiers
                 for (let i = 1; i <= 10; i++) {
                     const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
                     if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
@@ -1321,7 +1325,7 @@ module.exports = {
             const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
 
             if (member) {
-                // Remove all 10 tier roles
+                // ✅ CHANGED: Remove all 10 tier roles
                 for (let i = 1; i <= 10; i++) {
                     const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
                     if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
