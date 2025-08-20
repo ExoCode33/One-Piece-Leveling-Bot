@@ -1,4 +1,4 @@
-// src/utils/xpLogger.js - Fixed with proper level 0 handling and consistent red theme
+// src/utils/xpLogger.js - FIXED with all red text, no progress bar, tier-specific caps
 
 const { EmbedBuilder } = require('discord.js');
 
@@ -56,6 +56,43 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
             return xp !== undefined && xp !== null ? xp.toLocaleString() : '0';
         };
 
+        // ✅ NEW: Helper function to get user's tier-specific daily cap
+        const getUserTierCap = async (userId, guildId) => {
+            try {
+                // Try to get tier-specific cap from daily quiz
+                const dailyQuizCommand = require('../commands/daily-quiz');
+                if (dailyQuizCommand && dailyQuizCommand.getTierXPCap) {
+                    const tierCapInfo = await dailyQuizCommand.getTierXPCap(userId, guildId);
+                    if (tierCapInfo.hasCustomCap && tierCapInfo.cap > 0) {
+                        return {
+                            cap: tierCapInfo.cap,
+                            currentXP: tierCapInfo.currentXP,
+                            tier: tierCapInfo.tier,
+                            hasCustomCap: true
+                        };
+                    }
+                }
+                
+                // Fall back to default cap
+                const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+                return {
+                    cap: defaultCap,
+                    currentXP: 0,
+                    tier: 0,
+                    hasCustomCap: false
+                };
+            } catch (error) {
+                console.error('[XP LOG] Error getting tier cap:', error);
+                const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
+                return {
+                    cap: defaultCap,
+                    currentXP: 0,
+                    tier: 0,
+                    hasCustomCap: false
+                };
+            }
+        };
+
         // Configure embed based on XP type
         switch (type) {
             case 'message':
@@ -79,8 +116,15 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                 break;
 
             case 'voice':
+                // ✅ FIXED: Get user's tier-specific daily cap
+                const tierCapInfo = await getUserTierCap(user.id, additionalInfo.guildId);
+                const dailyCap = tierCapInfo.cap;
+                const dailyXP = tierCapInfo.currentXP;
+                const remainingXP = Math.max(0, dailyCap - dailyXP);
+                const capPercentage = Math.round((dailyXP / dailyCap) * 100);
+                
                 const sessionDuration = additionalInfo.sessionDuration || 1;
-                const dailyCap = additionalInfo.dailyCapped ? ' (DAILY CAP REACHED)' : '';
+                const dailyCapped = additionalInfo.dailyCapped ? ' (DAILY CAP REACHED)' : '';
                 const memberCount = additionalInfo.memberCount || 'Unknown';
                 
                 embed
@@ -88,10 +132,22 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         name: '🚨 MARINE INTELLIGENCE BUREAU',
                         iconURL: user.displayAvatarURL({ size: 32 })
                     })
-                    .setTitle('VOICE ACTIVITY DETECTED')
-                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${sessionDuration} minute(s)\n- MEMBERS PRESENT: ${memberCount}\n- XP AWARDED: +${xpGain}${dailyCap}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``);
+                    .setTitle('🔴 🎤 VOICE ACTIVITY DETECTED')
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- GUILD: ${additionalInfo.guildName || 'Unknown'}\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- DURATION: ${sessionDuration} minute(s)\n- MEMBERS PRESENT: ${memberCount}\n- XP AWARDED: +${xpGain}${dailyCapped}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n\`\`\``)
+                    .addFields(
+                        {
+                            name: '📊 Daily Voice XP Progress',
+                            value: `\`\`\`diff\n- Daily XP: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} (${capPercentage}%)\n- Remaining: ${remainingXP.toLocaleString()} XP\n- Tier: ${tierCapInfo.hasCustomCap ? `Tier ${tierCapInfo.tier}` : 'Default'}\n- Reset Day: ${getCurrentDay()}\n\`\`\``,
+                            inline: true
+                        },
+                        {
+                            name: '🎯 Status',
+                            value: `\`\`\`diff\n${dailyXP >= dailyCap ? '- 🚨 DAILY CAP REACHED' : `- ⏱️ ${remainingXP.toLocaleString()} XP until cap`}\n\`\`\``,
+                            inline: true
+                        }
+                    );
                 break;
-
+                
             case 'levelup':
                 const { getBountyForLevel } = require('./bountySystem');
                 const oldLevel = additionalInfo.oldLevel !== undefined ? additionalInfo.oldLevel : 0;
@@ -127,7 +183,7 @@ async function sendXPLog(client, type, user, xpGain, additionalInfo = {}) {
                         iconURL: user.displayAvatarURL({ size: 32 })
                     })
                     .setTitle('UNKNOWN ACTIVITY DETECTED')
-                    .setDescription(`\`\`\`ansi\n\u001b[0;31m- SUBJECT: ${user.username} (${user.id})\n- ACTIVITY TYPE: ${type.toUpperCase()}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n- XP SOURCE: ${type.toUpperCase()}\u001b[0m\n\`\`\``);
+                    .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- ACTIVITY TYPE: ${type.toUpperCase()}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${formatXP(additionalInfo.totalXP)}\n- CURRENT LEVEL: ${formatLevel(additionalInfo.currentLevel)}\n- XP SOURCE: ${type.toUpperCase()}\n\`\`\``);
                 break;
         }
 
@@ -178,6 +234,7 @@ async function logXPActivity(client, type, user, guildId, xpGain, extraInfo = {}
         // Combine info
         const logInfo = {
             guildName,
+            guildId, // ✅ FIXED: Add guildId for tier cap checking
             totalXP,
             currentLevel,
             ...extraInfo
@@ -187,6 +244,29 @@ async function logXPActivity(client, type, user, guildId, xpGain, extraInfo = {}
     } catch (error) {
         console.error('[XP LOG] Error in logXPActivity:', error);
     }
+}
+
+// ✅ NEW: Helper function to get current day
+function getCurrentDay() {
+    const now = new Date();
+    const edtOffset = isEDT(now) ? -4 : -5;
+    const edtTime = new Date(now.getTime() + (edtOffset * 60 * 60 * 1000));
+    
+    if (edtTime.getHours() < 3) {
+        edtTime.setDate(edtTime.getDate() - 1);
+    }
+    
+    return edtTime.toISOString().split('T')[0];
+}
+
+// ✅ NEW: Helper function to check EDT
+function isEDT(date) {
+    const year = date.getFullYear();
+    const marchSecondSunday = new Date(year, 2, 8);
+    marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
+    const novemberFirstSunday = new Date(year, 10, 1);
+    novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
+    return date >= marchSecondSunday && date < novemberFirstSunday;
 }
 
 /**
