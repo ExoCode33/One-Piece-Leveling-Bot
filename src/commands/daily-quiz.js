@@ -233,25 +233,23 @@ module.exports = {
             // ✅ NEW: Check if testing mode is active
             const testingMode = isTestingMode();
             
-            // ✅ NEW: Check if command is used in the correct channel (skip in testing mode)
-            if (!testingMode) {
-                const allowedChannelId = process.env.DAILY_QUIZ_CHANNEL;
+            // ✅ FIXED: Check if command is used in the correct channel (still enforced in testing mode)
+            const allowedChannelId = process.env.DAILY_QUIZ_CHANNEL;
+            
+            if (allowedChannelId && interaction.channel.id !== allowedChannelId) {
+                const allowedChannel = interaction.guild.channels.cache.get(allowedChannelId);
+                const channelMention = allowedChannel ? `<#${allowedChannelId}>` : `channel ID: ${allowedChannelId}`;
                 
-                if (allowedChannelId && interaction.channel.id !== allowedChannelId) {
-                    const allowedChannel = interaction.guild.channels.cache.get(allowedChannelId);
-                    const channelMention = allowedChannel ? `<#${allowedChannelId}>` : `channel ID: ${allowedChannelId}`;
-                    
-                    return await interaction.reply({
-                        embeds: [new EmbedBuilder()
-                            .setColor('#FF6B6B')
-                            .setTitle('🚫 Wrong Channel')
-                            .setDescription(`The daily quiz can only be used in ${channelMention}.\n\nPlease go to the correct channel to take the challenge!`)
-                            .setFooter({ text: 'Daily Quiz • Channel Restriction' })
-                            .setTimestamp()
-                        ],
-                        ephemeral: true
-                    });
-                }
+                return await interaction.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#FF6B6B')
+                        .setTitle(`🚫 Wrong Channel${testingMode ? ' [Testing Mode]' : ''}`)
+                        .setDescription(`The daily quiz can only be used in ${channelMention}.${testingMode ? '\n\n🧪 **Testing Mode Active** - but channel restriction still applies!' : ''}\n\nPlease go to the correct channel to take the challenge!`)
+                        .setFooter({ text: testingMode ? '🧪 Testing Mode • Channel Restriction Active' : 'Daily Quiz • Channel Restriction' })
+                        .setTimestamp()
+                    ],
+                    ephemeral: true
+                });
             }
 
             const userId = interaction.user.id, guildId = interaction.guild.id, member = interaction.member;
@@ -808,63 +806,98 @@ module.exports = {
                             // Show continue prompt for failed questions (except last question)
                             if (qNum < 10) {
                                 const successfulAnswers = newResults.filter(r => r === true).length;
-                                const failurePrompt = new EmbedBuilder()
-                                    .setColor('#FF6B6B')
-                                    .setTitle(`❌ Question ${qNum} Failed${testingMode ? ' [Testing]' : ''}`)
-                                    .setDescription(`**Correct Answer:** ${q.answer}\n\n**Progress:** ${successfulAnswers} successful answers out of ${qNum} attempted.${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                                    .addFields({ 
-                                        name: '🎯 Next Step', 
-                                        value: `Question ${qNum + 1}/10 is ready.\nAre you ready to continue?`, 
-                                        inline: false 
-                                    })
-                                    .setFooter({ text: testingMode ? '🧪 Testing Mode - Take your time to review' : 'Take your time to review before continuing' })
-                                    .setTimestamp();
                                 
-                                const continueBtn = new ActionRowBuilder().addComponents(
-                                    new ButtonBuilder()
-                                        .setCustomId(`continue_after_fail_${userId}_${qNum + 1}`)
-                                        .setLabel(`Continue to Question ${qNum + 1}`)
-                                        .setStyle(ButtonStyle.Primary)
-                                        .setEmoji('▶️')
-                                );
-                                
+                                // ✅ FIXED: Check if interaction is still valid before editing
                                 try {
+                                    // Test if the interaction is still valid by checking if we can edit it
+                                    if (!btn.replied && !btn.deferred) {
+                                        console.log('[DAILY BUFF] Interaction not ready for editing, auto-continuing...');
+                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                        await nextQuestionPromise;
+                                        return;
+                                    }
+                                    
+                                    const failurePrompt = new EmbedBuilder()
+                                        .setColor('#FF6B6B')
+                                        .setTitle(`❌ Question ${qNum} Failed${testingMode ? ' [Testing]' : ''}`)
+                                        .setDescription(`**Correct Answer:** ${q.answer}\n\n**Progress:** ${successfulAnswers} successful answers out of ${qNum} attempted.${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                                        .addFields({ 
+                                            name: '🎯 Next Step', 
+                                            value: `Question ${qNum + 1}/10 is ready.\nAre you ready to continue?`, 
+                                            inline: false 
+                                        })
+                                        .setFooter({ text: testingMode ? '🧪 Testing Mode - Take your time to review' : 'Take your time to review before continuing' })
+                                        .setTimestamp();
+                                    
+                                    const continueBtn = new ActionRowBuilder().addComponents(
+                                        new ButtonBuilder()
+                                            .setCustomId(`continue_after_fail_${userId}_${qNum + 1}`)
+                                            .setLabel(`Continue to Question ${qNum + 1}`)
+                                            .setStyle(ButtonStyle.Primary)
+                                            .setEmoji('▶️')
+                                    );
+                                    
+                                    // ✅ FIXED: Safer edit with error handling
                                     await btn.editReply({ embeds: [failurePrompt], components: [continueBtn] });
                                     
-                                    // Wait for continue button
+                                    // Wait for continue button with better error handling
                                     const continueCollector = btn.message.createMessageComponentCollector({ 
                                         time: 30000, 
                                         filter: i => i.user.id === userId && i.customId.startsWith('continue_after_fail_')
                                     });
                                     
                                     continueCollector.on('collect', async (continueBtn) => {
-                                        await continueBtn.deferUpdate();
-                                        continueCollector.stop();
-                                        
-                                        // Continue to next question
-                                        const deletePromise = btn.message.delete().catch(() => {});
-                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                        
-                                        await Promise.all([deletePromise, nextQuestionPromise]);
+                                        try {
+                                            await continueBtn.deferUpdate();
+                                            continueCollector.stop();
+                                            
+                                            // Continue to next question
+                                            const deletePromise = btn.message.delete().catch(() => {});
+                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                            
+                                            await Promise.all([deletePromise, nextQuestionPromise]);
+                                        } catch (collectError) {
+                                            console.error('[DAILY BUFF] Error in continue button collector:', collectError);
+                                            // Fallback: continue automatically
+                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                            await nextQuestionPromise;
+                                        }
                                     });
                                     
                                     continueCollector.on('end', async (collected) => {
                                         if (collected.size === 0) {
                                             // Auto-continue after timeout
-                                            const deletePromise = btn.message.delete().catch(() => {});
-                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                            
-                                            await Promise.all([deletePromise, nextQuestionPromise]);
+                                            try {
+                                                const deletePromise = btn.message.delete().catch(() => {});
+                                                const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                                
+                                                await Promise.all([deletePromise, nextQuestionPromise]);
+                                            } catch (timeoutError) {
+                                                console.error('[DAILY BUFF] Error in collector timeout:', timeoutError);
+                                                // Ultimate fallback
+                                                const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                                await nextQuestionPromise;
+                                            }
                                         }
                                     });
                                     
                                 } catch (error) {
-                                    console.error('[DAILY BUFF] Error showing continue prompt:', error);
-                                    // Fallback: continue automatically
-                                    const deletePromise = btn.message.delete().catch(() => {});
-                                    const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                    console.error('[DAILY BUFF] Error showing continue prompt (message may be deleted):', error);
                                     
-                                    await Promise.all([deletePromise, nextQuestionPromise]);
+                                    // ✅ FIXED: If the interaction/message is gone, just continue automatically
+                                    if (error.code === 10008 || error.message.includes('Unknown Message') || error.message.includes('Unknown interaction')) {
+                                        console.log('[DAILY BUFF] Message/interaction expired, auto-continuing to next question...');
+                                    } else {
+                                        console.log('[DAILY BUFF] Unexpected error, auto-continuing to next question...');
+                                    }
+                                    
+                                    // Auto-continue without trying to edit the interaction
+                                    try {
+                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                        await nextQuestionPromise;
+                                    } catch (continueError) {
+                                        console.error('[DAILY BUFF] Error auto-continuing after failed prompt:', continueError);
+                                    }
                                 }
                             } else {
                                 // Last question - handle completion
@@ -1101,52 +1134,70 @@ module.exports = {
         }
     },
 
-    // Show answer reveal with countdown - MODIFIED for testing mode
+    // Show answer reveal with countdown - MODIFIED for testing mode with better error handling
     async showAnswerReveal(btnInteraction, question, questionNum, member, testingMode = false) {
         try {
             console.log(`[ANSWER REVEAL] Showing correct answer for Q${questionNum}: "${question.answer}" to ${member.displayName}${testingMode ? ' [TESTING]' : ''}`);
             
+            // ✅ FIXED: Check if the interaction is still valid before proceeding
+            if (!btnInteraction.replied && !btnInteraction.deferred) {
+                console.log('[ANSWER REVEAL] Interaction not ready, skipping answer reveal');
+                return;
+            }
+            
             // Get the user's wrong answer from the button interaction
             const selectedOption = question.options[parseInt(btnInteraction.customId.split('_')[3])];
             
-            const revealEmbed = new EmbedBuilder()
-                .setColor('#FF0000')
-                .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
-                .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                .addFields({
-                    name: '⏳ Processing Results',
-                    value: 'Results in **3** seconds...',
-                    inline: false
-                })
-                .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
-                .setTimestamp();
+            try {
+                const revealEmbed = new EmbedBuilder()
+                    .setColor('#FF0000')
+                    .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
+                    .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                    .addFields({
+                        name: '⏳ Processing Results',
+                        value: 'Results in **3** seconds...',
+                        inline: false
+                    })
+                    .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
+                    .setTimestamp();
 
-            await btnInteraction.editReply({ embeds: [revealEmbed], components: [] });
-            
-            // Start 3-second countdown
-            for (let i = 2; i >= 1; i--) {
-                setTimeout(async () => {
-                    try {
-                        const countdownEmbed = new EmbedBuilder()
-                            .setColor('#FF0000')
-                            .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
-                            .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                            .addFields({
-                                name: '⏳ Processing Results',
-                                value: `Results in **${i}** second${i !== 1 ? 's' : ''}...`,
-                                inline: false
-                            })
-                            .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
-                            .setTimestamp();
-                        
-                        await btnInteraction.editReply({ embeds: [countdownEmbed], components: [] });
-                    } catch (error) {
-                        console.error(`[ANSWER REVEAL] Error updating countdown ${i}:`, error);
-                    }
-                }, (3 - i) * 1000);
+                await btnInteraction.editReply({ embeds: [revealEmbed], components: [] });
+                
+                // Start 3-second countdown with better error handling
+                for (let i = 2; i >= 1; i--) {
+                    setTimeout(async () => {
+                        try {
+                            // ✅ FIXED: Check if we can still edit the interaction
+                            if (!btnInteraction.replied && !btnInteraction.deferred) {
+                                return; // Skip if interaction is not valid
+                            }
+                            
+                            const countdownEmbed = new EmbedBuilder()
+                                .setColor('#FF0000')
+                                .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
+                                .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                                .addFields({
+                                    name: '⏳ Processing Results',
+                                    value: `Results in **${i}** second${i !== 1 ? 's' : ''}...`,
+                                    inline: false
+                                })
+                                .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
+                                .setTimestamp();
+                            
+                            await btnInteraction.editReply({ embeds: [countdownEmbed], components: [] });
+                        } catch (error) {
+                            console.error(`[ANSWER REVEAL] Error updating countdown ${i} (interaction may be expired):`, error);
+                            // Don't throw error, just log and continue
+                        }
+                    }, (3 - i) * 1000);
+                }
+            } catch (error) {
+                console.error('[ANSWER REVEAL] Error showing initial answer reveal (interaction may be expired):', error);
+                // Don't throw error, just log and continue
             }
         } catch (error) {
-            console.error('[ANSWER REVEAL] Error showing answer:', error);
+            console.error('[ANSWER REVEAL] Error in showAnswerReveal:', error);
+            // Don't throw error, just log and continue
         }
     },
 
