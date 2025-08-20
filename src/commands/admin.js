@@ -2,12 +2,12 @@
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-// ADMIN USER IDs - Replace with actual Discord user IDs
-const ADMIN_USER_IDS = [
-    '123456789012345678', // Replace with first admin user ID
-    '987654321098765432', // Replace with second admin user ID
-    // Add more admin user IDs as needed
-];
+// ADMIN USER IDs - Load from environment variables
+const ADMIN_USER_IDS = process.env.ADMIN_USER_IDS ? 
+    process.env.ADMIN_USER_IDS.split(',').map(id => id.trim()) : 
+    ['123456789012345678']; // Fallback admin ID
+
+console.log('[ADMIN] Authorized admin user IDs:', ADMIN_USER_IDS);
 
 module.exports = {
     data: new SlashCommandBuilder()
