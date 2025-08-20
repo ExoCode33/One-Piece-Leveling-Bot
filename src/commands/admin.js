@@ -1,6 +1,13 @@
-// src/commands/admin.js - Complete Updated Admin Command with Fixed Daily Buff Removal
+// src/commands/admin.js - Fixed Admin Command with User-based Authentication
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+
+// ADMIN USER IDs - Replace with actual Discord user IDs
+const ADMIN_USER_IDS = [
+    '123456789012345678', // Replace with first admin user ID
+    '987654321098765432', // Replace with second admin user ID
+    // Add more admin user IDs as needed
+];
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,10 +25,10 @@ module.exports = {
                     { name: '🔄 Set User XP Total', value: 'set-xp' },
                     { name: '🗑️ Reset User Completely', value: 'reset-user' },
                     { name: '📊 View User Stats', value: 'user-stats' },
-                    { name: '📋 Bot Statistics [CLASSIFIED]', value: 'bot-stats' },
-                    { name: '🔧 Database Maintenance [CLASSIFIED]', value: 'maintenance' },
-                    { name: '☢️ Nuclear Protocol [CLASSIFIED]', value: 'nuclear' },
-                    { name: '🎰 Remove Daily Buff [FIXED]', value: 'remove-daily-buff' }
+                    { name: '📋 Bot Statistics', value: 'bot-stats' },
+                    { name: '🔧 Database Maintenance', value: 'maintenance' },
+                    { name: '☢️ Nuclear Protocol', value: 'nuclear' },
+                    { name: '🎰 Remove Daily Buff', value: 'remove-daily-buff' }
                 )
         )
         .addUserOption(option =>
@@ -43,21 +50,15 @@ module.exports = {
                 .setName('reason')
                 .setDescription('Reason for this action')
                 .setRequired(false)
-        )
-        .addStringOption(option =>
-            option
-                .setName('password')
-                .setDescription('Security password (required for classified operations)')
-                .setRequired(false)
         ),
 
     async execute(interaction) {
         try {
-            // Double-check administrator permissions
-            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            // Check if user is authorized admin
+            if (!ADMIN_USER_IDS.includes(interaction.user.id)) {
                 return await interaction.reply({
-                    content: '❌ **Access Denied**\n\n⚓ **Marine Command Center** requires **Administrator** permissions.\n\nOnly high-ranking Marine officers may access these commands.',
-                    flags: 64 // MessageFlags.Ephemeral
+                    content: '❌ **Access Denied**\n\n⚓ **Marine Command Center** requires special authorization.\n\nOnly authorized Marine officers may access these commands.',
+                    ephemeral: true
                 });
             }
 
@@ -65,36 +66,14 @@ module.exports = {
             const targetUser = interaction.options.getUser('user');
             const amount = interaction.options.getInteger('amount');
             const reason = interaction.options.getString('reason') || 'No reason specified';
-            const password = interaction.options.getString('password');
             const { db } = require('../../index'); // Get database from index.js
-
-            // Handle classified operations that require password
-            if (['bot-stats', 'maintenance', 'nuclear'].includes(action)) {
-                if (password !== '30389') {
-                    const deniedEmbed = new EmbedBuilder()
-                        .setColor(0xFF0000)
-                        .setTitle('🚨 CLASSIFIED ACCESS DENIED')
-                        .setDescription('```diff\n- INVALID SECURITY AUTHORIZATION CODE\n- ACCESS DENIED - INCORRECT PASSWORD\n- SECURITY BREACH LOGGED```')
-                        .addFields({
-                            name: '⚠️ Security Alert',
-                            value: '```css\n[CRITICAL] Unauthorized classified access attempt\n[CRITICAL] Administrator credentials compromised\n[CRITICAL] Recommend immediate security audit```'
-                        })
-                        .setTimestamp()
-                        .setFooter({ text: '🚨 SECURITY VIOLATION DETECTED 🚨' });
-
-                    return await interaction.reply({
-                        embeds: [deniedEmbed],
-                        flags: 64 // MessageFlags.Ephemeral
-                    });
-                }
-            }
 
             // Handle XP operations that require a target user
             if (['add-xp', 'remove-xp', 'set-xp', 'reset-user', 'user-stats', 'remove-daily-buff'].includes(action)) {
                 if (!targetUser) {
                     return await interaction.reply({
                         content: '❌ **Missing Target User**\n\nPlease specify a user for this operation.',
-                        flags: 64 // MessageFlags.Ephemeral
+                        ephemeral: true
                     });
                 }
 
@@ -102,7 +81,7 @@ module.exports = {
                 if (targetUser.bot) {
                     return await interaction.reply({
                         content: '❌ **Invalid Target**\n\nCannot modify XP or buffs for bot accounts.',
-                        flags: 64 // MessageFlags.Ephemeral
+                        ephemeral: true
                     });
                 }
             }
@@ -112,7 +91,7 @@ module.exports = {
                     if (!amount || amount < 1 || amount > 10000) {
                         return await interaction.reply({
                             content: '❌ **Invalid Amount**\n\nPlease specify an amount between 1 and 10,000 XP.',
-                            flags: 64 // MessageFlags.Ephemeral
+                            ephemeral: true
                         });
                     }
                     await this.handleAddXP(interaction, targetUser, amount, reason);
@@ -122,7 +101,7 @@ module.exports = {
                     if (!amount || amount < 1 || amount > 10000) {
                         return await interaction.reply({
                             content: '❌ **Invalid Amount**\n\nPlease specify an amount between 1 and 10,000 XP.',
-                            flags: 64 // MessageFlags.Ephemeral
+                            ephemeral: true
                         });
                     }
                     await this.handleRemoveXP(interaction, targetUser, amount, reason);
@@ -132,7 +111,7 @@ module.exports = {
                     if (amount === null || amount < 0 || amount > 100000) {
                         return await interaction.reply({
                             content: '❌ **Invalid Amount**\n\nPlease specify an amount between 0 and 100,000 XP.',
-                            flags: 64 // MessageFlags.Ephemeral
+                            ephemeral: true
                         });
                     }
                     await this.handleSetXP(interaction, targetUser, amount, reason);
@@ -165,7 +144,7 @@ module.exports = {
                 default:
                     return await interaction.reply({
                         content: '❌ **Unknown Action**\n\nPlease use a valid action from the dropdown.',
-                        flags: 64 // MessageFlags.Ephemeral
+                        ephemeral: true
                     });
             }
 
@@ -184,14 +163,14 @@ module.exports = {
                 .setFooter({ text: 'Marine Intelligence Network' });
 
             if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ embeds: [errorEmbed], flags: 64 });
+                await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
             } else {
-                await interaction.reply({ embeds: [errorEmbed], flags: 64 });
+                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
             }
         }
     },
 
-    // ✅ FIXED: Updated handle daily buff removal method
+    // FIXED: Updated handle daily buff removal method
     async handleRemoveDailyBuff(interaction, targetUser, reason) {
         try {
             await interaction.deferReply();
@@ -203,19 +182,28 @@ module.exports = {
                 });
             }
 
-            // ✅ FIXED: Use the new checkDailyBuffStatus function from daily-buff command
-            let buffStatus = null;
+            // Check and create daily_buff_rolls table if it doesn't exist
             try {
-                // Import the daily-buff command functions
-                const dailyBuffCommand = require('./daily-buff');
-                buffStatus = await dailyBuffCommand.checkDailyBuffStatus(targetUser.id, interaction.guild.id);
+                await global.xpTracker.db.query(`
+                    CREATE TABLE IF NOT EXISTS daily_buff_rolls (
+                        user_id VARCHAR(20) NOT NULL,
+                        guild_id VARCHAR(20) NOT NULL,
+                        date DATE NOT NULL,
+                        tier INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (user_id, guild_id, date)
+                    )
+                `);
+                console.log('[ADMIN] Ensured daily_buff_rolls table exists');
             } catch (error) {
-                console.error('[ADMIN] Error checking daily buff status:', error);
+                console.error('[ADMIN] Error creating daily_buff_rolls table:', error);
                 return await interaction.editReply({
-                    content: '❌ **System Error**\n\nCould not check daily buff status. Please try again.'
+                    content: '❌ **Database Error**\n\nCould not access daily buff system. Please try again.'
                 });
             }
 
+            // Check current buff status
+            const buffStatus = await this.checkDailyBuffStatus(targetUser.id, interaction.guild.id);
             console.log('[ADMIN] Daily buff status:', buffStatus);
 
             // Check if user has any buff (either in database or roles)
@@ -237,18 +225,8 @@ module.exports = {
                 return await interaction.editReply({ embeds: [embed] });
             }
 
-            // ✅ FIXED: Use the new forceRemoveDailyBuff function
-            let removalResult = null;
-            try {
-                const dailyBuffCommand = require('./daily-buff');
-                removalResult = await dailyBuffCommand.forceRemoveDailyBuff(targetUser.id, interaction.guild.id, `Admin removal: ${reason}`);
-            } catch (error) {
-                console.error('[ADMIN] Error removing daily buff:', error);
-                return await interaction.editReply({
-                    content: '❌ **Removal Failed**\n\nFailed to remove daily buff. Please try again.'
-                });
-            }
-
+            // Force remove daily buff
+            const removalResult = await this.forceRemoveDailyBuff(targetUser.id, interaction.guild.id, `Admin removal: ${reason}`);
             console.log('[ADMIN] Removal result:', removalResult);
 
             if (!removalResult.success) {
@@ -259,8 +237,8 @@ module.exports = {
 
             // Create success response
             const embed = new EmbedBuilder()
-                .setColor('#FF6B6B')
-                .setTitle('🗑️ Daily Buff Removed - TESTING MODE')
+                .setColor('#00FF00')
+                .setTitle('🗑️ Daily Buff Removed Successfully')
                 .setDescription(`Successfully removed daily buff from **${targetUser.username}**`)
                 .addFields(
                     {
@@ -277,11 +255,6 @@ module.exports = {
                         name: '📝 Details',
                         value: `**Reason:** ${reason}\n**Current Day:** ${removalResult.currentDay}\n**Status:** User can now roll again`,
                         inline: false
-                    },
-                    {
-                        name: '⚠️ Testing Notice',
-                        value: '```diff\n+ This action is for testing purposes\n+ User can immediately use /daily-buff again\n+ Normal users must wait until 3:00 AM EDT reset\n```',
-                        inline: false
                     }
                 )
                 .setFooter({ text: `⚓ Authorized by ${interaction.user.username} • Marine Intelligence` })
@@ -297,7 +270,118 @@ module.exports = {
         }
     },
 
-    // Helper function to get current day (same as daily-buff command)
+    // Check daily buff status
+    async checkDailyBuffStatus(userId, guildId) {
+        try {
+            const currentDay = this.getCurrentDay();
+            
+            // Check database record
+            const dbResult = await global.xpTracker.db.query(
+                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                [userId, guildId, currentDay]
+            );
+            const hasDBRecord = dbResult.rows.length > 0;
+
+            // Check current roles
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+            const currentRoles = [];
+
+            if (member) {
+                for (let i = 1; i <= 6; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = guild.roles.cache.get(roleId);
+                        if (role) {
+                            currentRoles.push({
+                                tier: i,
+                                roleId: roleId,
+                                roleName: role.name
+                            });
+                        }
+                    }
+                }
+            }
+
+            return {
+                hasDBRecord,
+                currentRoles,
+                currentDay,
+                member
+            };
+        } catch (error) {
+            console.error('[ADMIN] Error checking daily buff status:', error);
+            return {
+                hasDBRecord: false,
+                currentRoles: [],
+                currentDay: this.getCurrentDay(),
+                member: null
+            };
+        }
+    },
+
+    // Force remove daily buff
+    async forceRemoveDailyBuff(userId, guildId, reason) {
+        try {
+            const currentDay = this.getCurrentDay();
+            const removedRoles = [];
+            let dbRecordsRemoved = 0;
+
+            // Get guild and member
+            const guild = global.xpTracker.client.guilds.cache.get(guildId);
+            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+
+            // Remove all buff roles
+            if (member) {
+                for (let i = 1; i <= 6; i++) {
+                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                        const role = guild.roles.cache.get(roleId);
+                        if (role) {
+                            try {
+                                await member.roles.remove(role, reason);
+                                removedRoles.push(`Tier ${i}: ${role.name}`);
+                                console.log(`[ADMIN] Removed ${role.name} from ${member.user.username}`);
+                            } catch (error) {
+                                console.error(`[ADMIN] Error removing role ${role.name}:`, error);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Remove database records
+            try {
+                const deleteResult = await global.xpTracker.db.query(
+                    'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2',
+                    [userId, guildId]
+                );
+                dbRecordsRemoved = deleteResult.rowCount || 0;
+                console.log(`[ADMIN] Deleted ${dbRecordsRemoved} daily buff records`);
+            } catch (error) {
+                console.error('[ADMIN] Error deleting database records:', error);
+            }
+
+            return {
+                success: true,
+                removedRoles,
+                dbRecordsRemoved,
+                currentDay
+            };
+
+        } catch (error) {
+            console.error('[ADMIN] Error in forceRemoveDailyBuff:', error);
+            return {
+                success: false,
+                error: error.message,
+                removedRoles: [],
+                dbRecordsRemoved: 0,
+                currentDay: this.getCurrentDay()
+            };
+        }
+    },
+
+    // Helper function to get current day
     getCurrentDay() {
         const now = new Date();
         const edtOffset = this.isEDT(now) ? -4 : -5;
@@ -320,7 +404,7 @@ module.exports = {
         return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
-    // [Keep all other existing methods: handleAddXP, handleRemoveXP, etc.]
+    // Keep all other existing methods: handleAddXP, handleRemoveXP, etc.
     async handleAddXP(interaction, targetUser, amount, reason) {
         try {
             await interaction.deferReply();
@@ -710,7 +794,7 @@ async function handleStats(interaction, db) {
     const statsEmbed = new EmbedBuilder()
         .setColor(0xFF0000)
         .setTitle('🏛️ MARINE INTELLIGENCE - OPERATIONAL STATISTICS')
-        .setDescription('```diff\n+ CLASSIFIED MARINE DATABASE METRICS\n+ SECURITY CLEARANCE: ADMIRAL LEVEL```')
+        .setDescription('```diff\n+ MARINE DATABASE METRICS\n+ SECURITY CLEARANCE: ADMIRAL LEVEL```')
         .addFields(
             {
                 name: '📊 Network Statistics',
@@ -731,9 +815,9 @@ async function handleStats(interaction, db) {
             }
         )
         .setTimestamp()
-        .setFooter({ text: 'Marine Intelligence Network - Classified Access' });
+        .setFooter({ text: 'Marine Intelligence Network' });
 
-    await interaction.reply({ embeds: [statsEmbed], flags: 64 });
+    await interaction.reply({ embeds: [statsEmbed], ephemeral: true });
 }
 
 async function handleMaintenance(interaction, db) {
@@ -767,7 +851,7 @@ async function handleMaintenance(interaction, db) {
     await interaction.reply({ 
         embeds: [maintenanceEmbed], 
         components: [maintenanceButtons],
-        flags: 64
+        ephemeral: true
     });
 }
 
@@ -806,7 +890,7 @@ async function handleNuclear(interaction, db) {
     await interaction.reply({
         embeds: [nuclearEmbed],
         components: [nuclearButtons],
-        flags: 64
+        ephemeral: true
     });
 }
 
