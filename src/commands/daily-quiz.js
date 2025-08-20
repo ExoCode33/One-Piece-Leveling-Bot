@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - COMPLETE Fixed Daily Quiz System with Testing Mode
+// src/commands/daily-quiz.js - FIXED to prevent re-taking when testing mode is false
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -69,7 +69,7 @@ const FALLBACK = {
     ]
 };
 
-// ✅ NEW: Check if testing mode is enabled
+// ✅ FIXED: Check if testing mode is enabled
 function isTestingMode() {
     return process.env.DAILY_QUIZ_TESTING_MODE === 'true';
 }
@@ -77,8 +77,8 @@ function isTestingMode() {
 // Timezone helpers
 function getCurrentDayKey() {
     if (isTestingMode()) {
-        // In testing mode, always use a test date so users can play multiple times
-        return `test-${new Date().toISOString().split('T')[0]}`;
+        // ✅ FIXED: In testing mode, use a STATIC test date that doesn't change during the session
+        return `test-mode-${new Date().toISOString().split('T')[0]}`;
     }
     
     const now = new Date();
@@ -230,7 +230,6 @@ module.exports = {
 
     async execute(interaction) {
         try {
-            // ✅ NEW: Check if testing mode is active
             const testingMode = isTestingMode();
             
             // ✅ FIXED: Check if command is used in the correct channel (still enforced in testing mode)
@@ -261,31 +260,37 @@ module.exports = {
                 });
             }
 
-            // ✅ MODIFIED: Check if user completed challenge (skip check in testing mode)
+            // ✅ COMPLETELY FIXED: Check if user completed challenge (proper handling for testing mode)
             if (!testingMode) {
+                // Only check database in production mode
                 const existingRecord = await this.checkRoll(userId, guildId);
-                if (existingRecord && existingRecord.tier > 0) {
+                console.log(`[DAILY QUIZ] Checking existing record for ${interaction.user.username}:`, existingRecord);
+                
+                if (existingRecord && existingRecord.tier >= 0) { // ✅ FIXED: Check for >= 0 instead of > 0
+                    console.log(`[DAILY QUIZ] User ${interaction.user.username} already completed quiz today with tier ${existingRecord.tier}`);
+                    
                     const buff = await this.getBuff(userId, guildId, member);
                     const embed = new EmbedBuilder()
                         .setColor('#FF6B6B')
                         .setAuthor({ name: '🎌 ULTIMATE ANIME MASTERY CHALLENGE' })
                         .setTitle('Daily Challenge Already Completed')
-                        .setDescription(`Current Enhancement: ${buff.name}\nNext: <t:${getReset()}:R>`)
+                        .setDescription(`You've already completed today's challenge!\n\n**Current Enhancement:** ${buff.name}\n**Next Challenge:** <t:${getReset()}:R>`)
+                        .addFields({
+                            name: '📊 Today\'s Results',
+                            value: `**Score:** ${existingRecord.tier}/10\n**Tier Earned:** ${this.getTierEmoji(existingRecord.tier)} ${TIER_NAMES[existingRecord.tier] || 'No Enhancement'}\n**Status:** Challenge complete for today`,
+                            inline: false
+                        })
                         .setFooter({ text: 'Enhancement Intelligence • Ultimate System' })
                         .setTimestamp();
                     return await interaction.reply({ embeds: [embed], ephemeral: true });
                 }
-                
-                // If user failed completely (tier 0), allow retry by deleting record
-                if (existingRecord && existingRecord.tier === 0) {
-                    console.log(`[DAILY QUIZ] Allowing retry for user ${userId} who got 0 correct answers`);
-                    await this.deleteFailedAttempt(userId, guildId);
-                }
+            } else {
+                console.log(`[DAILY QUIZ] Testing mode - allowing unlimited attempts for ${interaction.user.username}`);
             }
             
             await interaction.deferReply();
             
-            // ✅ NEW: Add testing mode indicator to the quiz
+            // Start the quiz
             await this.ask(interaction, userId, guildId, member, 1, 0, 0);
             
         } catch (error) {
@@ -303,10 +308,44 @@ module.exports = {
         }
     },
 
+    // ✅ FIXED: Check roll but return the record details (proper database check)
+    async checkRoll(userId, guildId) { 
+        try {
+            if (isTestingMode()) {
+                console.log(`[DAILY QUIZ] Testing mode - skipping database check for user ${userId}`);
+                return null; // Always allow testing
+            }
+            
+            const currentDay = getCurrentDayKey();
+            console.log(`[DAILY QUIZ] Checking database for user ${userId}, guild ${guildId}, day ${currentDay}`);
+            
+            const r = await global.xpTracker.db.query(
+                'SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', 
+                [userId, guildId, currentDay]
+            ); 
+            
+            console.log(`[DAILY QUIZ] Database query result:`, r.rows);
+            
+            if (r.rows.length > 0) {
+                const result = { tier: r.rows[0].tier };
+                console.log(`[DAILY QUIZ] Found existing record:`, result);
+                return result;
+            }
+            
+            console.log(`[DAILY QUIZ] No existing record found for user ${userId}`);
+            return null;
+        } catch (error) {
+            console.error('[DAILY QUIZ] Error checking roll:', error);
+            return null; 
+        } 
+    },
+
+    // Rest of the methods remain the same as they were working...
+    // (Including ask, apply, save, getBuff, etc.)
+
     // Main question asking method with result tracking
     async ask(interaction, userId, guildId, member, qNum, tier, rerollsUsed = 0, questionResults = []) {
         try {
-            // ✅ NEW: Check testing mode
             const testingMode = isTestingMode();
             
             // 10-question structure: 2 Easy, 4 Medium, 4 Hard
@@ -388,7 +427,7 @@ module.exports = {
                 const currentTargetTier = Math.min(10, successfulAnswers + 1); // Next potential tier
                 const securedTier = successfulAnswers; // Current secured tier based on successes
 
-                // ✅ NEW: Show testing mode in the embed
+                // Show testing mode in the embed
                 const challengeTitle = testingMode ? 
                     '🧪 TESTING MODE - ULTIMATE ANIME MASTERY CHALLENGE' : 
                     '🎌 ULTIMATE ANIME MASTERY CHALLENGE';
@@ -479,29 +518,23 @@ module.exports = {
                     await interaction.editReply({ embeds: [embed], components: rows }); 
                     msg = await interaction.fetchReply(); 
                 } else {
-                    // OPTIMIZED: Immediate transition with parallel execution
+                    // Clean up old messages
                     const cleanupPromise = (qNum > 1 || rerollsUsed > 0) ? 
                         this.cleanupOldQuestionMessages(interaction, qNum, rerollsUsed) : 
                         Promise.resolve();
                     
-                    // ✅ FIXED: Add delay before sending new message to ensure cleanup doesn't interfere
-                    await cleanupPromise; // Wait for cleanup to complete first
-                    
-                    // Small delay to ensure cleanup is fully done
+                    await cleanupPromise;
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
-                    // Send new message after cleanup is complete
                     const sendPromise = interaction.followUp({ embeds: [embed], components: rows });
                     msg = await sendPromise;
                 }
                 
-                // Wait a moment to ensure the message is fully loaded
                 await new Promise(resolve => setTimeout(resolve, 500));
                 console.log(`[DAILY QUIZ] Q${qNum} message loaded successfully for ${member.displayName}${testingMode ? ' [TESTING]' : ''}`);
                 
             } catch (error) {
                 console.error(`[DAILY QUIZ] Error loading Q${qNum} message:`, error);
-                // If message fails to load, try again with simpler approach
                 try {
                     msg = await interaction.followUp({ 
                         content: `⚠️ Loading Question ${qNum}...`, 
@@ -511,7 +544,7 @@ module.exports = {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 } catch (retryError) {
                     console.error(`[DAILY QUIZ] Retry failed for Q${qNum}:`, retryError);
-                    return; // Exit if we can't send the message
+                    return;
                 }
             }
 
@@ -523,7 +556,6 @@ module.exports = {
                     return; 
                 }
                 try { 
-                    // Check if message still exists before updating
                     if (msg && msg.edit) {
                         await msg.edit({ embeds: [makeEmbed(time)], components: rows }).catch(() => {
                             console.log(`[DAILY QUIZ] Timer update failed for Q${qNum}, stopping timer`);
@@ -541,7 +573,7 @@ module.exports = {
 
             // Collector with extended time and better error handling
             const collector = msg.createMessageComponentCollector({ 
-                time: 22000, // Extended to 22 seconds to account for loading time
+                time: 22000,
                 filter: i => i.user.id === userId 
             });
 
@@ -549,14 +581,13 @@ module.exports = {
                 try {
                     clearInterval(timer); 
                     
-                    // Ensure we can respond to the interaction
                     if (!btn.deferred && !btn.replied) {
                         await btn.deferUpdate();
                     }
                     
                     console.log(`[DAILY QUIZ] Q${qNum} button clicked by ${member.displayName}: ${btn.customId}${testingMode ? ' [TESTING]' : ''}`);
                     
-                    // Handle reroll button - OPTIMIZED
+                    // Handle reroll button
                     if (btn.customId.startsWith('reroll_')) {
                         const [, , currentQNum, currentRerollsUsed] = btn.customId.split('_');
                         const rerollsUsedNum = parseInt(currentRerollsUsed);
@@ -567,17 +598,14 @@ module.exports = {
                         
                         collector.stop();
                         
-                        // Immediate transition - delete current message and start new question simultaneously
                         const deletePromise = btn.message.delete().catch(() => {});
                         const rerollPromise = this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
                         
-                        // Execute both in parallel for fastest transition
                         await Promise.all([deletePromise, rerollPromise]);
                         return;
                     }
                     
                     if (btn.customId.startsWith('stop_')) {
-                        // Only allow securing in non-testing mode
                         if (testingMode) {
                             await btn.editReply({
                                 content: '🧪 **Testing Mode**: Cannot secure tiers in testing mode!',
@@ -586,9 +614,8 @@ module.exports = {
                             return;
                         }
                         
-                        // Calculate secured tier based on SUCCESSFUL answers only
                         const successfulAnswers = questionResults.filter(result => result === true).length;
-                        const securedTier = successfulAnswers; // Use actual successful count, not question number
+                        const securedTier = successfulAnswers;
                         
                         await this.apply(userId, guildId, member, securedTier);
                         
@@ -626,21 +653,17 @@ module.exports = {
                     const isCorrect = isCorrectStr === 'true';
                     const passedRerollsUsed = parseInt(currentRerollsUsed);
                     
-                    // Log answer attempt
                     const selectedOption = q.options[parseInt(btn.customId.split('_')[3])];
                     console.log(`[DAILY BUFF] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
                     
                     if (isCorrect) {
-                        // Record successful answer
                         const newResults = [...questionResults, true];
                         
-                        // ✅ MODIFIED: Only award XP in non-testing mode
+                        // Award XP in non-testing mode
                         if (!testingMode) {
-                            // ✅ FLAT XP AWARD: Award flat XP for correct answer (bypasses ALL multipliers)
                             const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
                             if (global.xpTracker && correctAnswerXP > 0) {
                                 try {
-                                    // Use skipMultiplier = true to bypass ALL XP multipliers (role boosts, global multipliers, etc.)
                                     await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
                                     console.log(`[DAILY QUIZ] Q${qNum} FLAT XP: Awarded ${correctAnswerXP} XP to ${member.displayName} (no multipliers applied)`);
                                 } catch (error) {
@@ -652,10 +675,8 @@ module.exports = {
                         }
                         
                         if (qNum === 10) {
-                            // Challenge complete - calculate final tier based on successful answers
                             const totalSuccessful = newResults.filter(r => r === true).length;
                             
-                            // ✅ MODIFIED: Only apply rewards in non-testing mode
                             if (!testingMode) {
                                 await this.apply(userId, guildId, member, totalSuccessful);
                             
@@ -689,7 +710,6 @@ module.exports = {
                                     .setTimestamp();
                                 await btn.editReply({ embeds: [res], components: [] });
                             } else {
-                                // ✅ NEW: Testing mode completion message
                                 const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
                                 const res = new EmbedBuilder()
                                     .setTitle('🧪 Testing Complete - No Rewards Given')
@@ -721,7 +741,6 @@ module.exports = {
                                     .setStyle(ButtonStyle.Success)
                             ];
                             
-                            // ✅ MODIFIED: Only show secure button in non-testing mode
                             if (!testingMode) {
                                 contBtnComponents.push(
                                     new ButtonBuilder()
@@ -743,10 +762,8 @@ module.exports = {
                                     const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
                                     contColl.stop();
                                     
-                                    // ✅ FIXED: Immediate transition for correct answer continue
                                     console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
                                     
-                                    // Show immediate loading message
                                     const loadingEmbed = new EmbedBuilder()
                                         .setColor('#00FF00')
                                         .setTitle(`⚡ Loading Question ${nextQNum}/10...`)
@@ -755,14 +772,11 @@ module.exports = {
                                     
                                     await contBtn.editReply({ embeds: [loadingEmbed], components: [] });
                                     
-                                    // Small delay to show loading, then immediate transition
                                     setTimeout(async () => {
-                                        // Start next question immediately without cleanup
                                         await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
                                     }, 500);
                                     
                                 } else {
-                                    // ✅ MODIFIED: Only allow claiming in non-testing mode
                                     if (testingMode) {
                                         await contBtn.editReply({
                                             content: '🧪 **Testing Mode**: Cannot claim rewards in testing mode!',
@@ -772,9 +786,8 @@ module.exports = {
                                     }
                                     
                                     const cTier = parseInt(contBtn.customId.split('_')[2]); 
-                                    // Double-check: only award tier based on actual successful answers
                                     const actualSuccessful = newResults.filter(r => r === true).length;
-                                    const finalTier = Math.min(cTier, actualSuccessful); // Safety check
+                                    const finalTier = Math.min(cTier, actualSuccessful);
                                     
                                     await this.apply(userId, guildId, member, finalTier);
                                     
@@ -812,19 +825,15 @@ module.exports = {
                         // Record failed answer and continue
                         const newResults = [...questionResults, false];
                         
-                        // Show answer reveal briefly
                         console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
                         await this.showAnswerReveal(btn, q, qNum, member, testingMode);
                         
                         // Wait 3 seconds then show continue prompt before proceeding
                         setTimeout(async () => {
-                            // Show continue prompt for failed questions (except last question)
                             if (qNum < 10) {
                                 const successfulAnswers = newResults.filter(r => r === true).length;
                                 
-                                // ✅ FIXED: Check if interaction is still valid before editing
                                 try {
-                                    // Test if the interaction is still valid by checking if we can edit it
                                     if (!btn.replied && !btn.deferred) {
                                         console.log('[DAILY BUFF] Interaction not ready for editing, auto-continuing...');
                                         const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
@@ -852,10 +861,8 @@ module.exports = {
                                             .setEmoji('▶️')
                                     );
                                     
-                                    // ✅ FIXED: Safer edit with error handling
                                     await btn.editReply({ embeds: [failurePrompt], components: [continueBtn] });
                                     
-                                    // Wait for continue button with better error handling
                                     const continueCollector = btn.message.createMessageComponentCollector({ 
                                         time: 30000, 
                                         filter: i => i.user.id === userId && i.customId.startsWith('continue_after_fail_')
@@ -866,14 +873,12 @@ module.exports = {
                                             await continueBtn.deferUpdate();
                                             continueCollector.stop();
                                             
-                                            // Continue to next question
                                             const deletePromise = btn.message.delete().catch(() => {});
                                             const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
                                             
                                             await Promise.all([deletePromise, nextQuestionPromise]);
                                         } catch (collectError) {
                                             console.error('[DAILY BUFF] Error in continue button collector:', collectError);
-                                            // Fallback: continue automatically
                                             const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
                                             await nextQuestionPromise;
                                         }
@@ -881,7 +886,6 @@ module.exports = {
                                     
                                     continueCollector.on('end', async (collected) => {
                                         if (collected.size === 0) {
-                                            // Auto-continue after timeout
                                             try {
                                                 const deletePromise = btn.message.delete().catch(() => {});
                                                 const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
@@ -889,7 +893,6 @@ module.exports = {
                                                 await Promise.all([deletePromise, nextQuestionPromise]);
                                             } catch (timeoutError) {
                                                 console.error('[DAILY BUFF] Error in collector timeout:', timeoutError);
-                                                // Ultimate fallback
                                                 const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
                                                 await nextQuestionPromise;
                                             }
@@ -899,14 +902,12 @@ module.exports = {
                                 } catch (error) {
                                     console.error('[DAILY BUFF] Error showing continue prompt (message may be deleted):', error);
                                     
-                                    // ✅ FIXED: If the interaction/message is gone, just continue automatically
                                     if (error.code === 10008 || error.message.includes('Unknown Message') || error.message.includes('Unknown interaction')) {
                                         console.log('[DAILY BUFF] Message/interaction expired, auto-continuing to next question...');
                                     } else {
                                         console.log('[DAILY BUFF] Unexpected error, auto-continuing to next question...');
                                     }
                                     
-                                    // Auto-continue without trying to edit the interaction
                                     try {
                                         const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
                                         await nextQuestionPromise;
@@ -918,7 +919,6 @@ module.exports = {
                                 // Last question - handle completion
                                 const totalSuccessful = newResults.filter(r => r === true).length;
                                 
-                                // ✅ MODIFIED: Only apply rewards in non-testing mode
                                 if (!testingMode) {
                                     if (totalSuccessful > 0) {
                                         await this.apply(userId, guildId, member, totalSuccessful);
@@ -965,7 +965,6 @@ module.exports = {
                                         console.error('[DAILY BUFF] Error editing reply after final answer:', error);
                                     }
                                 } else {
-                                    // ✅ NEW: Testing mode final results
                                     const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
                                     const tierEmoji = this.getTierEmoji(totalSuccessful);
                                     
@@ -988,7 +987,7 @@ module.exports = {
                                     }
                                 }
                             }
-                        }, 3000); // 3 second delay for answer reveal
+                        }, 3000);
                     }
                     collector.stop();
                 } catch (error) { 
@@ -1002,14 +1001,11 @@ module.exports = {
                 if (collected.size === 0) {
                     console.log(`[DAILY QUIZ] Q${qNum} timed out for ${member.displayName} after 22 seconds${testingMode ? ' [TESTING]' : ''}`);
                     
-                    // Time's up - record as failed answer and continue or end
                     const newResults = [...questionResults, false];
                     
                     if (qNum === 10) {
-                        // Challenge complete due to timeout on last question
                         const totalSuccessful = newResults.filter(r => r === true).length;
                         
-                        // ✅ MODIFIED: Only apply rewards in non-testing mode
                         if (!testingMode) {
                             if (totalSuccessful > 0) {
                                 await this.apply(userId, guildId, member, totalSuccessful);
@@ -1039,7 +1035,6 @@ module.exports = {
                                 console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
                             }
                         } else {
-                            // ✅ NEW: Testing mode timeout
                             const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
                             const timeout = new EmbedBuilder()
                                 .setColor('#FFA500')
@@ -1060,7 +1055,6 @@ module.exports = {
                             }
                         }
                     } else {
-                        // ✅ FIXED: Show continue prompt after timeout instead of auto-continuing
                         try {
                             const successfulAnswers = newResults.filter(r => r === true).length;
                             const timeoutPrompt = new EmbedBuilder()
@@ -1085,9 +1079,8 @@ module.exports = {
                             
                             await msg.edit({ embeds: [timeoutPrompt], components: [timeoutContinueBtn] });
                             
-                            // Wait for continue button with quiz closure after 60 seconds
                             const timeoutContinueCollector = msg.createMessageComponentCollector({ 
-                                time: 60000, // ✅ CHANGED: 60 seconds instead of 15 seconds
+                                time: 60000,
                                 filter: i => i.user.id === userId && i.customId.startsWith('continue_after_timeout_')
                             });
                             
@@ -1096,10 +1089,8 @@ module.exports = {
                                     await continueBtn.deferUpdate();
                                     timeoutContinueCollector.stop();
                                     
-                                    // ✅ FIXED: Immediate transition without cleanup delay
                                     console.log(`[DAILY QUIZ] User clicked continue after timeout, proceeding to Q${qNum + 1} immediately`);
                                     
-                                    // Show immediate loading message
                                     const loadingEmbed = new EmbedBuilder()
                                         .setColor('#00FF00')
                                         .setTitle(`⚡ Loading Question ${qNum + 1}/10...`)
@@ -1108,684 +1099,6 @@ module.exports = {
                                     
                                     await continueBtn.editReply({ embeds: [loadingEmbed], components: [] });
                                     
-                                    // Small delay to show loading, then immediate transition
                                     setTimeout(async () => {
-                                        // Start next question immediately without cleanup
                                         await this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
                                     }, 500);
-                                    
-                                } catch (collectError) {
-                                    console.error('[DAILY QUIZ] Error in timeout continue button collector:', collectError);
-                                    // Fallback: continue automatically
-                                    const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
-                                    await nextQuestionPromise;
-                                }
-                            });
-                            
-                            timeoutContinueCollector.on('end', async (collected) => {
-                                if (collected.size === 0) {
-                                    // ✅ CHANGED: Close quiz with current results instead of auto-continuing
-                                    try {
-                                        console.log(`[DAILY QUIZ] Quiz closed after 60 seconds of inactivity at Q${qNum}`);
-                                        
-                                        const totalSuccessful = newResults.filter(r => r === true).length;
-                                        
-                                        // ✅ MODIFIED: Apply rewards for current progress in non-testing mode
-                                        if (!testingMode) {
-                                            if (totalSuccessful > 0) {
-                                                await this.apply(userId, guildId, member, totalSuccessful);
-                                            } else {
-                                                await this.saveFail(userId, guildId);
-                                            }
-                                            
-                                            let xpMultiplier = 'Unknown';
-                                            if (totalSuccessful > 0) {
-                                                try {
-                                                    const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
-                                                    if (roleId && global.xpBoostManager) {
-                                                        const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
-                                                        if (boostInfo && boostInfo.boost_multiplier) {
-                                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
-                                                        }
-                                                    }
-                                                } catch (error) {
-                                                    console.error('[DAILY BUFF] Error getting XP multiplier:', error);
-                                                    xpMultiplier = 'Active';
-                                                }
-                                            }
-                                            
-                                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
-                                            const inactivityEmbed = new EmbedBuilder()
-                                                .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF6B6B')
-                                                .setTitle('💤 Quiz Closed Due to Inactivity')
-                                                .setDescription(totalSuccessful > 0 ? 
-                                                    `**${tierName}** earned based on your progress!\n*${TIER_DESC[totalSuccessful] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}` :
-                                                    '**No Enhancement** earned due to inactivity.')
-                                                .addFields({ 
-                                                    name: '📊 Final Results', 
-                                                    value: `**Correct Answers:** ${totalSuccessful}/${qNum}\n**Questions Attempted:** ${qNum}/10\n**Buff Received:** ${this.getTierEmoji(totalSuccessful)} ${tierName}${totalSuccessful > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
-                                                    inline: false 
-                                                })
-                                                .setFooter({ text: totalSuccessful > 0 ? `${this.getTierEmoji(totalSuccessful)} ${tierName} ${xpMultiplier} Active Until Reset` : 'Quiz Closed - Inactivity Timeout' })
-                                                .setTimestamp();
-                                                
-                                            await msg.edit({ embeds: [inactivityEmbed], components: [] });
-                                        } else {
-                                            // ✅ NEW: Testing mode inactivity closure
-                                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
-                                            const testingInactivityEmbed = new EmbedBuilder()
-                                                .setColor('#FFA500')
-                                                .setTitle('💤 Testing Closed Due to Inactivity')
-                                                .setDescription(`**Testing Results:** ${totalSuccessful}/${qNum} correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
-                                                .addFields({ 
-                                                    name: '📊 Test Results', 
-                                                    value: `**Correct Answers:** ${totalSuccessful}/${qNum}\n**Questions Attempted:** ${qNum}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
-                                                    inline: false 
-                                                })
-                                                .setFooter({ text: '🧪 Testing Mode Closed - Inactivity Timeout' })
-                                                .setTimestamp();
-                                                
-                                            await msg.edit({ embeds: [testingInactivityEmbed], components: [] });
-                                        }
-                                        
-                                    } catch (inactivityError) {
-                                        console.error(`[DAILY QUIZ] Error handling inactivity closure:`, inactivityError);
-                                        // Fallback: just show a simple closure message
-                                        try {
-                                            const simpleClosureEmbed = new EmbedBuilder()
-                                                .setColor('#FF6B6B')
-                                                .setTitle('💤 Quiz Closed')
-                                                .setDescription('Quiz ended due to inactivity (60 seconds).')
-                                                .setFooter({ text: testingMode ? '🧪 Testing Mode - Timeout' : 'Daily Quiz - Timeout' });
-                                            
-                                            await msg.edit({ embeds: [simpleClosureEmbed], components: [] });
-                                        } catch (fallbackError) {
-                                            console.error('[DAILY QUIZ] Even fallback closure failed:', fallbackError);
-                                        }
-                                    }
-                                }
-                            });
-                            
-                        } catch (error) {
-                            console.error(`[DAILY QUIZ] Error handling timeout transition:`, error);
-                            // Fallback: continue immediately
-                            const deletePromise = msg.delete().catch(() => {});
-                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
-                            
-                            await Promise.all([deletePromise, nextQuestionPromise]);
-                        }
-                    }
-                } else {
-                    console.log(`[DAILY QUIZ] Q${qNum} completed by ${member.displayName} with ${collected.size} interaction(s)${testingMode ? ' [TESTING]' : ''}`);
-                }
-            });
-        } catch (error) { 
-            console.error('[QUIZ] Question error:', error); 
-        }
-    },
-
-    // Optimized cleanup method with better message identification and reduced load
-    async cleanupOldQuestionMessages(interaction, currentQNum, currentRerollsUsed) {
-        try {
-            console.log(`[CLEANUP] Quick cleanup before Q${currentQNum} (reroll: ${currentRerollsUsed})`);
-            
-            // ✅ OPTIMIZED: Fetch only 8 messages instead of 15 to reduce load
-            const messages = await interaction.channel.messages.fetch({ limit: 8 });
-            const deletionPromises = [];
-            const currentTime = Date.now();
-            
-            let processedCount = 0;
-            const maxProcess = 5; // Limit processing to reduce load
-            
-            for (const [messageId, message] of messages) {
-                // ✅ OPTIMIZED: Process fewer messages to improve performance
-                if (processedCount >= maxProcess) break;
-                processedCount++;
-                
-                // Skip if not from our bot
-                if (message.author.id !== interaction.client.user.id) continue;
-                
-                // Skip if no embeds
-                if (!message.embeds || message.embeds.length === 0) continue;
-                
-                // ✅ OPTIMIZED: Skip very recent messages (increased to 8 seconds for safety)
-                if (currentTime - message.createdTimestamp < 8000) {
-                    continue;
-                }
-                
-                const embed = message.embeds[0];
-                const title = embed.title || '';
-                const author = embed.author?.name || '';
-                
-                // ✅ OPTIMIZED: Simplified message identification for speed
-                const isDailyBuffEmbed = (
-                    title.includes('Loading Question') ||
-                    title.includes('Correct!') ||
-                    title.includes('Wrong Answer') ||
-                    title.includes('Failed') ||
-                    title.includes('Testing Complete')
-                );
-                
-                // ✅ OPTIMIZED: Quick component check
-                const hasActiveComponents = message.components && message.components.length > 0;
-                
-                if (isDailyBuffEmbed && !hasActiveComponents) {
-                    // ✅ OPTIMIZED: Limit to 2 deletions max to reduce API calls
-                    if (deletionPromises.length < 2) {
-                        deletionPromises.push(
-                            message.delete().catch(() => {}) // Silent fail to reduce logging
-                        );
-                    } else {
-                        break; // Stop after 2 deletions
-                    }
-                }
-            }
-            
-            // ✅ OPTIMIZED: Only execute if we have deletions
-            if (deletionPromises.length > 0) {
-                await Promise.all(deletionPromises);
-                console.log(`[CLEANUP] Deleted ${deletionPromises.length} messages (optimized)`);
-            }
-            
-        } catch (error) {
-            // ✅ OPTIMIZED: Reduced error logging to minimize spam
-            console.log('[CLEANUP] Minor cleanup error (non-critical)');
-        }
-    },
-
-    // Show answer reveal with countdown - MODIFIED for testing mode with better error handling
-    async showAnswerReveal(btnInteraction, question, questionNum, member, testingMode = false) {
-        try {
-            console.log(`[ANSWER REVEAL] Showing correct answer for Q${questionNum}: "${question.answer}" to ${member.displayName}${testingMode ? ' [TESTING]' : ''}`);
-            
-            // ✅ FIXED: Check if the interaction is still valid before proceeding
-            if (!btnInteraction.replied && !btnInteraction.deferred) {
-                console.log('[ANSWER REVEAL] Interaction not ready, skipping answer reveal');
-                return;
-            }
-            
-            // Get the user's wrong answer from the button interaction
-            const selectedOption = question.options[parseInt(btnInteraction.customId.split('_')[3])];
-            
-            try {
-                const revealEmbed = new EmbedBuilder()
-                    .setColor('#FF0000')
-                    .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
-                    .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                    .addFields({
-                        name: '⏳ Processing Results',
-                        value: 'Results in **3** seconds...',
-                        inline: false
-                    })
-                    .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
-                    .setTimestamp();
-
-                await btnInteraction.editReply({ embeds: [revealEmbed], components: [] });
-                
-                // Start 3-second countdown with better error handling
-                for (let i = 2; i >= 1; i--) {
-                    setTimeout(async () => {
-                        try {
-                            // ✅ FIXED: Check if we can still edit the interaction
-                            if (!btnInteraction.replied && !btnInteraction.deferred) {
-                                return; // Skip if interaction is not valid
-                            }
-                            
-                            const countdownEmbed = new EmbedBuilder()
-                                .setColor('#FF0000')
-                                .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
-                                .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                                .addFields({
-                                    name: '⏳ Processing Results',
-                                    value: `Results in **${i}** second${i !== 1 ? 's' : ''}...`,
-                                    inline: false
-                                })
-                                .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
-                                .setTimestamp();
-                            
-                            await btnInteraction.editReply({ embeds: [countdownEmbed], components: [] });
-                        } catch (error) {
-                            console.error(`[ANSWER REVEAL] Error updating countdown ${i} (interaction may be expired):`, error);
-                            // Don't throw error, just log and continue
-                        }
-                    }, (3 - i) * 1000);
-                }
-            } catch (error) {
-                console.error('[ANSWER REVEAL] Error showing initial answer reveal (interaction may be expired):', error);
-                // Don't throw error, just log and continue
-            }
-        } catch (error) {
-            console.error('[ANSWER REVEAL] Error in showAnswerReveal:', error);
-            // Don't throw error, just log and continue
-        }
-    },
-
-    // Helper method to get tier emoji with correct colors
-    getTierEmoji(tier) {
-        const tierEmojis = { 
-            0: '⬛',    // None
-            1: '⚪',    // Common - White
-            2: '🟢',    // Uncommon - Green
-            3: '🔵',    // Rare - Blue
-            4: '🟣',    // Epic - Purple
-            5: '🟡',    // Legendary - Yellow
-            6: '🟡',    // Legendary - Yellow
-            7: '🟠',    // Mythic - Orange
-            8: '🟠',    // Mythic - Orange
-            9: '🔴',    // Divine - Red
-            10: '🔴'    // Divine - Red
-        };
-        return tierEmojis[tier] || '⬛';
-    },
-
-    // ✅ MODIFIED: Check roll but return the record details (skip in testing mode)
-    async checkRoll(userId, guildId) { 
-        try {
-            // ✅ NEW: Skip database checks in testing mode
-            if (isTestingMode()) {
-                return null; // Always allow testing
-            }
-            
-            const r = await global.xpTracker.db.query('SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]); 
-            if (r.rows.length > 0) {
-                return { tier: r.rows[0].tier };
-            }
-            return null;
-        } catch { 
-            return null; 
-        } 
-    },
-
-    // ✅ MODIFIED: Delete failed attempt to allow retry (skip in testing mode)
-    async deleteFailedAttempt(userId, guildId) {
-        try {
-            // ✅ NEW: Skip database operations in testing mode
-            if (isTestingMode()) {
-                console.log(`[DAILY QUIZ] Testing mode - skipping database deletion for user ${userId}`);
-                return;
-            }
-            
-            await global.xpTracker.db.query('DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3 AND tier = 0', [userId, guildId, getDay()]);
-            console.log(`[DAILY QUIZ] Deleted failed attempt for user ${userId} to allow retry`);
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error deleting failed attempt:', error);
-        }
-    },
-
-    // ✅ MODIFIED: Check for ALL 10 tiers in getBuff function (testing mode aware)
-    async getBuff(userId, guildId, member) {
-        try {
-            // ✅ NEW: Return testing status in testing mode
-            if (isTestingMode()) {
-                return { tier: 0, name: 'Testing Mode (No Buffs)', multiplier: 'None' };
-            }
-            
-            const r = await global.xpTracker.db.query('SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', [userId, guildId, getDay()]);
-            if (r.rows.length > 0) { 
-                const t = r.rows[0].tier; 
-                return { tier: t, name: t === 0 ? 'Challenge Failed' : TIER_NAMES[t], multiplier: t === 0 ? 'None' : 'Active' }; 
-            }
-            // Check for ALL 10 tiers instead of just 6
-            for (let i = 1; i <= 10; i++) { 
-                const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`]; 
-                if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                    return { tier: i, name: TIER_NAMES[i], multiplier: 'Active' }; 
-                }
-            }
-            return { tier: 0, name: 'No Enhancement', multiplier: 'None' };
-        } catch { 
-            return { tier: 0, name: 'Error', multiplier: 'None' }; 
-        }
-    },
-
-    // ✅ MODIFIED: Handle ALL 10 tiers in apply function (skip in testing mode)
-    async apply(userId, guildId, member, tier) {
-        try {
-            // ✅ NEW: Skip role and database operations in testing mode
-            if (isTestingMode()) {
-                console.log(`[DAILY QUIZ] Testing mode - skipping role application for user ${member.displayName}, tier ${tier}`);
-                return;
-            }
-            
-            // Remove all tier roles including tier 10
-            for (let i = 1; i <= 10; i++) { 
-                const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`]; 
-                if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) { 
-                    const role = member.guild.roles.cache.get(roleId); 
-                    if (role) await member.roles.remove(role); 
-                } 
-            }
-
-            if (tier > 0) { 
-                const roleId = process.env[`DAILY_QUIZ_TIER_${tier}_ROLE`]; 
-                if (roleId && roleId !== `role_id_${tier}`) { 
-                    const role = member.guild.roles.cache.get(roleId); 
-                    if (role) { 
-                        await member.roles.add(role); 
-                        
-                        // Set individual XP cap based on tier
-                        await this.setTierXPCap(userId, guildId, tier);
-                        
-                        console.log(`[DAILY BUFF] ✅ Awarded ${role.name} with tier-specific XP cap`); 
-                    } 
-                } 
-            }
-            await this.save(userId, guildId, tier);
-        } catch (error) { 
-            console.error('[DAILY QUIZ] Apply error:', error); 
-        }
-    },
-
-    // ✅ MODIFIED: Set individual XP cap based on tier (skip in testing mode)
-    async setTierXPCap(userId, guildId, tier) {
-        try {
-            // ✅ NEW: Skip database operations in testing mode
-            if (isTestingMode()) {
-                console.log(`[DAILY QUIZ] Testing mode - skipping XP cap setting for tier ${tier}`);
-                return;
-            }
-            
-            // Get tier-specific XP cap from environment variables
-            const tierXPCap = parseInt(process.env[`DAILY_QUIZ_TIER_${tier}_XP_CAP`]);
-            
-            if (!tierXPCap || tierXPCap <= 0) {
-                console.log(`[DAILY QUIZ] No XP cap configured for tier ${tier} (DAILY_QUIZ_TIER_${tier}_XP_CAP)`);
-                return;
-            }
-
-            // Create table for tier-specific XP caps if it doesn't exist
-            await global.xpTracker.db.query(`
-                CREATE TABLE IF NOT EXISTS daily_buff_xp_caps (
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    date DATE NOT NULL,
-                    tier INTEGER NOT NULL,
-                    xp_cap INTEGER NOT NULL,
-                    current_xp INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, guild_id, date)
-                )
-            `);
-
-            const currentDay = getCurrentDayKey();
-
-            // Set or update the tier-specific XP cap
-            await global.xpTracker.db.query(`
-                INSERT INTO daily_buff_xp_caps (user_id, guild_id, date, tier, xp_cap, current_xp, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 0, CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id, guild_id, date)
-                DO UPDATE SET
-                    tier = $4,
-                    xp_cap = $5,
-                    updated_at = CURRENT_TIMESTAMP
-            `, [userId, guildId, currentDay, tier, tierXPCap]);
-
-            console.log(`[DAILY QUIZ] Set tier ${tier} XP cap: ${tierXPCap.toLocaleString()} XP for ${guildId}:${userId}`);
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error setting tier XP cap:', error);
-        }
-    },
-
-    // Get current tier XP cap for a user - Check ALL 10 tiers
-    async getTierXPCap(userId, guildId) {
-        try {
-            // ✅ NEW: Return default values in testing mode
-            if (isTestingMode()) {
-                const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-                return {
-                    tier: 0,
-                    cap: defaultCap,
-                    currentXP: 0,
-                    remaining: defaultCap,
-                    hasCustomCap: false
-                };
-            }
-            
-            const currentDay = getCurrentDayKey();
-            
-            const result = await global.xpTracker.db.query(
-                'SELECT tier, xp_cap, current_xp FROM daily_buff_xp_caps WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [userId, guildId, currentDay]
-            );
-
-            if (result.rows.length > 0) {
-                const { tier, xp_cap, current_xp } = result.rows[0];
-                return {
-                    tier: tier,
-                    cap: xp_cap,
-                    currentXP: current_xp,
-                    remaining: Math.max(0, xp_cap - current_xp),
-                    hasCustomCap: true
-                };
-            }
-
-            // Check if user has any tier role (1-10) and get corresponding cap
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            if (member) {
-                // Check ALL 10 tiers from highest to lowest
-                for (let i = 10; i >= 1; i--) { 
-                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const tierXPCap = parseInt(process.env[`DAILY_QUIZ_TIER_${i}_XP_CAP`]);
-                        if (tierXPCap && tierXPCap > 0) {
-                            console.log(`[TIER CAP DEBUG] Found user ${member.displayName} with tier ${i} role, cap: ${tierXPCap}`);
-                            return {
-                                tier: i,
-                                cap: tierXPCap,
-                                currentXP: 0,
-                                remaining: tierXPCap,
-                                hasCustomCap: true
-                            };
-                        }
-                    }
-                }
-            }
-
-            // Fall back to default cap if no tier-specific cap
-            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            return {
-                tier: 0,
-                cap: defaultCap,
-                currentXP: 0,
-                remaining: defaultCap,
-                hasCustomCap: false
-            };
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error getting tier XP cap:', error);
-            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            return {
-                tier: 0,
-                cap: defaultCap,
-                currentXP: 0,
-                remaining: defaultCap,
-                hasCustomCap: false
-            };
-        }
-    },
-
-    // Update tier XP usage
-    async updateTierXPUsage(userId, guildId, xpGained) {
-        try {
-            // ✅ NEW: Skip database operations in testing mode
-            if (isTestingMode()) {
-                return;
-            }
-            
-            const currentDay = getCurrentDayKey();
-            
-            await global.xpTracker.db.query(`
-                UPDATE daily_buff_xp_caps 
-                SET current_xp = current_xp + $1, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $2 AND guild_id = $3 AND date = $4
-            `, [xpGained, userId, guildId, currentDay]);
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error updating tier XP usage:', error);
-        }
-    },
-
-    // ✅ MODIFIED: Save to database (skip in testing mode)
-    async save(userId, guildId, tier) {
-        try {
-            // ✅ NEW: Skip database operations in testing mode
-            if (isTestingMode()) {
-                console.log(`[DAILY QUIZ] Testing mode - skipping database save for tier ${tier}`);
-                return;
-            }
-            
-            await global.xpTracker.db.query('CREATE TABLE IF NOT EXISTS daily_buff_rolls (user_id VARCHAR(20), guild_id VARCHAR(20), date DATE, tier INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, guild_id, date))');
-            await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = $4', [userId, guildId, getDay(), tier]);
-            console.log(`[DAILY QUIZ] ✅ Saved tier ${tier}`);
-        } catch (error) { 
-            console.error('[DAILY QUIZ] Save error:', error); 
-        }
-    },
-
-    // ✅ MODIFIED: Save failure (skip in testing mode)
-    async saveFail(userId, guildId) {
-        try {
-            // ✅ NEW: Skip database operations in testing mode
-            if (isTestingMode()) {
-                console.log(`[DAILY QUIZ] Testing mode - skipping failure save`);
-                return;
-            }
-            
-            await global.xpTracker.db.query('INSERT INTO daily_buff_rolls (user_id, guild_id, date, tier, created_at) VALUES ($1, $2, $3, 0, CURRENT_TIMESTAMP) ON CONFLICT (user_id, guild_id, date) DO UPDATE SET tier = 0', [userId, guildId, getDay()]);
-            console.log('[DAILY QUIZ] ❌ Saved failed attempt');
-        } catch (error) { 
-            console.error('[DAILY QUIZ] Save failed error:', error); 
-        }
-    },
-
-    // Export functions for admin command use
-    checkDailyBuffStatus: async function(userId, guildId) {
-        try {
-            // ✅ NEW: Return testing mode status
-            if (isTestingMode()) {
-                return {
-                    hasDBRecord: false,
-                    currentRoles: [],
-                    currentDay: 'testing-mode',
-                    member: null
-                };
-            }
-            
-            const currentDay = getCurrentDayKey();
-            
-            const dbResult = await global.xpTracker.db.query(
-                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                [userId, guildId, currentDay]
-            );
-            const hasDBRecord = dbResult.rows.length > 0;
-
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            const currentRoles = [];
-
-            if (member) {
-                // Check for all 10 tiers
-                for (let i = 1; i <= 10; i++) {
-                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const role = guild.roles.cache.get(roleId);
-                        if (role) {
-                            currentRoles.push({
-                                tier: i,
-                                roleId: roleId,
-                                roleName: role.name
-                            });
-                        }
-                    }
-                }
-            }
-
-            return {
-                hasDBRecord,
-                currentRoles,
-                currentDay,
-                member
-            };
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error checking status:', error);
-            return {
-                hasDBRecord: false,
-                currentRoles: [],
-                currentDay: getCurrentDayKey(),
-                member: null
-            };
-        }
-    },
-
-    forceRemoveDailyBuff: async function(userId, guildId, reason) {
-        try {
-            // ✅ NEW: Handle testing mode
-            if (isTestingMode()) {
-                return {
-                    success: true,
-                    removedRoles: ['Testing Mode - No Roles to Remove'],
-                    dbRecordsRemoved: 0,
-                    currentDay: 'testing-mode'
-                };
-            }
-            
-            const currentDay = getCurrentDayKey();
-            const removedRoles = [];
-            let dbRecordsRemoved = 0;
-
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-
-            if (member) {
-                // Remove all 10 tier roles
-                for (let i = 1; i <= 10; i++) {
-                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const role = guild.roles.cache.get(roleId);
-                        if (role) {
-                            try {
-                                await member.roles.remove(role, reason);
-                                removedRoles.push(`Tier ${i}: ${role.name}`);
-                                console.log(`[DAILY BUFF] Removed ${role.name} from ${member.user.username}`);
-                            } catch (error) {
-                                console.error(`[DAILY BUFF] Error removing role ${role.name}:`, error);
-                            }
-                        }
-                    }
-                }
-            }
-
-            try {
-                const deleteResult = await global.xpTracker.db.query(
-                    'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2',
-                    [userId, guildId]
-                );
-                dbRecordsRemoved = deleteResult.rowCount || 0;
-                console.log(`[DAILY QUIZ] Deleted ${dbRecordsRemoved} daily quiz records`);
-            } catch (error) {
-                console.error('[DAILY QUIZ] Error deleting database records:', error);
-            }
-
-            return {
-                success: true,
-                removedRoles,
-                dbRecordsRemoved,
-                currentDay
-            };
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error in forceRemoveDailyBuff:', error);
-            return {
-                success: false,
-                error: error.message,
-                removedRoles: [],
-                dbRecordsRemoved: 0,
-                currentDay: getCurrentDayKey()
-            };
-        }
-    }
-};
