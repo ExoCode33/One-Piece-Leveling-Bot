@@ -479,17 +479,20 @@ module.exports = {
                     await interaction.editReply({ embeds: [embed], components: rows }); 
                     msg = await interaction.fetchReply(); 
                 } else {
-                    // Parallel execution: cleanup old messages while preparing new embed
+                    // OPTIMIZED: Immediate transition with parallel execution
                     const cleanupPromise = (qNum > 1 || rerollsUsed > 0) ? 
                         this.cleanupOldQuestionMessages(interaction, qNum, rerollsUsed) : 
                         Promise.resolve();
                     
-                    // Send new message immediately without waiting for cleanup
-                    const sendPromise = interaction.followUp({ embeds: [embed], components: rows });
+                    // ✅ FIXED: Add delay before sending new message to ensure cleanup doesn't interfere
+                    await cleanupPromise; // Wait for cleanup to complete first
                     
-                    // Wait for both to complete (cleanup runs in background)
-                    const [, newMsg] = await Promise.all([cleanupPromise, sendPromise]);
-                    msg = newMsg;
+                    // Small delay to ensure cleanup is fully done
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Send new message after cleanup is complete
+                    const sendPromise = interaction.followUp({ embeds: [embed], components: rows });
+                    msg = await sendPromise;
                 }
                 
                 // Wait a moment to ensure the message is fully loaded
@@ -1045,23 +1048,86 @@ module.exports = {
                             }
                         }
                     } else {
-                        // Continue to next question after timeout, but show brief timeout notice
+                        // ✅ FIXED: Show continue prompt after timeout instead of auto-continuing
                         try {
-                            const timeoutNotice = new EmbedBuilder()
+                            const successfulAnswers = newResults.filter(r => r === true).length;
+                            const timeoutPrompt = new EmbedBuilder()
                                 .setColor('#FF6B6B')
                                 .setTitle(`⏰ Question ${qNum} Timed Out${testingMode ? ' [Testing]' : ''}`)
-                                .setDescription(`Moving to Question ${qNum + 1}/10...${testingMode ? '\n\n🧪 **Testing Mode**: Continuing for practice' : ''}`)
-                                .setFooter({ text: testingMode ? '🧪 Testing Mode - Auto-continuing in 2 seconds' : 'Auto-continuing in 2 seconds' });
+                                .setDescription(`**Time's Up!** You didn't answer in time.\n\n**Progress:** ${successfulAnswers} successful answers out of ${qNum} attempted.${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                                .addFields({ 
+                                    name: '🎯 Next Step', 
+                                    value: `Question ${qNum + 1}/10 is ready.\nAre you ready to continue?`, 
+                                    inline: false 
+                                })
+                                .setFooter({ text: testingMode ? '🧪 Testing Mode - Continue when ready' : 'Continue when ready or wait for auto-continue' })
+                                .setTimestamp();
                             
-                            await msg.edit({ embeds: [timeoutNotice], components: [] });
+                            const timeoutContinueBtn = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`continue_after_timeout_${userId}_${qNum + 1}`)
+                                    .setLabel(`Continue to Question ${qNum + 1}`)
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setEmoji('▶️')
+                            );
                             
-                            // Wait 2 seconds then continue
-                            setTimeout(async () => {
-                                const deletePromise = msg.delete().catch(() => {});
-                                const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
-                                
-                                await Promise.all([deletePromise, nextQuestionPromise]);
-                            }, 2000);
+                            await msg.edit({ embeds: [timeoutPrompt], components: [timeoutContinueBtn] });
+                            
+                            // Wait for continue button with auto-continue fallback
+                            const timeoutContinueCollector = msg.createMessageComponentCollector({ 
+                                time: 15000, // 15 seconds to click continue, then auto-continue
+                                filter: i => i.user.id === userId && i.customId.startsWith('continue_after_timeout_')
+                            });
+                            
+                            timeoutContinueCollector.on('collect', async (continueBtn) => {
+                                try {
+                                    await continueBtn.deferUpdate();
+                                    timeoutContinueCollector.stop();
+                                    
+                                    // Continue to next question
+                                    const deletePromise = msg.delete().catch(() => {});
+                                    const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                    
+                                    await Promise.all([deletePromise, nextQuestionPromise]);
+                                } catch (collectError) {
+                                    console.error('[DAILY QUIZ] Error in timeout continue button collector:', collectError);
+                                    // Fallback: continue automatically
+                                    const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                    await nextQuestionPromise;
+                                }
+                            });
+                            
+                            timeoutContinueCollector.on('end', async (collected) => {
+                                if (collected.size === 0) {
+                                    // Auto-continue after 15 seconds if no button click
+                                    try {
+                                        console.log(`[DAILY QUIZ] Auto-continuing Q${qNum + 1} after timeout (15s wait)`);
+                                        
+                                        // Show auto-continue message briefly
+                                        const autoContinueEmbed = new EmbedBuilder()
+                                            .setColor('#FFA500')
+                                            .setTitle(`⏰ Auto-Continuing to Question ${qNum + 1}${testingMode ? ' [Testing]' : ''}`)
+                                            .setDescription('Moving to the next question automatically...')
+                                            .setFooter({ text: testingMode ? '🧪 Testing Mode - Auto-continuing' : 'Auto-continuing' });
+                                        
+                                        await msg.edit({ embeds: [autoContinueEmbed], components: [] });
+                                        
+                                        // Wait 2 seconds then continue
+                                        setTimeout(async () => {
+                                            const deletePromise = msg.delete().catch(() => {});
+                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                            
+                                            await Promise.all([deletePromise, nextQuestionPromise]);
+                                        }, 2000);
+                                        
+                                    } catch (timeoutError) {
+                                        console.error(`[DAILY QUIZ] Error in auto-continue after timeout:`, timeoutError);
+                                        // Ultimate fallback
+                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                                        await nextQuestionPromise;
+                                    }
+                                }
+                            });
                             
                         } catch (error) {
                             console.error(`[DAILY QUIZ] Error handling timeout transition:`, error);
@@ -1081,14 +1147,15 @@ module.exports = {
         }
     },
 
-    // Optimized cleanup method with faster execution
+    // Optimized cleanup method with better message identification
     async cleanupOldQuestionMessages(interaction, currentQNum, currentRerollsUsed) {
         try {
-            console.log(`[CLEANUP] Fast cleanup before Q${currentQNum}`);
+            console.log(`[CLEANUP] Starting cleanup before Q${currentQNum} (reroll: ${currentRerollsUsed})`);
             
             // Fetch fewer messages for faster response
-            const messages = await interaction.channel.messages.fetch({ limit: 10 });
+            const messages = await interaction.channel.messages.fetch({ limit: 15 });
             const deletionPromises = [];
+            const currentTime = Date.now();
             
             for (const [messageId, message] of messages) {
                 // Skip if not from our bot
@@ -1097,20 +1164,43 @@ module.exports = {
                 // Skip if no embeds
                 if (!message.embeds || message.embeds.length === 0) continue;
                 
+                // ✅ FIXED: Skip very recent messages (less than 5 seconds old) to avoid deleting active questions
+                if (currentTime - message.createdTimestamp < 5000) {
+                    console.log(`[CLEANUP] Skipping recent message ${messageId} (${Math.round((currentTime - message.createdTimestamp)/1000)}s old)`);
+                    continue;
+                }
+                
                 const embed = message.embeds[0];
                 const title = embed.title || '';
                 const author = embed.author?.name || '';
+                const description = embed.description || '';
                 
-                // Check if it's a daily buff question embed
+                // ✅ FIXED: More specific identification of old quiz messages
                 const isDailyBuffEmbed = (
-                    title.includes('Question') && title.includes('/10') ||
+                    // Old question embeds
+                    (title.includes('Question') && title.includes('/10') && !title.includes(`Question ${currentQNum}/10`)) ||
+                    // Challenge completion messages
                     author.includes('ULTIMATE ANIME MASTERY CHALLENGE') ||
-                    title.includes('Correct!') && title.includes('Achieved') ||
+                    title.includes('Correct!') && title.includes('Successful') ||
                     title.includes('Strategic Withdrawal') ||
-                    title.includes('Wrong Answer')
+                    title.includes('Wrong Answer') ||
+                    title.includes('Failed') ||
+                    // Testing mode completion messages
+                    title.includes('Testing Complete') ||
+                    title.includes('Testing Timeout') ||
+                    // Continue prompts
+                    description.includes('Question') && description.includes('ready') ||
+                    title.includes('Challenge Complete') ||
+                    title.includes('Time\'s Up')
                 );
                 
-                if (isDailyBuffEmbed) {
+                // ✅ FIXED: Extra safety - never delete messages with active components (buttons)
+                const hasActiveComponents = message.components && message.components.length > 0 && 
+                    message.components.some(row => row.components && row.components.length > 0);
+                
+                if (isDailyBuffEmbed && !hasActiveComponents) {
+                    console.log(`[CLEANUP] Queuing deletion of old message: "${title.substring(0, 50)}..." (${Math.round((currentTime - message.createdTimestamp)/1000)}s old)`);
+                    
                     // Add deletion to promise array instead of awaiting each one
                     deletionPromises.push(
                         message.delete().catch(error => 
@@ -1120,17 +1210,21 @@ module.exports = {
                     
                     // Limit concurrent deletions to avoid rate limits
                     if (deletionPromises.length >= 3) break;
+                } else if (hasActiveComponents) {
+                    console.log(`[CLEANUP] Skipping message with active components: "${title.substring(0, 30)}..."`);
                 }
             }
             
             // Execute all deletions in parallel for speed
             if (deletionPromises.length > 0) {
                 await Promise.all(deletionPromises);
-                console.log(`[CLEANUP] Parallel deleted ${deletionPromises.length} messages`);
+                console.log(`[CLEANUP] Successfully deleted ${deletionPromises.length} old messages`);
+            } else {
+                console.log(`[CLEANUP] No old messages found to delete`);
             }
             
         } catch (error) {
-            console.error('[CLEANUP] Error in fast cleanup:', error);
+            console.error('[CLEANUP] Error in cleanup:', error);
         }
     },
 
