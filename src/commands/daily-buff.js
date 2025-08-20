@@ -784,10 +784,11 @@ module.exports = {
                             .setFooter({ text: 'Answer revealed • Processing...' })
                             .setTimestamp();
                         
-                        await btnInteraction.editReply({ embeds: [countdownEmbed], components: [] });
-                    } catch (error) {
-                        console.error(`[ANSWER REVEAL] Error updating countdown ${i}:`, error);
-                    }
+                        try {
+                            await btnInteraction.editReply({ embeds: [countdownEmbed], components: [] });
+                        } catch (error) {
+                            console.error(`[ANSWER REVEAL] Error updating countdown ${i}:`, error);
+                        }
                 }, (10 - i) * 1000);
             }
         } catch (error) {
