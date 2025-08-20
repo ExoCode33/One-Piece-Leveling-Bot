@@ -250,7 +250,7 @@ module.exports = {
                         },
                         {
                             name: '⏰ Time Remaining',
-                            value: `**${timeText}** (${t} seconds)\n${countdownBar}\n\`${filledSquares}/10 squares • ${Math.round(percentageRemaining)}% remaining\``,
+                            value: `**${timeText}** (${t} seconds)\n${countdownBar}`,
                             inline: false
                         },
                         {
