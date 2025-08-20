@@ -429,29 +429,12 @@ module.exports = {
                 await interaction.editReply({ embeds: [embed], components: rows }); 
                 msg = await interaction.fetchReply(); 
             } else {
-                msg = await interaction.followUp({ embeds: [embed], components: rows });
-                
-                // Delete previous embed when continuing
-                if (qNum > 1) {
-                    try {
-                        const messages = await interaction.channel.messages.fetch({ limit: 10 });
-                        const previousMessages = messages.filter(m => 
-                            m.author.id === interaction.client.user.id && 
-                            m.embeds.length > 0 && 
-                            m.embeds[0].title && 
-                            m.embeds[0].title.includes('Question') &&
-                            m.embeds[0].title.includes(`${qNum - 1}/10`) &&
-                            m.id !== msg.id
-                        );
-                        
-                        for (const oldMsg of previousMessages.values()) {
-                            await oldMsg.delete().catch(() => {});
-                            break;
-                        }
-                    } catch (error) {
-                        console.log('[CLEANUP] Could not delete previous embed:', error.message);
-                    }
+                // For questions after the first, clean up old messages BEFORE sending new one
+                if (qNum > 1 || rerollsUsed > 0) {
+                    await this.cleanupOldQuestionMessages(interaction, qNum, rerollsUsed);
                 }
+                
+                msg = await interaction.followUp({ embeds: [embed], components: rows });
             }
 
             // Timer updates
@@ -482,6 +465,17 @@ module.exports = {
                         }
                         
                         collector.stop();
+                        
+                        // Clean up current message before reroll
+                        try {
+                            await btn.message.delete();
+                        } catch (error) {
+                            console.log('[CLEANUP] Could not delete current message for reroll:', error.message);
+                        }
+                        
+                        // Small delay before reroll
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
                         await this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1);
                         return;
                     }
@@ -603,11 +597,15 @@ module.exports = {
                                     const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
                                     contColl.stop();
                                     
+                                    // Clean up current message before proceeding
                                     try {
                                         await btn.message.delete();
                                     } catch (error) {
                                         console.log('[CLEANUP] Could not delete current message:', error.message);
                                     }
+                                    
+                                    // Small delay before next question
+                                    await new Promise(resolve => setTimeout(resolve, 500));
                                     
                                     await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), currentTier, parseInt(passedRerollsUsed));
                                 } else {
@@ -743,6 +741,61 @@ module.exports = {
             });
         } catch (error) { 
             console.error('[QUIZ] Question error:', error); 
+        }
+    },
+
+    // Helper method to clean up old question messages
+    async cleanupOldQuestionMessages(interaction, currentQNum, currentRerollsUsed) {
+        try {
+            console.log(`[CLEANUP] Cleaning old messages before Q${currentQNum} (rerolls: ${currentRerollsUsed})`);
+            
+            // Wait a bit to ensure previous message is fully sent
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            const messages = await interaction.channel.messages.fetch({ limit: 20 });
+            let deletedCount = 0;
+            
+            for (const [messageId, message] of messages) {
+                // Skip if not from our bot
+                if (message.author.id !== interaction.client.user.id) continue;
+                
+                // Skip if no embeds
+                if (!message.embeds || message.embeds.length === 0) continue;
+                
+                const embed = message.embeds[0];
+                const title = embed.title || '';
+                const author = embed.author?.name || '';
+                
+                // Check if it's a daily buff question embed
+                const isDailyBuffEmbed = (
+                    title.includes('Question') && title.includes('/10') ||
+                    author.includes('ULTIMATE ANIME MASTERY CHALLENGE') ||
+                    title.includes('Correct!') && title.includes('Achieved') ||
+                    title.includes('Strategic Withdrawal') ||
+                    title.includes('Wrong Answer')
+                );
+                
+                if (isDailyBuffEmbed) {
+                    try {
+                        await message.delete();
+                        deletedCount++;
+                        console.log(`[CLEANUP] Deleted old daily buff message: ${title.substring(0, 50)}...`);
+                        
+                        // Don't delete too many at once to avoid rate limits
+                        if (deletedCount >= 3) break;
+                        
+                        // Small delay between deletions
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                    } catch (deleteError) {
+                        console.log(`[CLEANUP] Could not delete message ${messageId}: ${deleteError.message}`);
+                    }
+                }
+            }
+            
+            console.log(`[CLEANUP] Cleaned up ${deletedCount} old daily buff messages`);
+            
+        } catch (error) {
+            console.error('[CLEANUP] Error cleaning up old messages:', error);
         }
     },
 
