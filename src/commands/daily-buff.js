@@ -1,4 +1,4 @@
-// src/commands/daily-buff.js - Ultra Minimal Beautiful Version
+// src/commands/daily-buff.js - API Enabled Compact Version
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -6,23 +6,90 @@ const TIER_COLORS = { 1: [76, 175, 80], 2: [33, 150, 243], 3: [156, 39, 176], 4:
 const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic', 4: 'Legendary', 5: 'Divine' };
 const TIER_DESC = { 1: '⚓ Common boost', 2: '🔱 Rare power', 3: '🎖️ Epic ability', 4: '⭐ Legendary mastery', 5: '💎 Divine transcendence' };
 
-const QUESTIONS = {
+const FALLBACK = {
     'Easy': [
         { question: "Who is the main protagonist of One Piece?", options: ["Monkey D. Luffy", "Roronoa Zoro", "Nami", "Sanji"], answer: "Monkey D. Luffy" },
-        { question: "What is Luffy's Devil Fruit?", options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"], answer: "Gomu Gomu no Mi" },
-        { question: "Who is the main character of Naruto?", options: ["Naruto Uzumaki", "Sasuke Uchiha", "Sakura Haruno", "Kakashi Hatake"], answer: "Naruto Uzumaki" }
+        { question: "What is Luffy's Devil Fruit?", options: ["Gomu Gomu no Mi", "Mera Mera no Mi", "Hito Hito no Mi", "Yami Yami no Mi"], answer: "Gomu Gomu no Mi" }
     ],
     'Medium': [
         { question: "What is Eren's Titan form called?", options: ["Attack Titan", "Colossal Titan", "Female Titan", "Beast Titan"], answer: "Attack Titan" },
-        { question: "Who is 'Humanity's Strongest Soldier'?", options: ["Levi Ackerman", "Erwin Smith", "Mikasa Ackerman", "Eren Yeager"], answer: "Levi Ackerman" },
-        { question: "What is Goku's Saiyan birth name?", options: ["Kakarot", "Vegeta", "Raditz", "Bardock"], answer: "Kakarot" }
+        { question: "Who is 'Humanity's Strongest Soldier'?", options: ["Levi Ackerman", "Erwin Smith", "Mikasa Ackerman", "Eren Yeager"], answer: "Levi Ackerman" }
     ],
     'Hard': [
         { question: "Where do the Straw Hats first meet Brook?", options: ["Thriller Bark", "Sabaody Archipelago", "Water 7", "Enies Lobby"], answer: "Thriller Bark" },
-        { question: "What is the Flame Alchemist's real name?", options: ["Roy Mustang", "Alex Louis Armstrong", "Maes Hughes", "King Bradley"], answer: "Roy Mustang" },
-        { question: "What grade is Yuji Itadori initially?", options: ["Grade 4", "Grade 3", "Grade 2", "Grade 1"], answer: "Grade 4" }
+        { question: "What is the Flame Alchemist's real name?", options: ["Roy Mustang", "Alex Louis Armstrong", "Maes Hughes", "King Bradley"], answer: "Roy Mustang" }
     ]
 };
+
+async function fetchQuestion(difficulty) {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        
+        const response = await fetch('https://aniquizapi.vercel.app/api/quiz', {
+            method: 'GET',
+            headers: { 'User-Agent': 'DiscordBot-AnimeQuiz/1.0', 'Accept': 'application/json' },
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+            const data = await response.json();
+            let question, options, answer;
+            
+            if (data.data?.question && data.data?.correct && data.data?.options) {
+                question = data.data.question;
+                options = Array.isArray(data.data.options) ? data.data.options : [];
+                answer = data.data.correct;
+            } else if (data.question && data.correct && data.options) {
+                question = data.question;
+                options = Array.isArray(data.options) ? data.options : [];
+                answer = data.correct;
+            } else {
+                throw new Error('Invalid API response');
+            }
+            
+            // Clean text
+            const clean = (text) => {
+                if (!text) return '';
+                return text.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#x([0-9A-Fa-f]+);/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+                    .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(parseInt(d, 10))).trim();
+            };
+            
+            question = clean(question);
+            answer = clean(answer);
+            options = options.map(opt => clean(opt)).filter(opt => opt.length > 0);
+            
+            if (!question || options.length < 2 || !answer) throw new Error('Invalid question data');
+            
+            if (!options.includes(answer)) {
+                const match = options.find(opt => opt.toLowerCase() === answer.toLowerCase());
+                if (match) answer = match;
+                else if (options.length >= 4) options[3] = answer;
+                else options.push(answer);
+            }
+            
+            if (options.length > 4) {
+                const correctIndex = options.indexOf(answer);
+                const others = options.filter((opt, i) => i !== correctIndex);
+                const randomOthers = others.sort(() => 0.5 - Math.random()).slice(0, 3);
+                options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
+            }
+            
+            console.log(`[API] ✅ Fetched ${difficulty} question from API`);
+            return { question, options, answer, difficulty };
+        }
+    } catch (error) {
+        console.log(`[API] ❌ Failed to fetch from API: ${error.message}`);
+    }
+    
+    // Fallback
+    console.log(`[API] 🛡️ Using fallback ${difficulty} question`);
+    const fallbacks = FALLBACK[difficulty] || FALLBACK['Medium'];
+    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+}
 
 function getDay() { const n = new Date(), e = new Date(n.getTime() - 14400000); return e.getHours() < 3 && e.setDate(e.getDate() - 1), e.toISOString().split('T')[0]; }
 function getReset() { const n = new Date(), e = new Date(n.getTime() - 14400000), t = new Date(e); return t.setHours(3, 0, 0, 0), e.getHours() >= 3 && t.setDate(t.getDate() + 1), Math.floor((t.getTime() + 14400000) / 1000); }
@@ -53,8 +120,8 @@ module.exports = {
 
     async ask(interaction, userId, guildId, member, qNum, tier) {
         try {
-            const diffs = ['Easy', 'Easy', 'Medium', 'Hard', 'Hard'], diff = diffs[qNum - 1];
-            const qs = QUESTIONS[diff], q = qs[Math.floor(Math.random() * qs.length)];
+            const diffs = ['Easy', 'Medium', 'Medium', 'Hard', 'Hard'], diff = diffs[qNum - 1];
+            const q = await fetchQuestion(diff); // ✅ API CALL HERE
             let time = 20;
 
             const makeEmbed = (t) => {
