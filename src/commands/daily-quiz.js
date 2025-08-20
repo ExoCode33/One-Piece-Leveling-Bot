@@ -29,9 +29,9 @@ collector.on('end', async (collected) => {
 // DAILY_QUIZ_TIER_9_XP_CAP="90000"   # Divine buff increases cap to 90,000 XP
 // DAILY_QUIZ_TIER_10_XP_CAP="150000" # Divine Perfect buff increases cap to 150,000 XP
 //
-// EXISTING VARIABLES (still needed):
-// DAILY_XP_BUFF_TIER_1_ROLE="role_id" # Role IDs for each tier
-// DAILY_XP_BUFF_TIER_2_ROLE="role_id" # etc...
+// EXISTING VARIABLES (updated naming):
+// DAILY_QUIZ_TIER_1_ROLE="role_id" # Role IDs for each tier
+// DAILY_QUIZ_TIER_2_ROLE="role_id" # etc...
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -955,7 +955,7 @@ module.exports = {
             }
             // Check for all 10 tiers
             for (let i = 1; i <= 10; i++) { 
-                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; 
+                const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`]; 
                 if (roleId && member.roles.cache.has(roleId)) return { tier: i, name: TIER_NAMES[i], multiplier: 'Active' }; 
             }
             return { tier: 0, name: 'No Enhancement', multiplier: 'None' };
@@ -1138,7 +1138,7 @@ module.exports = {
             if (member) {
                 // Check for all 10 tiers
                 for (let i = 1; i <= 10; i++) {
-                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
                     if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
                         const role = guild.roles.cache.get(roleId);
                         if (role) {
