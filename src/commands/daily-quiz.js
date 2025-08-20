@@ -1,46 +1,4 @@
-collector.on('end', async (collected) => {
-                clearInterval(timer);
-                if (collected.size === 0) {
-                    // Time's up - record as failed answer and continue or end
-                    const newResults = [...questionResults, false];
-                    
-                    if (qNum === 10) {
-                        // Challenge complete due to timeout on last question
-                        const totalSuccessful = newResults.filter(r => r === true).length;
-                        
-                        if (totalSuccessful > 0) {
-                            await this.apply(userId, guildId, member, totalSuccessful);
-                        } else {
-                            await this.saveFail(userId, guildId);
-                        }
-                        
-                        const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
-                        const timeout = new EmbedBuilder()
-                            .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
-                            .setTitle('⏰ Time\'s Up! Challenge Complete')
-                            .setDescription(totalSuccessful > 0 ? 
-                                `**${tierName}** earned based on your ${totalSuccessful} correct answers.` :
-                                'No enhancement earned.')
-                            .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
-                            .setFooter({ text: 'Daily Quiz System' })
-                            .setTimestamp();
-                        await msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
-                    } else {
-                        // Continue to next question after timeout
-                        const deletePromise = msg.delete().catch(() => {});
-                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
-                        
-                        await Promise.all([deletePromise, nextQuestionPromise]);
-                    }
-                }
-            });
-        } catch (error) { 
-            console.error('[QUIZ] Question error:', error); 
-        }
-    },                
-                // ✅ FIXED: Delete ALL daily voice XP records for fresh start
-                const voiceDeleteResult = await global.xpTracker.db.query('DELETE FROM daily_voice_xp');
-                console.log(`[DAILY CAP] ✅ FORCE DELETED ALL ${voiceDeleteResult.rowCount} voice XP records for complete reset`);// src/commands/daily-quiz.js - Enhanced Daily Quiz System with Channel Restriction
+// src/commands/daily-quiz.js - Enhanced Daily Quiz System with Channel Restriction
 // 
 // ✅ NEW ENVIRONMENT VARIABLES NEEDED:
 // 
@@ -573,7 +531,7 @@ module.exports = {
                         
                         let xpMultiplier = 'Unknown';
                         try {
-                            const roleId = process.env[`DAILY_XP_BUFF_TIER_${securedTier}_ROLE`];
+                            const roleId = process.env[`DAILY_QUIZ_TIER_${securedTier}_ROLE`];
                             if (roleId && global.xpBoostManager) {
                                 const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
                                 if (boostInfo && boostInfo.boost_multiplier) {
@@ -609,7 +567,6 @@ module.exports = {
                     const selectedOption = q.options[parseInt(btn.customId.split('_')[3])];
                     console.log(`[DAILY BUFF] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"`);
                     
-                    // FIXED: Removed the duplicate if statement that was causing the syntax error
                     if (isCorrect) {
                         // Record successful answer
                         const newResults = [...questionResults, true];
@@ -633,7 +590,7 @@ module.exports = {
                             
                             let xpMultiplier = 'Unknown';
                             try {
-                                const roleId = process.env[`DAILY_XP_BUFF_TIER_${totalSuccessful}_ROLE`];
+                                const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
                                 if (roleId && global.xpBoostManager) {
                                     const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
                                     if (boostInfo && boostInfo.boost_multiplier) {
@@ -703,7 +660,7 @@ module.exports = {
                                     
                                     let xpMultiplier = 'Unknown';
                                     try {
-                                        const roleId = process.env[`DAILY_XP_BUFF_TIER_${cTier}_ROLE`];
+                                        const roleId = process.env[`DAILY_QUIZ_TIER_${cTier}_ROLE`];
                                         if (roleId && global.xpBoostManager) {
                                             const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
                                             if (boostInfo && boostInfo.boost_multiplier) {
@@ -754,7 +711,7 @@ module.exports = {
                                 let xpMultiplier = 'Unknown';
                                 if (totalSuccessful > 0) {
                                     try {
-                                        const roleId = process.env[`DAILY_XP_BUFF_TIER_${totalSuccessful}_ROLE`];
+                                        const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
                                         if (roleId && global.xpBoostManager) {
                                             const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
                                             if (boostInfo && boostInfo.boost_multiplier) {
@@ -809,26 +766,37 @@ module.exports = {
             collector.on('end', async (collected) => {
                 clearInterval(timer);
                 if (collected.size === 0) {
-                    let fTier = Math.max(0, qNum - 1);
+                    // Time's up - record as failed answer and continue or end
+                    const newResults = [...questionResults, false];
                     
-                    // Timeout on question 1 still gives tier 1
-                    if (qNum === 1) {
-                        fTier = 1;
+                    if (qNum === 10) {
+                        // Challenge complete due to timeout on last question
+                        const totalSuccessful = newResults.filter(r => r === true).length;
+                        
+                        if (totalSuccessful > 0) {
+                            await this.apply(userId, guildId, member, totalSuccessful);
+                        } else {
+                            await this.saveFail(userId, guildId);
+                        }
+                        
+                        const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                        const timeout = new EmbedBuilder()
+                            .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
+                            .setTitle('⏰ Time\'s Up! Challenge Complete')
+                            .setDescription(totalSuccessful > 0 ? 
+                                `**${tierName}** earned based on your ${totalSuccessful} correct answers.` :
+                                'No enhancement earned.')
+                            .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
+                            .setFooter({ text: 'Daily Quiz System' })
+                            .setTimestamp();
+                        await msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
+                    } else {
+                        // Continue to next question after timeout
+                        const deletePromise = msg.delete().catch(() => {});
+                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                        
+                        await Promise.all([deletePromise, nextQuestionPromise]);
                     }
-                    
-                    if (fTier > 0) await this.apply(userId, guildId, member, fTier); else await this.saveFail(userId, guildId);
-                    const timeout = new EmbedBuilder()
-                        .setColor([231, 76, 60])
-                        .setTitle('⏰ Time\'s Up!')
-                        .setDescription(fTier > 0 ? 
-                            (qNum === 1 ? 
-                                `Consolation prize (**${TIER_NAMES[fTier]}**) applied for attempting the challenge.` :
-                                `Previous tier (**${TIER_NAMES[fTier]}**) applied.`) : 
-                            'No enhancement earned.')
-                        .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
-                        .setFooter({ text: 'Enhancement Intelligence' })
-                        .setTimestamp();
-                    await msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
                 }
             });
         } catch (error) { 
@@ -889,7 +857,7 @@ module.exports = {
         }
     },
 
-    // Show answer reveal with 10-second countdown
+    // Show answer reveal with countdown
     async showAnswerReveal(btnInteraction, question, questionNum, member) {
         try {
             console.log(`[ANSWER REVEAL] Showing correct answer for Q${questionNum}: "${question.answer}" to ${member.displayName}`);
@@ -903,7 +871,7 @@ module.exports = {
                 .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}`)
                 .addFields({
                     name: '⏳ Processing Results',
-                    value: 'Results in **5** seconds...',
+                    value: 'Results in **3** seconds...',
                     inline: false
                 })
                 .setFooter({ text: 'Answer revealed • Processing...' })
@@ -911,8 +879,8 @@ module.exports = {
 
             await btnInteraction.editReply({ embeds: [revealEmbed], components: [] });
             
-            // Start 5-second countdown (reduced from 10)
-            for (let i = 4; i >= 1; i--) {
+            // Start 3-second countdown
+            for (let i = 2; i >= 1; i--) {
                 setTimeout(async () => {
                     try {
                         const countdownEmbed = new EmbedBuilder()
@@ -931,7 +899,7 @@ module.exports = {
                     } catch (error) {
                         console.error(`[ANSWER REVEAL] Error updating countdown ${i}:`, error);
                     }
-                }, (5 - i) * 1000);
+                }, (3 - i) * 1000);
             }
         } catch (error) {
             console.error('[ANSWER REVEAL] Error showing answer:', error);
@@ -1001,7 +969,7 @@ module.exports = {
         try {
             // Remove all tier roles including tier 10
             for (let i = 1; i <= 10; i++) { 
-                const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`]; 
+                const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`]; 
                 if (roleId && member.roles.cache.has(roleId)) { 
                     const role = member.guild.roles.cache.get(roleId); 
                     if (role) await member.roles.remove(role); 
@@ -1009,7 +977,7 @@ module.exports = {
             }
 
             if (tier > 0) { 
-                const roleId = process.env[`DAILY_XP_BUFF_TIER_${tier}_ROLE`]; 
+                const roleId = process.env[`DAILY_QUIZ_TIER_${tier}_ROLE`]; 
                 if (roleId) { 
                     const role = member.guild.roles.cache.get(roleId); 
                     if (role) { 
@@ -1214,7 +1182,7 @@ module.exports = {
             if (member) {
                 // Remove all 10 tier roles
                 for (let i = 1; i <= 10; i++) {
-                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
+                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
                     if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
                         const role = guild.roles.cache.get(roleId);
                         if (role) {
