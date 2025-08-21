@@ -610,7 +610,9 @@ class QuizManager {
         
         // Award XP in non-testing mode
         if (!isTestingMode()) {
+            // ✅ FIXED: Use correct environment variable name
             const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
+            
             if (global.xpTracker && correctAnswerXP > 0) {
                 try {
                     await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
