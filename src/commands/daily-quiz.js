@@ -215,7 +215,9 @@ async function fetchQuestion(difficulty) {
                                     question = `What is the English title of "${anime.title_japanese}"?`;
                                     answer = anime.title_english;
                                     options = [answer, "Attack on Titan", "Demon Slayer", "One Piece"].sort(() => Math.random() - 0.5);
-                                } else continue;
+                                } else {
+                                    continue;
+                                }
                                 break;
                             case 'year':
                                 if (anime.aired?.from) {
@@ -223,7 +225,9 @@ async function fetchQuestion(difficulty) {
                                     answer = new Date(anime.aired.from).getFullYear().toString();
                                     const year = parseInt(answer);
                                     options = [answer, (year-1).toString(), (year+1).toString(), (year+2).toString()].sort(() => Math.random() - 0.5);
-                                } else continue;
+                                } else {
+                                    continue;
+                                }
                                 break;
                             case 'episodes':
                                 if (anime.episodes && anime.episodes > 0) {
@@ -231,7 +235,9 @@ async function fetchQuestion(difficulty) {
                                     answer = anime.episodes.toString();
                                     const eps = anime.episodes;
                                     options = [answer, (eps+5).toString(), (eps-3).toString(), (eps+10).toString()].sort(() => Math.random() - 0.5);
-                                } else continue;
+                                } else {
+                                    continue;
+                                }
                                 break;
                         }
                     }
