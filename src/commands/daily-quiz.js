@@ -1613,7 +1613,7 @@ module.exports = {
 };
 
 // ✅ NEW: Cleanup function to clear old caches (call this periodically)
-setInterval(() => {
+setInterval(async () => {
     const now = Date.now();
     const maxAge = 30 * 60 * 1000; // 30 minutes
     
