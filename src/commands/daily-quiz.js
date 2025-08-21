@@ -910,15 +910,19 @@ module.exports = {
                         console.log(`[DAILY QUIZ] Reroll requested for Q${qNum}, loading new question...`);
                         
                         // Get a new question for reroll (we'll fetch one since rerolls should give different questions)
-                        const newQuestion = await fetchQuestion(q.difficulty || 'Medium', new Set([q.question.toLowerCase().trim()]));
-                        
-                        if (newQuestion) {
-                            // Update the question cache with the new question
-                            const cache = questionCache.get(userId);
-                            if (cache && cache.currentIndex > 0) {
-                                cache.questions[cache.currentIndex - 1] = newQuestion;
-                            }
-                        }
+                        fetchQuestion(q.difficulty || 'Medium', new Set([q.question.toLowerCase().trim()]))
+                            .then(newQuestion => {
+                                if (newQuestion) {
+                                    // Update the question cache with the new question
+                                    const cache = questionCache.get(userId);
+                                    if (cache && cache.currentIndex > 0) {
+                                        cache.questions[cache.currentIndex - 1] = newQuestion;
+                                    }
+                                }
+                            })
+                            .catch(error => {
+                                console.error('[DAILY QUIZ] Error fetching reroll question:', error);
+                            });
                         
                         await this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
                         return;
@@ -1195,7 +1199,11 @@ module.exports = {
                                 try {
                                     if (qNum < 10) {
                                         console.log(`[DAILY QUIZ] Countdown complete, proceeding to Q${qNum + 1}`);
-                                        await this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                                        this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults)
+                                            .catch(error => {
+                                                console.error('[DAILY QUIZ] Error proceeding to next question:', error);
+                                                clearQuestionCache(userId);
+                                            });
                                     } else {
                                         // Last question - handle completion
                                         console.log(`[DAILY QUIZ] Final question completed, calculating results`);
@@ -1381,8 +1389,12 @@ module.exports = {
                         }
                         
                         // Short delay then continue
-                        setTimeout(async () => {
-                            await this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
+                        setTimeout(() => {
+                            this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults)
+                                .catch(error => {
+                                    console.error('[DAILY QUIZ] Error continuing after timeout:', error);
+                                    clearQuestionCache(userId);
+                                });
                         }, 2000); // 2 second delay for timeout continuation
                     }
                 }
