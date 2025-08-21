@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Fixed XP Tracker with Database Connection Debugging
+// src/utils/xpTracker.js - FIXED Voice XP Manager initialization issue
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
@@ -175,9 +175,9 @@ class DatabaseManager {
             connectionString,
             max: 20,
             idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 10000, // Increased timeout
-            statement_timeout: 15000, // Increased timeout
-            query_timeout: 15000, // Increased timeout
+            connectionTimeoutMillis: 10000,
+            statement_timeout: 15000,
+            query_timeout: 15000,
             ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
         });
         
@@ -354,17 +354,20 @@ class XPTracker {
         this.db = null;
         this.databaseUrl = databaseUrl || process.env.DATABASE_URL;
         
-        // Managers (initialized later)
+        // ✅ CRITICAL FIX: Initialize managers to null to avoid undefined errors
         this.dailyResetManager = null;
         this.voiceXPManager = null;
         this.levelUpManager = null;
+        
+        // ✅ CRITICAL FIX: Add initialization status tracking
+        this.isInitialized = false;
+        this.isInitializing = false;
         
         // Graceful shutdown handling
         this.isShuttingDown = false;
         process.on('SIGTERM', () => this.gracefulShutdown());
         process.on('SIGINT', () => this.gracefulShutdown());
         
-        // Don't auto-initialize, let the caller handle it
         console.log('[XP TRACKER] XP Tracker constructed, call initialize() to start');
     }
     
@@ -403,6 +406,13 @@ class XPTracker {
     
     async initialize() {
         try {
+            // ✅ CRITICAL FIX: Prevent multiple initialization attempts
+            if (this.isInitialized || this.isInitializing) {
+                console.log('[XP TRACKER] Already initialized or initialization in progress');
+                return this.isInitialized;
+            }
+            
+            this.isInitializing = true;
             console.log('[XP TRACKER] Starting initialization...');
             console.log('[XP TRACKER] Database URL provided:', !!this.databaseUrl);
             
@@ -443,7 +453,7 @@ class XPTracker {
                 }
                 
                 if (!isHealthy && attempts < maxAttempts) {
-                    const delay = 2000 * attempts; // Progressive delay
+                    const delay = 2000 * attempts;
                     console.log(`[XP TRACKER] Retrying database connection in ${delay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
@@ -456,6 +466,10 @@ class XPTracker {
                 );
             }
             
+            // Initialize tables first
+            console.log('[XP TRACKER] Creating database tables...');
+            await this.createTables();
+            
             // Load guild settings
             console.log('[XP TRACKER] Loading guild settings...');
             await this.loadGuildSettingsFromDatabase();
@@ -464,32 +478,102 @@ class XPTracker {
             console.log('[XP TRACKER] Initializing voice sessions...');
             await this.initializeExistingVoiceSessions();
             
-            // Initialize managers
+            // ✅ CRITICAL FIX: Initialize managers with proper error handling
             console.log('[XP TRACKER] Initializing managers...');
-            this.dailyResetManager = new DailyResetManager(this);
-            this.voiceXPManager = new VoiceXPManager(this);
-            this.levelUpManager = new LevelUpManager(this);
-            
-            await this.dailyResetManager.initialize();
+            try {
+                this.dailyResetManager = new DailyResetManager(this);
+                console.log('[XP TRACKER] Daily reset manager initialized');
+                
+                this.voiceXPManager = new VoiceXPManager(this);
+                console.log('[XP TRACKER] Voice XP manager initialized');
+                
+                this.levelUpManager = new LevelUpManager(this);
+                console.log('[XP TRACKER] Level up manager initialized');
+                
+                // Initialize daily reset manager
+                await this.dailyResetManager.initialize();
+                console.log('[XP TRACKER] Daily reset manager fully initialized');
+                
+            } catch (managerError) {
+                console.error('[XP TRACKER] Error initializing managers:', managerError);
+                throw managerError;
+            }
             
             // Start cleanup interval
             this.cleanupInterval = setInterval(() => this.performMaintenance(), this.config.limits.cleanupInterval);
             
-            console.log('[XP TRACKER] Initialization completed successfully');
+            // ✅ CRITICAL FIX: Mark as initialized after successful setup
+            this.isInitialized = true;
+            this.isInitializing = false;
+            
+            console.log('[XP TRACKER] ✅ Initialization completed successfully');
             return true;
+            
         } catch (error) {
-            console.error('[XP TRACKER] Initialization failed:', error);
+            console.error('[XP TRACKER] ❌ Initialization failed:', error);
             this.monitor.trackError(error, 'initialization');
+            
+            // ✅ CRITICAL FIX: Reset initialization flags on failure
+            this.isInitialized = false;
+            this.isInitializing = false;
             
             // Clean up any partially initialized resources
             try {
                 if (this.db) {
                     await this.db.close();
+                    this.db = null;
                 }
+                
+                // Reset managers to null
+                this.dailyResetManager = null;
+                this.voiceXPManager = null;
+                this.levelUpManager = null;
+                
             } catch (cleanupError) {
                 console.error('[XP TRACKER] Error during cleanup:', cleanupError);
             }
             
+            throw error;
+        }
+    }
+    
+    // ✅ CRITICAL FIX: Add tables creation method
+    async createTables() {
+        try {
+            // User levels table
+            await this.db.query(`
+                CREATE TABLE IF NOT EXISTS user_levels (
+                    user_id VARCHAR(20) NOT NULL,
+                    guild_id VARCHAR(20) NOT NULL,
+                    total_xp INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 0,
+                    messages INTEGER DEFAULT 0,
+                    reactions INTEGER DEFAULT 0,
+                    voice_time INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, guild_id)
+                )
+            `);
+
+            // Guild settings table
+            await this.db.query(`
+                CREATE TABLE IF NOT EXISTS guild_settings (
+                    guild_id VARCHAR(20) PRIMARY KEY,
+                    levelup_channel VARCHAR(20),
+                    levelup_enabled BOOLEAN DEFAULT true,
+                    xp_log_channel VARCHAR(20),
+                    xp_log_enabled BOOLEAN DEFAULT false,
+                    xp_multiplier DECIMAL(3,2) DEFAULT 1.0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            console.log('[XP TRACKER] ✅ Database tables created successfully');
+            
+        } catch (error) {
+            console.error('[XP TRACKER] ❌ Error creating database tables:', error);
             throw error;
         }
     }
@@ -598,13 +682,17 @@ class XPTracker {
         }
     }
 
-    // All the other methods from the previous version would go here...
-    // I'll include a few key ones and indicate where the rest should go
-    
+    // ✅ CRITICAL FIX: Add safety checks to all manager methods
     async handleVoiceStateUpdate(oldState, newState) {
         if (this.isShuttingDown) return;
         
         try {
+            // ✅ CRITICAL FIX: Check if voice manager is initialized
+            if (!this.voiceXPManager) {
+                console.warn('[VOICE XP] Voice XP manager not initialized, skipping voice state update');
+                return;
+            }
+            
             return await this.voiceXPManager.handleVoiceStateUpdate(oldState, newState);
         } catch (error) {
             console.error('[VOICE XP] Error handling voice state update:', error);
@@ -616,10 +704,225 @@ class XPTracker {
         if (this.isShuttingDown) return;
         
         try {
+            // ✅ CRITICAL FIX: Check if voice manager is initialized before calling processVoiceXP
+            if (!this.voiceXPManager) {
+                console.warn('[VOICE XP] Voice XP manager not initialized, skipping voice XP processing');
+                return;
+            }
+            
+            // ✅ CRITICAL FIX: Additional check for method existence
+            if (typeof this.voiceXPManager.processVoiceXP !== 'function') {
+                console.error('[VOICE XP] Voice XP manager processVoiceXP method not available');
+                return;
+            }
+            
             return await this.voiceXPManager.processVoiceXP();
         } catch (error) {
             console.error('[VOICE XP] Error processing voice XP:', error);
             this.monitor.trackError(error, 'voice_xp');
+        }
+    }
+    
+    // ✅ CRITICAL FIX: Add method to check if tracker is ready
+    isReady() {
+        return this.isInitialized && 
+               this.db !== null && 
+               this.voiceXPManager !== null && 
+               this.dailyResetManager !== null && 
+               this.levelUpManager !== null;
+    }
+    
+    // ✅ CRITICAL FIX: Add method to safely get user stats
+    async getUserStats(userId, guildId) {
+        try {
+            if (!this.db) {
+                console.warn('[XP TRACKER] Database not initialized');
+                return null;
+            }
+            
+            const result = await this.db.query(
+                'SELECT * FROM user_levels WHERE user_id = $1 AND guild_id = $2',
+                [userId, guildId]
+            );
+            
+            return result.rows[0] || null;
+        } catch (error) {
+            console.error('[XP TRACKER] Error getting user stats:', error);
+            return null;
+        }
+    }
+    
+    // ✅ CRITICAL FIX: Add method to safely get user rank
+    async getUserRank(userId, guildId) {
+        try {
+            if (!this.db) {
+                console.warn('[XP TRACKER] Database not initialized');
+                return null;
+            }
+            
+            const userStats = await this.getUserStats(userId, guildId);
+            if (!userStats) return null;
+            
+            const rankResult = await this.db.query(
+                'SELECT COUNT(*) + 1 as rank FROM user_levels WHERE guild_id = $1 AND total_xp > $2',
+                [guildId, userStats.total_xp]
+            );
+            
+            return rankResult.rows[0]?.rank || null;
+        } catch (error) {
+            console.error('[XP TRACKER] Error getting user rank:', error);
+            return null;
+        }
+    }
+    
+    // ✅ CRITICAL FIX: Add method to safely get leaderboard
+    async getLeaderboard(guildId, limit = 50) {
+        try {
+            if (!this.db) {
+                console.warn('[XP TRACKER] Database not initialized');
+                return { users: [] };
+            }
+            
+            const result = await this.db.query(`
+                SELECT user_id as "userId", total_xp, level, messages, reactions, voice_time
+                FROM user_levels 
+                WHERE guild_id = $1 AND total_xp > 0
+                ORDER BY total_xp DESC
+                LIMIT $2
+            `, [guildId, limit]);
+            
+            return { users: result.rows };
+        } catch (error) {
+            console.error('[XP TRACKER] Error getting leaderboard:', error);
+            return { users: [] };
+        }
+    }
+    
+    // ✅ CRITICAL FIX: Add XP awarding method with safety checks
+    async awardXP(userId, guildId, xpAmount, source = 'unknown', user = null, skipMultiplier = false) {
+        try {
+            if (!this.db) {
+                console.warn('[XP TRACKER] Database not initialized, cannot award XP');
+                return false;
+            }
+            
+            if (!userId || !guildId || xpAmount <= 0) {
+                console.warn('[XP TRACKER] Invalid parameters for XP award');
+                return false;
+            }
+            
+            // Get current user data
+            let currentData = await this.getUserStats(userId, guildId);
+            let oldLevel = 0;
+            let totalXP = 0;
+            
+            if (currentData) {
+                oldLevel = currentData.level || 0;
+                totalXP = currentData.total_xp || 0;
+            }
+            
+            // Apply XP multiplier from guild settings if not skipped
+            let finalXP = xpAmount;
+            if (!skipMultiplier) {
+                const guildSettings = global.guildSettings?.get(guildId);
+                const multiplier = guildSettings?.xpMultiplier || 1.0;
+                finalXP = Math.floor(xpAmount * multiplier);
+            }
+            
+            // Calculate new totals
+            const newTotalXP = totalXP + finalXP;
+            const newLevel = this.calculateLevel(newTotalXP);
+            
+            // Update database
+            await this.db.query(`
+                INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, updated_at)
+                VALUES ($1, $2, $3, $4, 0, 0, 0, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET
+                    total_xp = user_levels.total_xp + $3,
+                    level = $4,
+                    messages = CASE WHEN $5 = 'message' THEN user_levels.messages + 1 ELSE user_levels.messages END,
+                    reactions = CASE WHEN $5 = 'reaction' THEN user_levels.reactions + 1 ELSE user_levels.reactions END,
+                    voice_time = CASE WHEN $5 = 'voice' THEN user_levels.voice_time + 1 ELSE user_levels.voice_time END,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [userId, guildId, finalXP, newLevel, source]);
+            
+            // Handle level up if needed
+            if (newLevel > oldLevel && this.levelUpManager) {
+                await this.levelUpManager.handleLevelUp(userId, guildId, oldLevel, newLevel, newTotalXP, user, source);
+            }
+            
+            console.log(`[XP TRACKER] Awarded ${finalXP} XP to ${user?.username || userId} (${source})`);
+            return true;
+            
+        } catch (error) {
+            console.error('[XP TRACKER] Error awarding XP:', error);
+            this.monitor.trackError(error, 'award_xp');
+            return false;
+        }
+    }
+    
+    // ✅ CRITICAL FIX: Add XP logging method with safety checks
+    async logXPActivity(source, user, guildId, xpAmount, additionalInfo = {}) {
+        try {
+            if (!user || !guildId) {
+                console.warn('[XP TRACKER] Invalid parameters for XP logging');
+                return;
+            }
+            
+            // Use existing logger if available
+            if (typeof require === 'function') {
+                try {
+                    const { logXPActivity } = require('./xpLogger');
+                    await logXPActivity(this.client, source, user, guildId, xpAmount, additionalInfo);
+                } catch (loggerError) {
+                    console.warn('[XP TRACKER] XP logger not available:', loggerError.message);
+                }
+            }
+            
+        } catch (error) {
+            console.error('[XP TRACKER] Error logging XP activity:', error);
+        }
+    }
+    
+    // ✅ CRITICAL FIX: Add maintenance method with safety checks
+    async performMaintenance() {
+        try {
+            if (this.isShuttingDown || !this.isInitialized) {
+                return;
+            }
+            
+            console.log('[XP TRACKER] Performing maintenance...');
+            
+            // Clear old cache entries
+            const now = Date.now();
+            const maxAge = this.config.limits.cleanupInterval;
+            
+            // Clean voice sessions cache
+            let cleanedSessions = 0;
+            for (const [key, session] of this.voiceSessions.entries()) {
+                if (session.joinTime && (now - session.joinTime) > maxAge * 6) { // 30 minutes
+                    this.voiceSessions.delete(key);
+                    cleanedSessions++;
+                }
+            }
+            
+            // Clean cooldowns cache
+            let cleanedCooldowns = 0;
+            for (const [key, timestamp] of this.cooldowns.entries()) {
+                if ((now - timestamp) > maxAge) {
+                    this.cooldowns.delete(key);
+                    cleanedCooldowns++;
+                }
+            }
+            
+            if (cleanedSessions > 0 || cleanedCooldowns > 0) {
+                console.log(`[XP TRACKER] Maintenance: cleaned ${cleanedSessions} sessions, ${cleanedCooldowns} cooldowns`);
+            }
+            
+        } catch (error) {
+            console.error('[XP TRACKER] Error during maintenance:', error);
+            this.monitor.trackError(error, 'maintenance');
         }
     }
     
@@ -694,7 +997,7 @@ class XPTracker {
         return this.monitor.getStats();
     }
     
-    // Graceful shutdown
+    // ✅ CRITICAL FIX: Enhanced graceful shutdown with better cleanup
     async gracefulShutdown() {
         if (this.isShuttingDown) return;
         
@@ -705,12 +1008,18 @@ class XPTracker {
             // Clear intervals
             if (this.cleanupInterval) {
                 clearInterval(this.cleanupInterval);
+                this.cleanupInterval = null;
             }
             
-            // Cleanup managers
-            if (this.dailyResetManager) {
+            // Cleanup managers with safety checks
+            if (this.dailyResetManager && typeof this.dailyResetManager.cleanup === 'function') {
                 await this.dailyResetManager.cleanup();
+                this.dailyResetManager = null;
             }
+            
+            // Set other managers to null
+            this.voiceXPManager = null;
+            this.levelUpManager = null;
             
             // Clear caches
             this.voiceSessions.clear();
@@ -718,16 +1027,23 @@ class XPTracker {
             this.userCache.clear();
             
             // Cleanup monitor
-            this.monitor.cleanup();
-            
-            // Close database connections
-            if (this.db) {
-                await this.db.close();
+            if (this.monitor && typeof this.monitor.cleanup === 'function') {
+                this.monitor.cleanup();
             }
             
-            console.log('[XP TRACKER] Graceful shutdown completed');
+            // Close database connections
+            if (this.db && typeof this.db.close === 'function') {
+                await this.db.close();
+                this.db = null;
+            }
+            
+            // Reset initialization flags
+            this.isInitialized = false;
+            this.isInitializing = false;
+            
+            console.log('[XP TRACKER] ✅ Graceful shutdown completed');
         } catch (error) {
-            console.error('[XP TRACKER] Error during shutdown:', error);
+            console.error('[XP TRACKER] ❌ Error during shutdown:', error);
         }
     }
     
