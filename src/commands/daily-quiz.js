@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - FIXED with Better Interaction Handling and Timeout Prevention
+// src/commands/daily-quiz.js - COMPLETE FIXED VERSION
 
 const { SlashCommandBuilder } = require('discord.js');
 const QuizManager = require('../utils/quiz/QuizManager');
