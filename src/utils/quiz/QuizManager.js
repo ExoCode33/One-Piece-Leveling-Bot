@@ -1,4 +1,4 @@
-// src/utils/quiz/QuizManager.js - COMPLETE FIXED Main Quiz Management Class
+// src/utils/quiz/QuizManager.js - COMPLETE FIXED with Smart Reloading & Correct Answer History
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const QuestionLoader = require('./QuestionLoader');
@@ -15,10 +15,10 @@ class QuizManager {
         this.databaseManager = new DatabaseManager(xpTracker?.db);
         
         // ✅ FIXED: Single active quiz tracking (global limit = 1)
-        this.activeQuizUserId = null; // Only one user can have active quiz
+        this.activeQuizUserId = null;
         this.questionCache = new Map(); // userId -> preloaded questions
         
-        // ✅ NEW: Database-backed question history tracking
+        // ✅ FIXED: Database-backed question history tracking
         this.initializeQuestionHistoryTable();
         
         // ✅ NEW: Track quiz messages for cleanup
@@ -39,7 +39,7 @@ class QuizManager {
         }
 
         try {
-            // ✅ FIXED: Proper PostgreSQL CREATE TABLE syntax (no INDEX inside CREATE TABLE)
+            // ✅ FIXED: Proper PostgreSQL CREATE TABLE syntax
             await this.xpTracker.db.query(`
                 CREATE TABLE IF NOT EXISTS quiz_question_history (
                     id SERIAL PRIMARY KEY,
@@ -71,7 +71,7 @@ class QuizManager {
         }
     }
 
-    // ✅ NEW: Get user's recent question history from database
+    // ✅ FIXED: Get user's recent question history from database
     async getUserQuestionHistory(userId, guildId, days = 30) {
         if (!this.xpTracker?.db) {
             return new Set();
@@ -101,7 +101,7 @@ class QuizManager {
         }
     }
 
-    // ✅ NEW: Save question to history
+    // ✅ FIXED: Save question to history ONLY when answered correctly
     async saveQuestionToHistory(userId, guildId, question) {
         if (!this.xpTracker?.db) {
             return;
@@ -116,48 +116,25 @@ class QuizManager {
                 VALUES ($1, $2, $3, $4, $5)
             `, [userId, guildId, questionHash, question.question, question.difficulty]);
 
-            console.log(`[QUIZ] ✅ Saved question to history: ${question.difficulty} - ${question.question.substring(0, 50)}...`);
+            console.log(`[QUIZ] ✅ Saved CORRECT answer to history: ${question.difficulty} - ${question.question.substring(0, 50)}...`);
 
         } catch (error) {
             console.error('[QUIZ] Error saving question to history:', error);
         }
     }
 
-    // ✅ NEW: Create hash of question for deduplication
+    // ✅ FIXED: Create hash of question for deduplication
     createQuestionHash(questionText) {
-        // Simple hash function for question deduplication
         let hash = 0;
         const cleanText = questionText.toLowerCase().trim().replace(/[^\w\s]/g, '');
         
         for (let i = 0; i < cleanText.length; i++) {
             const char = cleanText.charCodeAt(i);
             hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32-bit integer
+            hash = hash & hash;
         }
         
         return Math.abs(hash).toString(16);
-    }
-
-    // ✅ NEW: Cleanup old question history (keep last 60 days)
-    async cleanupOldQuestionHistory() {
-        if (!this.xpTracker?.db) {
-            return;
-        }
-
-        try {
-            const result = await this.xpTracker.db.query(`
-                DELETE FROM quiz_question_history 
-                WHERE asked_at < NOW() - INTERVAL '60 days'
-            `);
-
-            const deletedCount = result.rowCount || 0;
-            if (deletedCount > 0) {
-                console.log(`[QUIZ] ✅ Cleaned up ${deletedCount} old question history records`);
-            }
-
-        } catch (error) {
-            console.error('[QUIZ] Error cleaning up question history:', error);
-        }
     }
 
     // ✅ FIXED: Check if any user has active quiz (global check)
@@ -168,7 +145,7 @@ class QuizManager {
         return this.activeQuizUserId !== null;
     }
 
-    // ✅ NEW: Get current active quiz user
+    // ✅ FIXED: Get current active quiz user
     getActiveQuizUser() {
         return this.activeQuizUserId;
     }
@@ -249,7 +226,7 @@ class QuizManager {
             // ✅ NEW: Track loading message
             this.addQuizMessage(userId, loadingMessage);
             
-            // ✅ FIXED: Preload 13 questions (10 + 3 rerolls) with proper guild ID
+            // ✅ FIXED: Preload 13 questions (10 + 3 rerolls) with smart reloading
             const success = await this.preloadQuestions(userId, guildId);
             
             if (!success) {
@@ -269,12 +246,12 @@ class QuizManager {
         }
     }
 
-    // ✅ FIXED: Preload 13 questions with DATABASE question history tracking and proper guild ID handling
+    // ✅ FIXED: Smart preloading - only reload duplicates, ensure no duplicates in same session
     async preloadQuestions(userId, guildId = null) {
-        console.log(`[QUIZ] Preloading 13 questions for user ${userId} (10 main + 3 rerolls)`);
+        console.log(`[QUIZ] 🔄 SMART PRELOADING: Loading 13 questions for user ${userId} (10 main + 3 rerolls)`);
         
         try {
-            // ✅ FIXED: Use provided guildId parameter or try to get it from xpTracker client
+            // ✅ FIXED: Use provided guildId
             if (!guildId) {
                 if (this.xpTracker?.client?.guilds?.cache?.size > 0) {
                     guildId = this.xpTracker.client.guilds.cache.first()?.id;
@@ -283,7 +260,6 @@ class QuizManager {
                 
                 if (!guildId) {
                     console.error('[QUIZ] Could not determine guild ID for question history');
-                    // Continue without guild-specific history tracking
                     guildId = 'unknown';
                 }
             }
@@ -296,14 +272,18 @@ class QuizManager {
                 'Easy', 'Easy', 'Medium', 'Medium', 'Medium', 'Medium', 'Hard', 'Hard', 'Hard', 'Hard', // 10 main questions
                 'Medium', 'Hard', 'Hard' // 3 extra for rerolls
             ];
+            
             const questions = [];
-            const usedQuestions = new Set();
+            const usedQuestions = new Set(); // Track questions used in THIS session
+            
+            // ✅ FIXED: SMART LOADING - Load all 13 first, then identify duplicates
+            console.log(`[QUIZ] 📥 PHASE 1: Loading all 13 questions...`);
+            const initialQuestions = [];
             
             for (let i = 0; i < 13; i++) {
                 const difficulty = difficulties[i];
-                const avoidQuestions = new Set([...usedQuestions, ...recentQuestions]);
+                const avoidQuestions = new Set([...recentQuestions]); // Only avoid recent questions, not session questions yet
                 
-                // ✅ NEW: Try up to 5 times to get a unique question
                 let question = null;
                 let attempts = 0;
                 
@@ -312,31 +292,20 @@ class QuizManager {
                     question = await this.questionLoader.fetchQuestion(difficulty, avoidQuestions);
                     
                     if (question) {
-                        const questionKey = question.question.toLowerCase().trim();
-                        const questionHash = this.createQuestionHash(question.question);
-                        
-                        // Check if we already used this question in current session or recent history
-                        if (usedQuestions.has(questionKey) || 
-                            recentQuestions.has(questionKey) || 
-                            recentQuestions.has(questionHash)) {
-                            
-                            console.log(`[QUIZ] Question ${i + 1} attempt ${attempts}: Duplicate detected, retrying...`);
-                            question = null; // Try again
-                        } else {
-                            // Unique question found
-                            questions.push(question);
-                            usedQuestions.add(questionKey);
-                            console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty} (attempt ${attempts})`);
-                            
-                            // ✅ RESTORED: Question/answer logging with GREEN answer
-                            console.log(`[QUESTION] ${question.question}`);
-                            console.log(`\x1b[32m[ANSWER] ${question.answer}\x1b[0m`); // Green color
-                        }
+                        // ✅ FIXED: Just load the question, don't check duplicates yet
+                        initialQuestions.push({ 
+                            question, 
+                            index: i, 
+                            difficulty,
+                            attempts 
+                        });
+                        console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty} (attempt ${attempts})`);
+                        break;
                     }
                 }
                 
                 if (!question) {
-                    console.error(`[QUIZ] Failed to load unique question ${i + 1} after 5 attempts`);
+                    console.error(`[QUIZ] Failed to load question ${i + 1} after 5 attempts`);
                     return false;
                 }
                 
@@ -346,20 +315,107 @@ class QuizManager {
                 }
             }
             
+            // ✅ FIXED: PHASE 2 - Identify duplicates within the session
+            console.log(`[QUIZ] 🔍 PHASE 2: Identifying duplicates within loaded questions...`);
+            
+            const questionTexts = new Set();
+            const duplicateIndices = [];
+            
+            for (let i = 0; i < initialQuestions.length; i++) {
+                const questionText = initialQuestions[i].question.question.toLowerCase().trim();
+                const questionHash = this.createQuestionHash(initialQuestions[i].question.question);
+                
+                // Check for duplicates in session OR recent history
+                if (questionTexts.has(questionText) || 
+                    recentQuestions.has(questionText) || 
+                    recentQuestions.has(questionHash)) {
+                    
+                    duplicateIndices.push(i);
+                    console.log(`[QUIZ] ❌ Question ${i + 1} is a DUPLICATE: ${questionText.substring(0, 50)}...`);
+                } else {
+                    questionTexts.add(questionText);
+                    questions.push(initialQuestions[i].question);
+                    usedQuestions.add(questionText);
+                    console.log(`[QUIZ] ✅ Question ${i + 1} is UNIQUE`);
+                }
+            }
+            
+            // ✅ FIXED: PHASE 3 - Smart reloading of ONLY duplicates
+            if (duplicateIndices.length > 0) {
+                console.log(`[QUIZ] 🔄 PHASE 3: Need to reload ${duplicateIndices.length} duplicate questions`);
+                
+                for (const duplicateIndex of duplicateIndices) {
+                    const originalDifficulty = difficulties[duplicateIndex];
+                    const avoidQuestions = new Set([...recentQuestions, ...usedQuestions]);
+                    
+                    let replacementQuestion = null;
+                    let attempts = 0;
+                    
+                    while (!replacementQuestion && attempts < 5) {
+                        attempts++;
+                        replacementQuestion = await this.questionLoader.fetchQuestion(originalDifficulty, avoidQuestions);
+                        
+                        if (replacementQuestion) {
+                            const replacementText = replacementQuestion.question.toLowerCase().trim();
+                            const replacementHash = this.createQuestionHash(replacementQuestion.question);
+                            
+                            // ✅ FIXED: Check replacement doesn't duplicate session questions
+                            if (usedQuestions.has(replacementText) || 
+                                recentQuestions.has(replacementText) || 
+                                recentQuestions.has(replacementHash)) {
+                                
+                                console.log(`[QUIZ] 🔄 Question ${duplicateIndex + 1} replacement attempt ${attempts}: Still duplicate, retrying...`);
+                                replacementQuestion = null;
+                            } else {
+                                // ✅ FIXED: Unique replacement found
+                                questions.push(replacementQuestion);
+                                usedQuestions.add(replacementText);
+                                console.log(`[QUIZ] ✅ Question ${duplicateIndex + 1} REPLACED with unique question (attempt ${attempts})`);
+                                
+                                // ✅ RESTORED: Question/answer logging for replacements
+                                console.log(`[QUESTION] REPLACEMENT Q${duplicateIndex + 1}: ${replacementQuestion.question}`);
+                                console.log(`\x1b[32m[ANSWER] REPLACEMENT Q${duplicateIndex + 1}: ${replacementQuestion.answer}\x1b[0m`);
+                            }
+                        }
+                    }
+                    
+                    if (!replacementQuestion) {
+                        console.error(`[QUIZ] Failed to find replacement for duplicate question ${duplicateIndex + 1}`);
+                        return false;
+                    }
+                    
+                    // Small delay between replacements
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+            }
+            
+            // ✅ FIXED: Final validation
+            if (questions.length !== 13) {
+                console.error(`[QUIZ] Final question count mismatch: expected 13, got ${questions.length}`);
+                return false;
+            }
+            
+            // ✅ FIXED: Log all final questions for verification
+            console.log(`[QUIZ] 📋 FINAL QUESTION SET:`);
+            questions.forEach((q, index) => {
+                console.log(`[QUESTION] Q${index + 1}: ${q.question}`);
+                console.log(`\x1b[32m[ANSWER] Q${index + 1}: ${q.answer}\x1b[0m`); // Green color
+            });
+            
             // Cache the questions
             this.questionCache.set(userId, {
                 questions: questions,
                 currentIndex: 0,
                 usedQuestions: usedQuestions,
                 createdAt: Date.now(),
-                guildId: guildId // ✅ FIXED: Store guild ID for history saving
+                guildId: guildId
             });
             
-            console.log(`[QUIZ] ✅ Loaded ${questions.length} unique questions for ${userId}`);
+            console.log(`[QUIZ] ✅ SMART LOADING COMPLETE: ${questions.length} unique questions for ${userId} (${duplicateIndices.length} were reloaded)`);
             return true;
             
         } catch (error) {
-            console.error(`[QUIZ] Error preloading questions for user ${userId}:`, error);
+            console.error(`[QUIZ] Error in smart preloading for user ${userId}:`, error);
             return false;
         }
     }
@@ -378,13 +434,6 @@ class QuizManager {
         return question;
     }
 
-    // Update user question history
-    updateUserQuestionHistory(userId, questionText) {
-        // ✅ NOTE: This method is now supplementary to database tracking
-        // Database tracking is the primary source of question history
-        console.log(`[QUIZ] Question added to session history: ${questionText.substring(0, 50)}...`);
-    }
-
     // Ask a question
     async askQuestion(interaction, userId, guildId, member, questionNumber, questionResults = [], rerollsUsed = 0) {
         let timer = null;
@@ -399,7 +448,7 @@ class QuizManager {
             const question = this.getNextQuestion(userId);
             
             if (!question) {
-                console.error(`[QUIZ] No cached question available for Q${questionNumber} (Cache index: ${this.questionCache.get(userId)?.currentIndex}, Total: ${this.questionCache.get(userId)?.questions.length})`);
+                console.error(`[QUIZ] No cached question available for Q${questionNumber}`);
                 await interaction.followUp({
                     content: '❌ **Question Loading Error**\n\nFailed to load question. Please restart the quiz.',
                     ephemeral: true
@@ -407,18 +456,8 @@ class QuizManager {
                 return;
             }
             
-            // ✅ NEW: Save question to database history for future avoidance
-            const cache = this.questionCache.get(userId);
-            if (cache?.guildId) {
-                await this.saveQuestionToHistory(userId, cache.guildId, question);
-            }
-            
-            // ✅ RESTORED: Question/answer logging with GREEN answer for current question
             console.log(`[QUESTION] Q${questionNumber}: ${question.question}`);
-            console.log(`\x1b[32m[ANSWER] Q${questionNumber}: ${question.answer}\x1b[0m`); // Green color
-            
-            // Update question history
-            this.updateUserQuestionHistory(userId, question.question);
+            console.log(`\x1b[32m[ANSWER] Q${questionNumber}: ${question.answer}\x1b[0m`);
             
             // Create question embed
             const embed = this.createQuestionEmbed(question, questionNumber, member, questionResults, rerollsUsed, testingMode);
@@ -477,7 +516,7 @@ class QuizManager {
                     clearInterval(timer);
                     timer = null;
                 }
-            }, 2000); // ✅ FIXED: Back to 2 second intervals
+            }, 2000);
 
             // Button collector
             const collector = message.createMessageComponentCollector({
@@ -489,7 +528,6 @@ class QuizManager {
 
             collector.on('collect', async (buttonInteraction) => {
                 try {
-                    // ✅ CRITICAL FIX: Add immediate logging and error handling for button interactions
                     console.log(`[QUIZ] Q${questionNumber} button clicked: ${buttonInteraction.customId}`);
                     
                     // Clear timer
@@ -498,18 +536,14 @@ class QuizManager {
                         timer = null;
                     }
                     
-                    // ✅ CRITICAL FIX: Immediate deferUpdate with comprehensive error handling
                     try {
-                        console.log(`[QUIZ] Q${questionNumber} deferring button interaction...`);
                         await buttonInteraction.deferUpdate();
-                        console.log(`[QUIZ] Q${questionNumber} button interaction deferred successfully`);
                     } catch (deferError) {
                         console.error(`[QUIZ] Q${questionNumber} CRITICAL: Failed to defer button interaction:`, deferError);
                         collector.stop('defer_failed');
                         return;
                     }
                     
-                    // ✅ CRITICAL FIX: Add small delay to ensure deferUpdate is processed
                     await new Promise(resolve => setTimeout(resolve, 50));
                     
                     // Handle button interactions
@@ -530,7 +564,6 @@ class QuizManager {
                 }
                 
                 if (reason === 'time' && collected.size === 0) {
-                    // ✅ FIXED: Pass rerollsUsed to handleTimeout to preserve reroll count
                     await this.handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults, rerollsUsed);
                 }
                 
@@ -553,6 +586,103 @@ class QuizManager {
         }
     }
 
+    // Handle correct answer - ✅ FIXED: Save to history ONLY on correct answers
+    async handleCorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed) {
+        const newResults = [...questionResults, true];
+        
+        // ✅ FIXED: Save question to history ONLY when answered correctly
+        const cache = this.questionCache.get(userId);
+        if (cache?.guildId && cache.questions && cache.currentIndex > 0) {
+            const justAnsweredQuestion = cache.questions[cache.currentIndex - 1];
+            if (justAnsweredQuestion) {
+                await this.saveQuestionToHistory(userId, cache.guildId, justAnsweredQuestion);
+                console.log(`[QUIZ] ✅ Q${questionNumber} CORRECTLY answered - saved to history to avoid future repeats`);
+            }
+        }
+        
+        // Award XP in non-testing mode
+        if (!isTestingMode()) {
+            const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
+            
+            if (global.xpTracker && correctAnswerXP > 0) {
+                try {
+                    await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
+                    console.log(`[QUIZ] Q${questionNumber} XP: Awarded ${correctAnswerXP} XP to ${member.displayName}`);
+                } catch (error) {
+                    console.error(`[QUIZ] Error awarding XP:`, error);
+                }
+            }
+        }
+        
+        if (questionNumber === 10) {
+            // Quiz complete
+            await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
+        } else {
+            // Continue to next question
+            await this.showContinueMessage(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, newResults, rerollsUsed);
+        }
+    }
+
+    // Handle incorrect answer - ✅ FIXED: Do NOT save to history on wrong answers
+    async handleIncorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, question, selectedOption, questionNumber, questionResults, rerollsUsed) {
+        const newResults = [...questionResults, false];
+        
+        console.log(`[QUIZ] Q${questionNumber} INCORRECT: Selected "${selectedOption}" | Correct: "${question.answer}"`);
+        console.log(`[QUIZ] ❌ Q${questionNumber} INCORRECTLY answered - NOT saving to history (can appear again)`);
+        
+        // Show answer reveal
+        const revealEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
+            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+            .addFields({
+                name: '⏳ Next Question Loading...',
+                value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
+                inline: false
+            })
+            .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+            .setTimestamp();
+
+        await buttonInteraction.editReply({ embeds: [revealEmbed], components: [] });
+        
+        // ✅ NEW: Track answer reveal message  
+        const revealMessage = await buttonInteraction.fetchReply();
+        this.addQuizMessage(userId, revealMessage);
+        
+        // ✅ FIXED: Restore original 5-second countdown
+        let countdown = 5;
+        const countdownInterval = setInterval(async () => {
+            countdown--;
+            if (countdown > 0) {
+                try {
+                    const updatedEmbed = new EmbedBuilder()
+                        .setColor('#FF0000')
+                        .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
+                        .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                        .addFields({
+                            name: '⏳ Next Question Loading...',
+                            value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in ${countdown} seconds` : `Calculating final results in ${countdown} seconds...`,
+                            inline: false
+                        })
+                        .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+                        .setTimestamp();
+                        
+                    await buttonInteraction.editReply({ embeds: [updatedEmbed], components: [] });
+                } catch (error) {
+                    clearInterval(countdownInterval);
+                }
+            } else {
+                clearInterval(countdownInterval);
+                
+                if (questionNumber < 10) {
+                    await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
+                } else {
+                    await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
+                }
+            }
+        }, 1000);
+    }
+
     // Create question embed
     createQuestionEmbed(question, questionNumber, member, questionResults, rerollsUsed, testingMode, timeRemaining = 20) {
         const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
@@ -570,7 +700,6 @@ class QuizManager {
             }
         }
         
-        // ✅ FIXED: Use same join method as progress for consistent spacing
         const progressDisplay = progressSteps.join(' ');
         
         // Tier progression info
@@ -582,20 +711,17 @@ class QuizManager {
             '🧪 TESTING MODE - Daily Anime Quiz' : 
             '🎌 Daily Anime Quiz';
 
-        // ✅ FIXED: Timer fills LEFT to RIGHT, empties RIGHT to LEFT
+        // Timer fills LEFT to RIGHT, empties RIGHT to LEFT
         const createTimeEmojis = (timeLeft) => {
             const maxTime = 20;
             const timePercentage = timeLeft / maxTime;
             const emojis = [];
             
-            // ✅ FIXED: Calculate how many segments should be filled from the LEFT
             const totalSegments = 10;
             const filledSegments = Math.floor(timePercentage * totalSegments);
             
             for (let i = 0; i < totalSegments; i++) {
                 if (i < filledSegments) {
-                    // ✅ FIXED: Fill from LEFT to RIGHT
-                    // Determine color based on time percentage
                     if (timePercentage > 0.66) {
                         emojis.push('🟩'); // Green for high time (66%+)
                     } else if (timePercentage > 0.33) {
@@ -604,12 +730,10 @@ class QuizManager {
                         emojis.push('🟥'); // Red for low time (0%-33%)
                     }
                 } else {
-                    // ✅ FIXED: Empty segments on the RIGHT
                     emojis.push('⬛'); // Large black square
                 }
             }
             
-            // ✅ FIXED: Join with spaces to match challenge progress style  
             return emojis.join(' ');
         };
 
@@ -698,7 +822,6 @@ class QuizManager {
         const customId = buttonInteraction.customId;
         
         if (customId.startsWith('reroll_')) {
-            // ✅ FIXED: Don't increment rerollsUsed here, do it in handleReroll
             await this.handleReroll(originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed);
         } else if (customId.startsWith('secure_')) {
             await this.handleSecureTier(buttonInteraction, userId, guildId, member, questionResults);
@@ -707,12 +830,12 @@ class QuizManager {
         }
     }
 
-    // ✅ FIXED: Handle reroll - don't reset, just get new question
+    // Handle reroll - don't reset, just get new question
     async handleReroll(interaction, userId, guildId, member, questionNumber, questionResults, currentRerollsUsed) {
         const newRerollsUsed = currentRerollsUsed + 1;
         console.log(`[QUIZ] Reroll requested for Q${questionNumber} - Rerolls used: ${currentRerollsUsed} -> ${newRerollsUsed}`);
         
-        // ✅ FIXED: Don't reset the question cache index - continue with new question and incremented reroll count
+        // Continue with new question and incremented reroll count
         await this.askQuestion(interaction, userId, guildId, member, questionNumber, questionResults, newRerollsUsed);
     }
 
@@ -772,35 +895,7 @@ class QuizManager {
         }
     }
 
-    // Handle correct answer
-    async handleCorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed) {
-        const newResults = [...questionResults, true];
-        
-        // Award XP in non-testing mode
-        if (!isTestingMode()) {
-            // ✅ FIXED: Use correct environment variable name
-            const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
-            
-            if (global.xpTracker && correctAnswerXP > 0) {
-                try {
-                    await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
-                    console.log(`[QUIZ] Q${questionNumber} XP: Awarded ${correctAnswerXP} XP to ${member.displayName}`);
-                } catch (error) {
-                    console.error(`[QUIZ] Error awarding XP:`, error);
-                }
-            }
-        }
-        
-        if (questionNumber === 10) {
-            // Quiz complete
-            await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
-        } else {
-            // Continue to next question
-            await this.showContinueMessage(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, newResults, rerollsUsed);
-        }
-    }
-
-    // ✅ CRITICAL FIX: Show continue message after correct answer with proper button handling
+    // Show continue message after correct answer with proper button handling
     async showContinueMessage(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed) {
         const successfulAnswers = questionResults.filter(r => r === true).length;
         
@@ -835,14 +930,12 @@ class QuizManager {
         
         const continueRow = new ActionRowBuilder().addComponents(continueButtons);
         
-        // ✅ CRITICAL FIX: Use editReply to update the existing message
         await buttonInteraction.editReply({ embeds: [continueEmbed], components: [continueRow] });
         
-        // ✅ NEW: Track continue message
         const continueMessage = await buttonInteraction.fetchReply();
         this.addQuizMessage(userId, continueMessage);
         
-        // ✅ CRITICAL FIX: Handle continue buttons with proper collector and immediate deferUpdate
+        // Handle continue buttons with proper collector and immediate deferUpdate
         const continueCollector = continueMessage.createMessageComponentCollector({
             time: 15000,
             filter: i => i.user.id === userId
@@ -850,20 +943,16 @@ class QuizManager {
         
         continueCollector.on('collect', async (contButton) => {
             try {
-                // ✅ CRITICAL FIX: IMMEDIATE deferUpdate with comprehensive error handling
                 console.log(`[QUIZ] Continue button clicked: ${contButton.customId}`);
                 
                 try {
-                    console.log(`[QUIZ] Deferring continue button interaction...`);
                     await contButton.deferUpdate();
-                    console.log(`[QUIZ] Continue button interaction deferred successfully`);
                 } catch (deferError) {
                     console.error(`[QUIZ] CRITICAL: Failed to defer continue button interaction:`, deferError);
                     continueCollector.stop('defer_failed');
                     return;
                 }
                 
-                // ✅ CRITICAL FIX: Add small delay to ensure deferUpdate is processed
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
                 if (contButton.customId.startsWith('continue_')) {
@@ -872,9 +961,7 @@ class QuizManager {
                     
                     continueCollector.stop();
                     
-                    // ✅ CRITICAL FIX: Add additional delay before starting next question
                     setTimeout(async () => {
-                        console.log(`[QUIZ] Starting Q${nextQuestionNumber} after continue button`);
                         await this.askQuestion(originalInteraction, userId, guildId, member, nextQuestionNumber, questionResults, passedRerollsUsed);
                     }, 200);
                     
@@ -882,14 +969,12 @@ class QuizManager {
                     const claimTier = parseInt(contButton.customId.split('_')[2]);
                     continueCollector.stop();
                     
-                    // ✅ CRITICAL FIX: Add delay before handling secure tier
                     setTimeout(async () => {
                         await this.handleSecureTier(contButton, userId, guildId, member, questionResults);
                     }, 200);
                 }
             } catch (error) {
                 console.error('[QUIZ] Continue button error:', error);
-                // Try to acknowledge the interaction even if there's an error
                 try {
                     if (!contButton.replied && !contButton.deferred) {
                         await contButton.deferUpdate();
@@ -901,74 +986,12 @@ class QuizManager {
         });
         
         continueCollector.on('end', async (collected, reason) => {
-            console.log(`[QUIZ] Continue collector ended: ${reason}, collected: ${collected.size}`);
             if (reason === 'time' && collected.size === 0) {
-                // Auto-continue if no button clicked
-                console.log(`[QUIZ] Auto-continuing to Q${questionNumber + 1} after timeout`);
                 setTimeout(async () => {
                     await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, questionResults, rerollsUsed);
                 }, 100);
             }
         });
-    }
-
-    // Handle incorrect answer
-    async handleIncorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, question, selectedOption, questionNumber, questionResults, rerollsUsed) {
-        const newResults = [...questionResults, false];
-        
-        console.log(`[QUIZ] Q${questionNumber} INCORRECT: Selected "${selectedOption}" | Correct: "${question.answer}"`);
-        
-        // Show answer reveal
-        const revealEmbed = new EmbedBuilder()
-            .setColor('#FF0000')
-            .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
-            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-            .addFields({
-                name: '⏳ Next Question Loading...',
-                value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
-                inline: false
-            })
-            .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
-            .setTimestamp();
-
-        await buttonInteraction.editReply({ embeds: [revealEmbed], components: [] });
-        
-        // ✅ NEW: Track answer reveal message  
-        const revealMessage = await buttonInteraction.fetchReply();
-        this.addQuizMessage(userId, revealMessage);
-        
-        // ✅ FIXED: Restore original 5-second countdown
-        let countdown = 5;
-        const countdownInterval = setInterval(async () => {
-            countdown--;
-            if (countdown > 0) {
-                try {
-                    const updatedEmbed = new EmbedBuilder()
-                        .setColor('#FF0000')
-                        .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
-                        .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                        .addFields({
-                            name: '⏳ Next Question Loading...',
-                            value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in ${countdown} seconds` : `Calculating final results in ${countdown} seconds...`,
-                            inline: false
-                        })
-                        .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
-                        .setTimestamp();
-                        
-                    await buttonInteraction.editReply({ embeds: [updatedEmbed], components: [] });
-                } catch (error) {
-                    clearInterval(countdownInterval);
-                }
-            } else {
-                clearInterval(countdownInterval);
-                
-                if (questionNumber < 10) {
-                    await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
-                } else {
-                    await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
-                }
-            }
-        }, 1000);
     }
 
     // Handle quiz completion
@@ -1000,7 +1023,6 @@ class QuizManager {
                 
             await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
             
-            // ✅ NEW: This is the final message - clean up all previous messages except this one
             await this.cleanupQuizMessages(userId, await buttonInteraction.fetchReply());
         } else {
             const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
@@ -1018,14 +1040,13 @@ class QuizManager {
                 
             await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
             
-            // ✅ NEW: This is the final message - clean up all previous messages except this one
             await this.cleanupQuizMessages(userId, await buttonInteraction.fetchReply());
         }
         
         this.cleanupQuiz(userId);
     }
 
-    // ✅ FIXED: Handle timeout - give Continue/Abandon options (POST AFTER QUIZ QUESTIONS)
+    // Handle timeout - give Continue/Abandon options
     async handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults, rerollsUsed = 0) {
         console.log(`[QUIZ] Q${questionNumber} timed out for ${member.displayName} - Rerolls preserved: ${rerollsUsed}`);
         
@@ -1034,7 +1055,6 @@ class QuizManager {
         if (questionNumber === 10) {
             await this.handleQuizComplete({ editReply: interaction.editReply.bind(interaction) }, userId, guildId, member, newResults);
         } else {
-            // ✅ FIXED: Show Continue/Abandon options as FOLLOW-UP (not edit existing message)
             const timeoutEmbed = new EmbedBuilder()
                 .setColor('#FF6B6B')
                 .setTitle(`⏰ Time's Up - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
@@ -1047,7 +1067,6 @@ class QuizManager {
                 .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Choose your next action' : 'Choose your next action' })
                 .setTimestamp();
 
-            // Create Continue/Abandon buttons
             const actionButtons = [
                 new ButtonBuilder()
                     .setCustomId(`timeout_continue_${userId}_${questionNumber + 1}_${rerollsUsed}`)
@@ -1064,34 +1083,26 @@ class QuizManager {
             const actionRow = new ActionRowBuilder().addComponents(actionButtons);
             
             try {
-                // ✅ NEW: Use followUp instead of editing the timed-out question
                 const timeoutMessage = await interaction.followUp({ 
                     embeds: [timeoutEmbed], 
                     components: [actionRow] 
                 });
                 
-                // ✅ NEW: Track timeout message
                 this.addQuizMessage(userId, timeoutMessage);
                 
-                // Handle timeout action buttons
                 const timeoutCollector = timeoutMessage.createMessageComponentCollector({
-                    // ✅ FIXED: Remove time limit - no auto-abandon after 30 seconds
                     filter: i => i.user.id === userId
                 });
                 
                 timeoutCollector.on('collect', async (timeoutButton) => {
                     try {
-                        // ✅ CRITICAL FIX: Immediate deferUpdate for timeout buttons
-                        console.log(`[QUIZ] Timeout button clicked: ${timeoutButton.customId}`);
                         await timeoutButton.deferUpdate();
-                        console.log(`[QUIZ] Timeout button deferred successfully`);
                         
                         if (timeoutButton.customId.startsWith('timeout_continue_')) {
                             const nextQuestionNumber = parseInt(timeoutButton.customId.split('_')[3]);
                             const preservedRerolls = parseInt(timeoutButton.customId.split('_')[4]);
                             
                             timeoutCollector.stop();
-                            console.log(`[QUIZ] User chose to continue after timeout - Q${nextQuestionNumber} with ${preservedRerolls} rerolls used`);
                             
                             setTimeout(async () => {
                                 await this.askQuestion(interaction, userId, guildId, member, nextQuestionNumber, newResults, preservedRerolls);
@@ -1099,7 +1110,6 @@ class QuizManager {
                             
                         } else if (timeoutButton.customId.startsWith('timeout_abandon_')) {
                             timeoutCollector.stop();
-                            console.log(`[QUIZ] User chose to abandon quiz after timeout`);
                             
                             setTimeout(async () => {
                                 await this.handleQuizAbandon(timeoutButton, userId, guildId, member, questionResults);
@@ -1107,22 +1117,11 @@ class QuizManager {
                         }
                     } catch (error) {
                         console.error('[QUIZ] Timeout button error:', error);
-                        // Try to acknowledge the interaction even if there's an error
-                        try {
-                            if (!timeoutButton.replied && !timeoutButton.deferred) {
-                                await timeoutButton.deferUpdate();
-                            }
-                        } catch (ackError) {
-                            console.error('[QUIZ] Failed to acknowledge timeout button interaction:', ackError);
-                        }
                     }
                 });
                 
-                // ✅ FIXED: Removed auto-abandon timeout - buttons stay active indefinitely
-                
             } catch (error) {
                 console.log('[QUIZ] Could not send timeout message:', error.message);
-                // Fallback: auto-continue if sending fails
                 setTimeout(async () => {
                     await this.askQuestion(interaction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
                 }, 2000);
@@ -1130,13 +1129,12 @@ class QuizManager {
         }
     }
 
-    // ✅ NEW: Handle quiz abandonment
+    // Handle quiz abandonment
     async handleQuizAbandon(buttonInteraction, userId, guildId, member, questionResults) {
         try {
             const successfulAnswers = questionResults.filter(r => r === true).length;
             
             if (!isTestingMode()) {
-                // Save failed quiz attempt to database
                 await this.databaseManager.saveFailedQuiz(userId, guildId);
             }
             
@@ -1156,8 +1154,6 @@ class QuizManager {
             
             if (typeof buttonInteraction.editReply === 'function') {
                 await buttonInteraction.editReply({ embeds: [abandonEmbed], components: [] });
-                
-                // ✅ NEW: This is the final message - clean up all previous messages except this one
                 await this.cleanupQuizMessages(userId, await buttonInteraction.fetchReply());
             } else {
                 await buttonInteraction({ embeds: [abandonEmbed], components: [] });
@@ -1187,35 +1183,25 @@ class QuizManager {
         try {
             const messages = this.quizMessages.get(userId);
             if (!messages || messages.length === 0) {
-                console.log(`[QUIZ] No messages to clean up for user ${userId}`);
                 return;
             }
 
-            console.log(`[QUIZ] Cleaning up ${messages.length} quiz messages for user ${userId}, keeping final message`);
-            
             let deletedCount = 0;
             for (const message of messages) {
                 try {
-                    // Don't delete the final message
                     if (message.id === finalMessage?.id) {
-                        console.log(`[QUIZ] Skipping final message: ${message.id}`);
                         continue;
                     }
                     
                     await message.delete();
                     deletedCount++;
-                    console.log(`[QUIZ] Deleted message: ${message.id}`);
                     
-                    // Small delay between deletions to avoid rate limits
                     await new Promise(resolve => setTimeout(resolve, 250));
                 } catch (error) {
                     console.log(`[QUIZ] Could not delete message ${message.id}: ${error.message}`);
                 }
             }
             
-            console.log(`[QUIZ] ✅ Cleanup complete: deleted ${deletedCount} messages, kept final message`);
-            
-            // Clear the message tracking
             this.quizMessages.delete(userId);
             
         } catch (error) {
@@ -1244,10 +1230,30 @@ class QuizManager {
         
         this.questionCache.delete(userId);
         
-        // ✅ NEW: Clear message tracking (if not already cleared by cleanup)
         if (this.quizMessages.has(userId)) {
             this.quizMessages.delete(userId);
-            console.log(`[QUIZ] Cleared message tracking for user ${userId}`);
+        }
+    }
+
+    // Cleanup old question history (keep last 60 days)
+    async cleanupOldQuestionHistory() {
+        if (!this.xpTracker?.db) {
+            return;
+        }
+
+        try {
+            const result = await this.xpTracker.db.query(`
+                DELETE FROM quiz_question_history 
+                WHERE asked_at < NOW() - INTERVAL '60 days'
+            `);
+
+            const deletedCount = result.rowCount || 0;
+            if (deletedCount > 0) {
+                console.log(`[QUIZ] ✅ Cleaned up ${deletedCount} old question history records`);
+            }
+
+        } catch (error) {
+            console.error('[QUIZ] Error cleaning up question history:', error);
         }
     }
 
@@ -1256,32 +1262,18 @@ class QuizManager {
         const now = Date.now();
         const maxAge = 30 * 60 * 1000; // 30 minutes
         
-        // Clean up old question caches
         for (const [userId, cache] of this.questionCache.entries()) {
             if (now - cache.createdAt > maxAge) {
-                console.log(`[QUIZ] Removing old question cache for user ${userId}`);
                 this.questionCache.delete(userId);
                 
-                // ✅ FIXED: Clear active quiz if it's this user
                 if (this.activeQuizUserId === userId) {
                     this.activeQuizUserId = null;
-                    console.log(`[QUIZ] Released abandoned quiz lock for user ${userId}`);
                 }
                 
-                // ✅ NEW: Clear message tracking for old caches
                 if (this.quizMessages.has(userId)) {
                     this.quizMessages.delete(userId);
-                    console.log(`[QUIZ] Cleared old message tracking for user ${userId}`);
                 }
             }
-        }
-        
-        // Clean up old user histories - now managed by database
-        console.log('[QUIZ] Database-backed question history - memory cleanup not needed');
-        
-        // ✅ NEW: Trigger database cleanup if needed
-        if (Math.random() < 0.1) { // 10% chance to trigger cleanup
-            this.cleanupOldQuestionHistory().catch(console.error);
         }
     }
 }
