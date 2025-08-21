@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - FIXED Smooth Transitions and Timeout Handling
+// src/commands/daily-quiz.js - FIXED with 5-second reveal and proper testing mode
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -259,7 +259,7 @@ module.exports = {
                 });
             }
 
-            // Check if user completed challenge (proper handling for testing mode)
+            // Check if user completed challenge (only in normal mode)
             if (!testingMode) {
                 const existingRecord = await this.checkRoll(userId, guildId);
                 console.log(`[DAILY QUIZ] Checking existing record for ${interaction.user.username}:`, existingRecord);
@@ -306,7 +306,7 @@ module.exports = {
         }
     },
 
-    // ✅ FIXED: Main question asking method with INSTANT transitions and proper timeout handling
+    // ✅ FIXED: Main question asking method with 5-second reveal delay
     async ask(interaction, userId, guildId, member, qNum, tier, rerollsUsed = 0, questionResults = []) {
         try {
             const testingMode = isTestingMode();
@@ -397,7 +397,7 @@ module.exports = {
                     .setAuthor({ name: challengeTitle })
                     .setTitle(`${diffEmoji[diff]} Question ${qNum}/10 • ${diff}${testingMode ? ' [TEST]' : ''}`)
                     .setColor(embedColor)
-                    .setDescription(`## **${q.question}**\n\n**Challenge by:** ${member.displayName}${testingMode ? ' 🧪' : ''}\n\n*Select your answer using the buttons below*${testingMode ? '\n\n⚠️ **TESTING MODE**: No roles will be awarded' : ''}`)
+                    .setDescription(`## **${q.question}**\n\n**Challenge by:** ${member.displayName}${testingMode ? ' 🧪' : ''}\n\n*Select your answer using the buttons below*${testingMode ? '\n\n⚠️ **TESTING MODE**: No roles or XP will be awarded' : ''}`)
                     .addFields(
                         {
                             name: '📊 Challenge Progress (10 Questions)',
@@ -476,7 +476,6 @@ module.exports = {
                     await interaction.editReply({ embeds: [embed], components: rows }); 
                     msg = await interaction.fetchReply(); 
                 } else {
-                    // ✅ FIXED: NO LOADING MESSAGE - Direct question display
                     msg = await interaction.followUp({ embeds: [embed], components: rows });
                 }
                 
@@ -545,14 +544,12 @@ module.exports = {
                         
                         collector.stop();
                         
-                        // ✅ FIXED: Delete message and immediately show new question
                         try {
                             await btn.message.delete();
                         } catch (error) {
                             console.log('[DAILY QUIZ] Could not delete message:', error.message);
                         }
                         
-                        // ✅ FIXED: NO DELAY - Instant reroll
                         await this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
                         return;
                     }
@@ -707,7 +704,7 @@ module.exports = {
                             
                             await btn.editReply({ embeds: [cont], components: [contBtn] });
                             
-                            // ✅ FIXED: Shorter timeout and instant transitions
+                            // Shorter timeout and instant transitions
                             const contColl = btn.message.createMessageComponentCollector({ time: 15000, filter: i => i.user.id === userId });
                             contColl.on('collect', async (contBtn) => {
                                 await contBtn.deferUpdate();
@@ -717,14 +714,12 @@ module.exports = {
                                     
                                     console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
                                     
-                                    // ✅ FIXED: NO LOADING MESSAGE - Delete current and show next question instantly
                                     try {
                                         await btn.message.delete();
                                     } catch (error) {
                                         console.log('[DAILY QUIZ] Could not delete continue message:', error.message);
                                     }
                                     
-                                    // ✅ FIXED: INSTANT transition to next question
                                     await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
                                     
                                 } else {
@@ -778,14 +773,14 @@ module.exports = {
                         
                         console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
                         
-                        // ✅ FIXED: Show answer reveal briefly then continue immediately
+                        // ✅ FIXED: Show answer reveal briefly then continue immediately with 5-second delay
                         const answerRevealEmbed = new EmbedBuilder()
                             .setColor('#FF0000')
                             .setTitle(`❌ Wrong Answer - Question ${qNum}/10${testingMode ? ' [Testing]' : ''}`)
                             .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${q.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
                             .addFields({
                                 name: '⏳ Next Question Loading...',
-                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting immediately` : 'Calculating final results...',
+                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
                                 inline: false
                             })
                             .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
@@ -793,17 +788,15 @@ module.exports = {
 
                         await btn.editReply({ embeds: [answerRevealEmbed], components: [] });
                         
-                        // ✅ FIXED: MUCH shorter delay (1 second) then instant next question
+                        // ✅ FIXED: 5-second delay then instant next question
                         setTimeout(async () => {
                             if (qNum < 10) {
-                                // ✅ FIXED: Delete reveal message and immediately show next question
                                 try {
                                     await btn.message.delete();
                                 } catch (error) {
                                     console.log('[DAILY QUIZ] Could not delete reveal message:', error.message);
                                 }
                                 
-                                // ✅ FIXED: INSTANT transition to next question
                                 await this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
                             } else {
                                 // Last question - handle completion
@@ -877,7 +870,7 @@ module.exports = {
                                     }
                                 }
                             }
-                        }, 1000); // ✅ FIXED: Only 1 second delay instead of 3
+                        }, 5000); // ✅ FIXED: 5-second delay instead of 1 second
                     }
                     collector.stop();
                 } catch (error) { 
@@ -886,7 +879,7 @@ module.exports = {
                 }
             });
 
-            // ✅ FIXED: Proper timeout handling for both normal and testing mode
+            // Proper timeout handling for both normal and testing mode
             collector.on('end', async (collected) => {
                 clearInterval(timer);
                 if (collected.size === 0) {
@@ -926,7 +919,6 @@ module.exports = {
                                 console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
                             }
                         } else {
-                            // ✅ FIXED: Proper timeout handling in testing mode
                             const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
                             const timeout = new EmbedBuilder()
                                 .setColor('#FFA500')
@@ -943,7 +935,7 @@ module.exports = {
                             try {
                                 await msg.edit({ embeds: [timeout], components: [] });
                                 
-                                // ✅ FIXED: Auto-delete timeout message in testing mode after 10 seconds
+                                // Auto-delete timeout message in testing mode after 10 seconds
                                 setTimeout(async () => {
                                     try {
                                         await msg.delete();
@@ -958,7 +950,7 @@ module.exports = {
                             }
                         }
                     } else {
-                        // ✅ FIXED: Auto-continue after timeout for mid-quiz questions
+                        // Auto-continue after timeout for mid-quiz questions
                         const timeoutEmbed = new EmbedBuilder()
                             .setColor('#FF6B6B')
                             .setTitle(`⏰ Time's Up - Question ${qNum}/10`)
@@ -971,7 +963,7 @@ module.exports = {
                             console.log('[DAILY QUIZ] Could not edit timeout message:', error.message);
                         }
                         
-                        // ✅ FIXED: Short delay then delete and continue
+                        // Short delay then delete and continue
                         setTimeout(async () => {
                             try {
                                 await msg.delete();
