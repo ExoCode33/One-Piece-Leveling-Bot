@@ -151,17 +151,10 @@ async function fetchQuestion(difficulty) {
     const timeoutId = setTimeout(() => controller.abort(), 8000);
     
     try {
-        
         const animeAPIs = [
-            // Existing reliable APIs
-            'https://opentdb.com/api.php?amount=1&category=31&type=multiple', // Anime & Manga
+            'https://opentdb.com/api.php?amount=1&category=31&type=multiple',
             'https://aniquizapi.vercel.app/api/quiz',
-            
-            // NEW ANIME-ONLY APIs
             'https://the-trivia-api.com/v2/questions?categories=anime_and_manga&limit=1',
-            'https://anime-facts-rest-api.herokuapp.com/api/v1/anime_quiz',
-            'https://api.jikan.moe/v4/random/anime',
-            'https://animechan.vercel.app/api/random'
         ];
         
         for (const apiUrl of animeAPIs) {
@@ -183,75 +176,22 @@ async function fetchQuestion(difficulty) {
                     const data = await response.json();
                     let question, options, answer;
                     
-                    // OpenTDB (Anime & Manga category)
                     if (data.results && data.results.length > 0) {
                         const result = data.results[0];
                         question = result.question;
                         answer = result.correct_answer;
                         options = [...result.incorrect_answers, result.correct_answer].sort(() => Math.random() - 0.5);
                         
-                        // Filter out non-anime questions
                         const badKeywords = ['voice actor', 'voiced by', 'seiyuu', 'dub', 'english dub', 'studio', 'director', 'composer'];
                         if (badKeywords.some(keyword => question.toLowerCase().includes(keyword))) {
                             console.log('[API] Skipping voice actor/production question');
                             continue;
                         }
-                    }
-                    // The Trivia API
-                    else if (data[0] && data[0].question) {
+                    } else if (data[0] && data[0].question) {
                         question = data[0].question.text;
                         answer = data[0].correctAnswer;
                         options = [...data[0].incorrectAnswers, data[0].correctAnswer].sort(() => Math.random() - 0.5);
-                    }
-                    // Jikan/MAL API - convert to quiz format
-                    else if (data.data && data.data.title) {
-                        const anime = data.data;
-                        const quizTypes = ['title', 'year', 'episodes'];
-                        const quizType = quizTypes[Math.floor(Math.random() * quizTypes.length)];
-                        
-                        switch (quizType) {
-                            case 'title':
-                                if (anime.title_english && anime.title_japanese) {
-                                    question = `What is the English title of "${anime.title_japanese}"?`;
-                                    answer = anime.title_english;
-                                    options = [answer, "Attack on Titan", "Demon Slayer", "One Piece"].sort(() => Math.random() - 0.5);
-                                } else {
-                                    continue;
-                                }
-                                break;
-                            case 'year':
-                                if (anime.aired?.from) {
-                                    question = `In what year did "${anime.title}" first air?`;
-                                    answer = new Date(anime.aired.from).getFullYear().toString();
-                                    const year = parseInt(answer);
-                                    options = [answer, (year-1).toString(), (year+1).toString(), (year+2).toString()].sort(() => Math.random() - 0.5);
-                                } else {
-                                    continue;
-                                }
-                                break;
-                            case 'episodes':
-                                if (anime.episodes && anime.episodes > 0) {
-                                    question = `How many episodes does "${anime.title}" have?`;
-                                    answer = anime.episodes.toString();
-                                    const eps = anime.episodes;
-                                    options = [answer, (eps+5).toString(), (eps-3).toString(), (eps+10).toString()].sort(() => Math.random() - 0.5);
-                                } else {
-                                    continue;
-                                }
-                                break;
-                        }
-                    }
-                    // AnimeChan (Quote API)
-                    else if (data.character && data.quote && data.anime) {
-                        question = `Who said: "${data.quote.substring(0, 100)}${data.quote.length > 100 ? '...' : ''}"?`;
-                        answer = data.character;
-                        // Generate realistic character options
-                        const characterOptions = ["Naruto Uzumaki", "Monkey D. Luffy", "Edward Elric", "Ichigo Kurosaki", "Natsu Dragneel"];
-                        const filteredOptions = characterOptions.filter(opt => opt !== answer);
-                        options = [answer, ...filteredOptions.slice(0, 3)].sort(() => Math.random() - 0.5);
-                    }
-                    // Your existing aniquizapi format
-                    else if (data.data?.question || data.question) {
+                    } else if (data.data?.question || data.question) {
                         const questionData = data.data || data;
                         question = questionData.question;
                         options = Array.isArray(questionData.options) ? questionData.options : [];
@@ -294,7 +234,6 @@ async function fetchQuestion(difficulty) {
                     }
                     
                     console.log(`[API] ✅ Fetched ${difficulty} anime question from ${getAPIName(apiUrl)}`);
-                    console.log(`[QUESTION DEBUG] Q${difficulty}: "${question}" | Answer: "${answer}" | Options: [${options.join(', ')}]`);
                     return { question, options, answer, difficulty };
                 }
             } catch (error) {
@@ -311,7 +250,6 @@ async function fetchQuestion(difficulty) {
     console.log(`[API] 🛡️ Using enhanced anime fallback ${difficulty} question`);
     const fallbacks = ANIME_ONLY_FALLBACK[difficulty] || ANIME_ONLY_FALLBACK['Medium'];
     const selectedQuestion = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    console.log(`[QUESTION DEBUG FALLBACK] Q${difficulty}: "${selectedQuestion.question}" | Answer: "${selectedQuestion.answer}" | Options: [${selectedQuestion.options.join(', ')}]`);
     return selectedQuestion;
 }
 
@@ -319,9 +257,6 @@ function getAPIName(url) {
     if (url.includes('opentdb')) return 'OpenTDB';
     if (url.includes('aniquizapi')) return 'AniQuiz';
     if (url.includes('trivia-api')) return 'The Trivia API';
-    if (url.includes('jikan')) return 'Jikan (MyAnimeList)';
-    if (url.includes('animechan')) return 'AnimeChan';
-    if (url.includes('anime-facts')) return 'Anime Facts';
     return 'Custom';
 }
 
@@ -335,7 +270,6 @@ module.exports = {
         try {
             const testingMode = isTestingMode();
             
-            // Check if command is used in the correct channel (still enforced in testing mode)
             const allowedChannelId = process.env.DAILY_QUIZ_CHANNEL;
             
             if (allowedChannelId && interaction.channel.id !== allowedChannelId) {
@@ -363,14 +297,10 @@ module.exports = {
                 });
             }
 
-            // Check if user completed challenge (only in normal mode)
             if (!testingMode) {
                 const existingRecord = await this.checkRoll(userId, guildId);
-                console.log(`[DAILY QUIZ] Checking existing record for ${interaction.user.username}:`, existingRecord);
                 
                 if (existingRecord && existingRecord.tier >= 0) {
-                    console.log(`[DAILY QUIZ] User ${interaction.user.username} already completed quiz today with tier ${existingRecord.tier}`);
-                    
                     const buff = await this.getBuff(userId, guildId, member);
                     const embed = new EmbedBuilder()
                         .setColor('#FF6B6B')
@@ -410,7 +340,7 @@ module.exports = {
         }
     },
 
-    // ✅ FIXED: Main question asking method with crash prevention
+    // Main question asking method with crash prevention
     async ask(interaction, userId, guildId, member, qNum, tier, rerollsUsed = 0, questionResults = []) {
         let timer = null;
         let revealTimeout = null;
@@ -603,7 +533,7 @@ module.exports = {
                 }
             }
 
-            // ✅ FIXED: Timer updates with better cleanup
+            // Timer updates with better cleanup
             timer = setInterval(async () => {
                 time -= 2;
                 if (time <= 0) { 
@@ -630,7 +560,7 @@ module.exports = {
                 }
             }, 2000);
 
-            // ✅ FIXED: Collector with better error handling and cleanup
+            // Collector with better error handling and cleanup
             const collector = msg.createMessageComponentCollector({ 
                 time: 22000,
                 filter: i => i.user.id === userId 
@@ -783,6 +713,279 @@ module.exports = {
                                     .setTitle('🧪 Testing Complete - No Rewards Given')
                                     .setColor('#FFA500')
                                     .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
+                                    .addFields({ 
+                                        name: '📊 Test Results', 
+                                        value: `**Correct Answers:** ${totalSuccessful}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
+                                        inline: false 
+                                    })
+                                    .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
+                                    .setTimestamp();
+                                await btn.editReply({ embeds: [res], components: [] });
+                            }
+                        } else {
+                            const successfulAnswers = newResults.filter(r => r === true).length;
+                            const cont = new EmbedBuilder()
+                                .setTitle(`✅ Correct! ${successfulAnswers} Successful`)
+                                .setColor([46, 204, 113])
+                                .setDescription(`Great job! You now have **${successfulAnswers}** successful answers.${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice, no rewards given' : ''}`)
+                                .addFields({ name: '🎯 Progress', value: `Next: Question ${qNum + 1}/10\nSuccessful: ${successfulAnswers}/10`, inline: false })
+                                .setFooter({ text: testingMode ? '🧪 Testing Mode - Continue the challenge' : 'Continue the challenge or secure your current progress' })
+                                .setTimestamp();
+                            
+                            const contBtnComponents = [
+                                new ButtonBuilder()
+                                    .setCustomId(`cont_${userId}_${qNum + 1}_${passedRerollsUsed}`)
+                                    .setLabel(`Continue to Question ${qNum + 1}`)
+                                    .setStyle(ButtonStyle.Success)
+                            ];
+                            
+                            if (!testingMode) {
+                                contBtnComponents.push(
+                                    new ButtonBuilder()
+                                        .setCustomId(`claim_${userId}_${successfulAnswers}`)
+                                        .setLabel(`Secure ${TIER_NAMES[successfulAnswers] || 'Current'} Buff`)
+                                        .setStyle(ButtonStyle.Secondary)
+                                        .setEmoji('🛡️')
+                                );
+                            }
+                            
+                            const contBtn = new ActionRowBuilder().addComponents(contBtnComponents);
+                            
+                            await btn.editReply({ embeds: [cont], components: [contBtn] });
+                            
+                            // Shorter timeout and instant transitions
+                            const contColl = btn.message.createMessageComponentCollector({ time: 15000, filter: i => i.user.id === userId });
+                            contColl.on('collect', async (contBtn) => {
+                                try {
+                                    await contBtn.deferUpdate();
+                                    if (contBtn.customId.startsWith('cont_')) {
+                                        const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
+                                        contColl.stop();
+                                        
+                                        console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
+                                        
+                                        await safeDeleteMessage(btn.message);
+                                        
+                                        await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
+                                        
+                                    } else {
+                                        if (testingMode) {
+                                            await contBtn.editReply({
+                                                content: '🧪 **Testing Mode**: Cannot claim rewards in testing mode!',
+                                                components: []
+                                            });
+                                            return;
+                                        }
+                                        
+                                        const cTier = parseInt(contBtn.customId.split('_')[2]); 
+                                        const actualSuccessful = newResults.filter(r => r === true).length;
+                                        const finalTier = Math.min(cTier, actualSuccessful);
+                                        
+                                        await this.apply(userId, guildId, member, finalTier);
+                                        
+                                        let xpMultiplier = 'Unknown';
+                                        try {
+                                            const roleId = process.env[`DAILY_QUIZ_TIER_${finalTier}_ROLE`];
+                                            if (roleId && global.xpBoostManager) {
+                                                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                                if (boostInfo && boostInfo.boost_multiplier) {
+                                                    xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                                }
+                                            }
+                                        } catch (error) {
+                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                            xpMultiplier = 'Active';
+                                        }
+                                        
+                                        const claim = new EmbedBuilder()
+                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                            .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                            .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                            .addFields({ 
+                                                name: '📊 Results', 
+                                                value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                inline: false 
+                                            })
+                                            .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                            .setTimestamp();
+                                        await contBtn.editReply({ embeds: [claim], components: [] }); 
+                                        contColl.stop();
+                                    }
+                                } catch (error) {
+                                    console.error('[DAILY QUIZ] Continue button error:', error);
+                                }
+                            });
+                        }
+                    } else {
+                        // Record failed answer and continue
+                        const newResults = [...questionResults, false];
+                        
+                        console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
+                        
+                        // Show answer reveal briefly then continue immediately with 5-second delay
+                        const answerRevealEmbed = new EmbedBuilder()
+                            .setColor('#FF0000')
+                            .setTitle(`❌ Wrong Answer - Question ${qNum}/10${testingMode ? ' [Testing]' : ''}`)
+                            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${q.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                            .addFields({
+                                name: '⏳ Next Question Loading...',
+                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
+                                inline: false
+                            })
+                            .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+                            .setTimestamp();
+
+                        await btn.editReply({ embeds: [answerRevealEmbed], components: [] });
+                        
+                        // 5-second delay then instant next question
+                        revealTimeout = setTimeout(async () => {
+                            revealTimeout = null;
+                            if (qNum < 10) {
+                                await safeDeleteMessage(btn.message);
+                                
+                                await this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
+                            } else {
+                                // Last question - handle completion
+                                const totalSuccessful = newResults.filter(r => r === true).length;
+                                
+                                if (!testingMode) {
+                                    if (totalSuccessful > 0) {
+                                        await this.apply(userId, guildId, member, totalSuccessful);
+                                    } else {
+                                        await this.saveFail(userId, guildId);
+                                    }
+                                    
+                                    let xpMultiplier = 'Unknown';
+                                    if (totalSuccessful > 0) {
+                                        try {
+                                            const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
+                                            if (roleId && global.xpBoostManager) {
+                                                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
+                                                if (boostInfo && boostInfo.boost_multiplier) {
+                                                    xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                                }
+                                            }
+                                        } catch (error) {
+                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                            xpMultiplier = 'Active';
+                                        }
+                                    }
+                                    
+                                    const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                                    const tierEmoji = this.getTierEmoji(totalSuccessful);
+                                    
+                                    const res = new EmbedBuilder()
+                                        .setTitle(`🏁 Challenge Complete - ${tierName}`)
+                                        .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
+                                        .setDescription(totalSuccessful > 0 ? 
+                                            `**${tierName}** earned!\n*${TIER_DESC[totalSuccessful] || 'Challenge completed'}*\n**XP Multiplier:** ${xpMultiplier}` :
+                                            '**No Enhancement** earned. Try again tomorrow!')
+                                        .addFields({ 
+                                            name: '📊 Final Results', 
+                                            value: `**Correct Answers:** ${totalSuccessful}/10\n**Buff Received:** ${tierEmoji} ${tierName}${totalSuccessful > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
+                                            inline: false 
+                                        })
+                                        .setFooter({ text: totalSuccessful > 0 ? `${tierEmoji} ${tierName} ${xpMultiplier} Active Until Reset` : 'Challenge Complete - No Buff Awarded' })
+                                        .setTimestamp();
+                                        
+                                    try {
+                                        await btn.editReply({ embeds: [res], components: [] });
+                                    } catch (error) {
+                                        console.error('[DAILY BUFF] Error editing reply after final answer:', error);
+                                    }
+                                } else {
+                                    const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                                    const tierEmoji = this.getTierEmoji(totalSuccessful);
+                                    
+                                    const res = new EmbedBuilder()
+                                        .setTitle('🧪 Testing Complete - Final Results')
+                                        .setColor('#FFA500')
+                                        .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
+                                        .addFields({ 
+                                            name: '📊 Test Results', 
+                                            value: `**Correct Answers:** ${totalSuccessful}/10\n**Would Have Earned:** ${tierEmoji} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
+                                            inline: false 
+                                        })
+                                        .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
+                                        .setTimestamp();
+                                        
+                                    try {
+                                        await btn.editReply({ embeds: [res], components: [] });
+                                    } catch (error) {
+                                        console.error('[DAILY BUFF] Error editing testing mode reply:', error);
+                                    }
+                                }
+                            }
+                        }, 5000); // 5-second delay instead of 1 second
+                    }
+                    collector.stop('answered');
+                } catch (error) { 
+                    console.error('[QUIZ] Button error:', error); 
+                    if (timer) {
+                        clearInterval(timer);
+                        timer = null;
+                    }
+                    if (revealTimeout) {
+                        clearTimeout(revealTimeout);
+                        revealTimeout = null;
+                    }
+                }
+            });
+
+            // Proper timeout handling for both normal and testing mode
+            collector.on('end', async (collected, reason) => {
+                // Clean up all timeouts
+                if (timer) {
+                    clearInterval(timer);
+                    timer = null;
+                }
+                if (revealTimeout) {
+                    clearTimeout(revealTimeout);
+                    revealTimeout = null;
+                }
+                
+                if (reason === 'time' && collected.size === 0) {
+                    console.log(`[DAILY QUIZ] Q${qNum} timed out for ${member.displayName} after 22 seconds${testingMode ? ' [TESTING]' : ''}`);
+                    
+                    const newResults = [...questionResults, false];
+                    
+                    if (qNum === 10) {
+                        const totalSuccessful = newResults.filter(r => r === true).length;
+                        
+                        if (!testingMode) {
+                            if (totalSuccessful > 0) {
+                                await this.apply(userId, guildId, member, totalSuccessful);
+                            } else {
+                                await this.saveFail(userId, guildId);
+                            }
+                            
+                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                            const timeout = new EmbedBuilder()
+                                .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
+                                .setTitle('⏰ Time\'s Up! Challenge Complete')
+                                .setDescription(totalSuccessful > 0 ? 
+                                    `**${tierName}** earned based on your ${totalSuccessful} correct answers.` :
+                                    'No enhancement earned.')
+                                .addFields({ 
+                                    name: '📊 Final Results', 
+                                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Questions Attempted:** ${qNum}/10\n**Tier Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}`, 
+                                    inline: false 
+                                })
+                                .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
+                                .setFooter({ text: 'Daily Quiz System • Timed Out' })
+                                .setTimestamp();
+                                
+                            try {
+                                await msg.edit({ embeds: [timeout], components: [] });
+                            } catch (error) {
+                                console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
+                            }
+                        } else {
+                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                            const timeout = new EmbedBuilder()
+                                .setColor('#FFA500')
+                                .setTitle('⏰ Testing Timeout - Results')
+                                .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
                                 .addFields({ 
                                     name: '📊 Test Results', 
                                     value: `**Correct Answers:** ${totalSuccessful}/10\n**Questions Attempted:** ${qNum}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}`, 
@@ -900,138 +1103,6 @@ module.exports = {
             10: '🔴'    // Divine - Red
         };
         return tierEmojis[tier] || '⬛';
-    },
-
-    // Get tier XP cap with carryover support
-    async getTierXPCap(userId, guildId) {
-        try {
-            if (isTestingMode()) {
-                const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-                return {
-                    tier: 0,
-                    cap: defaultCap,
-                    currentXP: 0,
-                    remaining: defaultCap,
-                    hasCustomCap: false
-                };
-            }
-            
-            const currentDay = this.getCurrentDay();
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            if (member) {
-                // Check for tier roles (highest tier wins)
-                for (let i = 10; i >= 1; i--) { 
-                    const roleId = process.env[`DAILY_QUIZ_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const tierXPCap = parseInt(process.env[`DAILY_QUIZ_TIER_${i}_XP_CAP`]);
-                        if (tierXPCap && tierXPCap > 0) {
-                            
-                            // Check existing tier XP
-                            const result = await global.xpTracker.db.query(
-                                'SELECT current_xp FROM daily_buff_xp_caps WHERE user_id = $1 AND guild_id = $2 AND date = $3',
-                                [userId, guildId, currentDay]
-                            );
-                            
-                            let currentXP = 0;
-
-                            if (result.rows.length > 0) {
-                                // User already has tier record
-                                currentXP = result.rows[0].current_xp || 0;
-                            } else {
-                                // Check default system for XP to carry over
-                                const defaultXP = global.xpTracker.dailyResetManager ? 
-                                    global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay) : 0;
-                                
-                                if (defaultXP > 0) {
-                                    console.log(`[DAILY QUIZ] 🔄 Carrying over ${defaultXP} XP from default to tier ${i} for ${member.displayName}`);
-                                    currentXP = defaultXP;
-                                    
-                                    // Create tier record with carried over XP
-                                    await global.xpTracker.db.query(`
-                                        INSERT INTO daily_buff_xp_caps (user_id, guild_id, date, tier, xp_cap, current_xp, created_at, updated_at)
-                                        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                                        ON CONFLICT (user_id, guild_id, date)
-                                        DO UPDATE SET
-                                            tier = $4,
-                                            xp_cap = $5,
-                                            current_xp = GREATEST(daily_buff_xp_caps.current_xp, $6),
-                                            updated_at = CURRENT_TIMESTAMP
-                                    `, [userId, guildId, currentDay, i, tierXPCap, defaultXP]);
-                                } else {
-                                    // No existing XP, create fresh tier record
-                                    await global.xpTracker.db.query(`
-                                        INSERT INTO daily_buff_xp_caps (user_id, guild_id, date, tier, xp_cap, current_xp, created_at, updated_at)
-                                        VALUES ($1, $2, $3, $4, $5, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                                        ON CONFLICT (user_id, guild_id, date)
-                                        DO UPDATE SET
-                                            tier = $4,
-                                            xp_cap = $5,
-                                            updated_at = CURRENT_TIMESTAMP
-                                    `, [userId, guildId, currentDay, i, tierXPCap]);
-                                }
-                            }
-                            
-                            return {
-                                tier: i,
-                                cap: tierXPCap,
-                                currentXP: currentXP,
-                                remaining: Math.max(0, tierXPCap - currentXP),
-                                hasCustomCap: true
-                            };
-                        }
-                    }
-                }
-            }
-
-            // Default cap
-            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            let currentXP = 0;
-            
-            if (global.xpTracker && global.xpTracker.dailyResetManager) {
-                currentXP = global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay);
-            }
-            
-            return {
-                tier: 0,
-                cap: defaultCap,
-                currentXP: currentXP,
-                remaining: Math.max(0, defaultCap - currentXP),
-                hasCustomCap: false
-            };
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error getting tier XP cap:', error);
-            const defaultCap = parseInt(process.env.DAILY_VOICE_XP_CAP) || 1500;
-            return {
-                tier: 0,
-                cap: defaultCap,
-                currentXP: 0,
-                remaining: defaultCap,
-                hasCustomCap: false
-            };
-        }
-    },
-
-    // Update tier XP usage
-    async updateTierXPUsage(userId, guildId, xpGained) {
-        try {
-            if (isTestingMode()) {
-                return;
-            }
-            
-            const currentDay = this.getCurrentDay();
-            
-            await global.xpTracker.db.query(`
-                UPDATE daily_buff_xp_caps 
-                SET current_xp = current_xp + $1, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $2 AND guild_id = $3 AND date = $4
-            `, [xpGained, userId, guildId, currentDay]);
-
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error updating tier XP usage:', error);
-        }
     },
 
     // Get current day
@@ -1183,277 +1254,4 @@ module.exports = {
             console.error('[DAILY QUIZ] Save failed error:', error); 
         }
     }
-};10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
-                                    .addFields({ 
-                                        name: '📊 Test Results', 
-                                        value: `**Correct Answers:** ${totalSuccessful}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
-                                        inline: false 
-                                    })
-                                    .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
-                                    .setTimestamp();
-                                await btn.editReply({ embeds: [res], components: [] });
-                            }
-                        } else {
-                            const successfulAnswers = newResults.filter(r => r === true).length;
-                            const cont = new EmbedBuilder()
-                                .setTitle(`✅ Correct! ${successfulAnswers} Successful`)
-                                .setColor([46, 204, 113])
-                                .setDescription(`Great job! You now have **${successfulAnswers}** successful answers.${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice, no rewards given' : ''}`)
-                                .addFields({ name: '🎯 Progress', value: `Next: Question ${qNum + 1}/10\nSuccessful: ${successfulAnswers}/10`, inline: false })
-                                .setFooter({ text: testingMode ? '🧪 Testing Mode - Continue the challenge' : 'Continue the challenge or secure your current progress' })
-                                .setTimestamp();
-                            
-                            const contBtnComponents = [
-                                new ButtonBuilder()
-                                    .setCustomId(`cont_${userId}_${qNum + 1}_${passedRerollsUsed}`)
-                                    .setLabel(`Continue to Question ${qNum + 1}`)
-                                    .setStyle(ButtonStyle.Success)
-                            ];
-                            
-                            if (!testingMode) {
-                                contBtnComponents.push(
-                                    new ButtonBuilder()
-                                        .setCustomId(`claim_${userId}_${successfulAnswers}`)
-                                        .setLabel(`Secure ${TIER_NAMES[successfulAnswers] || 'Current'} Buff`)
-                                        .setStyle(ButtonStyle.Secondary)
-                                        .setEmoji('🛡️')
-                                );
-                            }
-                            
-                            const contBtn = new ActionRowBuilder().addComponents(contBtnComponents);
-                            
-                            await btn.editReply({ embeds: [cont], components: [contBtn] });
-                            
-                            // Shorter timeout and instant transitions
-                            const contColl = btn.message.createMessageComponentCollector({ time: 15000, filter: i => i.user.id === userId });
-                            contColl.on('collect', async (contBtn) => {
-                                try {
-                                    await contBtn.deferUpdate();
-                                    if (contBtn.customId.startsWith('cont_')) {
-                                        const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
-                                        contColl.stop();
-                                        
-                                        console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
-                                        
-                                        await safeDeleteMessage(btn.message);
-                                        
-                                        await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
-                                        
-                                    } else {
-                                        if (testingMode) {
-                                            await contBtn.editReply({
-                                                content: '🧪 **Testing Mode**: Cannot claim rewards in testing mode!',
-                                                components: []
-                                            });
-                                            return;
-                                        }
-                                        
-                                        const cTier = parseInt(contBtn.customId.split('_')[2]); 
-                                        const actualSuccessful = newResults.filter(r => r === true).length;
-                                        const finalTier = Math.min(cTier, actualSuccessful);
-                                        
-                                        await this.apply(userId, guildId, member, finalTier);
-                                        
-                                        let xpMultiplier = 'Unknown';
-                                        try {
-                                            const roleId = process.env[`DAILY_QUIZ_TIER_${finalTier}_ROLE`];
-                                            if (roleId && global.xpBoostManager) {
-                                                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
-                                                if (boostInfo && boostInfo.boost_multiplier) {
-                                                    xpMultiplier = `${boostInfo.boost_multiplier}x`;
-                                                }
-                                            }
-                                        } catch (error) {
-                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
-                                            xpMultiplier = 'Active';
-                                        }
-                                        
-                                        const claim = new EmbedBuilder()
-                                            .setTitle('Strategic Withdrawal - Tier Secured!')
-                                            .setColor(TIER_COLORS[finalTier] || '#FF0000')
-                                            .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
-                                            .addFields({ 
-                                                name: '📊 Results', 
-                                                value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
-                                                inline: false 
-                                            })
-                                            .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
-                                            .setTimestamp();
-                                        await contBtn.editReply({ embeds: [claim], components: [] }); 
-                                        contColl.stop();
-                                    }
-                                } catch (error) {
-                                    console.error('[DAILY QUIZ] Continue button error:', error);
-                                }
-                            });
-                        }
-                    } else {
-                        // Record failed answer and continue
-                        const newResults = [...questionResults, false];
-                        
-                        console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
-                        
-                        // ✅ FIXED: Show answer reveal briefly then continue immediately with 5-second delay
-                        const answerRevealEmbed = new EmbedBuilder()
-                            .setColor('#FF0000')
-                            .setTitle(`❌ Wrong Answer - Question ${qNum}/10${testingMode ? ' [Testing]' : ''}`)
-                            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${q.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                            .addFields({
-                                name: '⏳ Next Question Loading...',
-                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
-                                inline: false
-                            })
-                            .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
-                            .setTimestamp();
-
-                        await btn.editReply({ embeds: [answerRevealEmbed], components: [] });
-                        
-                        // ✅ FIXED: 5-second delay then instant next question
-                        revealTimeout = setTimeout(async () => {
-                            revealTimeout = null;
-                            if (qNum < 10) {
-                                await safeDeleteMessage(btn.message);
-                                
-                                await this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                            } else {
-                                // Last question - handle completion
-                                const totalSuccessful = newResults.filter(r => r === true).length;
-                                
-                                if (!testingMode) {
-                                    if (totalSuccessful > 0) {
-                                        await this.apply(userId, guildId, member, totalSuccessful);
-                                    } else {
-                                        await this.saveFail(userId, guildId);
-                                    }
-                                    
-                                    let xpMultiplier = 'Unknown';
-                                    if (totalSuccessful > 0) {
-                                        try {
-                                            const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
-                                            if (roleId && global.xpBoostManager) {
-                                                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
-                                                if (boostInfo && boostInfo.boost_multiplier) {
-                                                    xpMultiplier = `${boostInfo.boost_multiplier}x`;
-                                                }
-                                            }
-                                        } catch (error) {
-                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
-                                            xpMultiplier = 'Active';
-                                        }
-                                    }
-                                    
-                                    const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
-                                    const tierEmoji = this.getTierEmoji(totalSuccessful);
-                                    
-                                    const res = new EmbedBuilder()
-                                        .setTitle(`🏁 Challenge Complete - ${tierName}`)
-                                        .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
-                                        .setDescription(totalSuccessful > 0 ? 
-                                            `**${tierName}** earned!\n*${TIER_DESC[totalSuccessful] || 'Challenge completed'}*\n**XP Multiplier:** ${xpMultiplier}` :
-                                            '**No Enhancement** earned. Try again tomorrow!')
-                                        .addFields({ 
-                                            name: '📊 Final Results', 
-                                            value: `**Correct Answers:** ${totalSuccessful}/10\n**Buff Received:** ${tierEmoji} ${tierName}${totalSuccessful > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
-                                            inline: false 
-                                        })
-                                        .setFooter({ text: totalSuccessful > 0 ? `${tierEmoji} ${tierName} ${xpMultiplier} Active Until Reset` : 'Challenge Complete - No Buff Awarded' })
-                                        .setTimestamp();
-                                        
-                                    try {
-                                        await btn.editReply({ embeds: [res], components: [] });
-                                    } catch (error) {
-                                        console.error('[DAILY BUFF] Error editing reply after final answer:', error);
-                                    }
-                                } else {
-                                    const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
-                                    const tierEmoji = this.getTierEmoji(totalSuccessful);
-                                    
-                                    const res = new EmbedBuilder()
-                                        .setTitle('🧪 Testing Complete - Final Results')
-                                        .setColor('#FFA500')
-                                        .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
-                                        .addFields({ 
-                                            name: '📊 Test Results', 
-                                            value: `**Correct Answers:** ${totalSuccessful}/10\n**Would Have Earned:** ${tierEmoji} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
-                                            inline: false 
-                                        })
-                                        .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
-                                        .setTimestamp();
-                                        
-                                    try {
-                                        await btn.editReply({ embeds: [res], components: [] });
-                                    } catch (error) {
-                                        console.error('[DAILY BUFF] Error editing testing mode reply:', error);
-                                    }
-                                }
-                            }
-                        }, 5000); // ✅ FIXED: 5-second delay instead of 1 second
-                    }
-                    collector.stop('answered');
-                } catch (error) { 
-                    console.error('[QUIZ] Button error:', error); 
-                    if (timer) {
-                        clearInterval(timer);
-                        timer = null;
-                    }
-                    if (revealTimeout) {
-                        clearTimeout(revealTimeout);
-                        revealTimeout = null;
-                    }
-                }
-            });
-
-            // ✅ FIXED: Proper timeout handling for both normal and testing mode
-            collector.on('end', async (collected, reason) => {
-                // Clean up all timeouts
-                if (timer) {
-                    clearInterval(timer);
-                    timer = null;
-                }
-                if (revealTimeout) {
-                    clearTimeout(revealTimeout);
-                    revealTimeout = null;
-                }
-                
-                if (reason === 'time' && collected.size === 0) {
-                    console.log(`[DAILY QUIZ] Q${qNum} timed out for ${member.displayName} after 22 seconds${testingMode ? ' [TESTING]' : ''}`);
-                    
-                    const newResults = [...questionResults, false];
-                    
-                    if (qNum === 10) {
-                        const totalSuccessful = newResults.filter(r => r === true).length;
-                        
-                        if (!testingMode) {
-                            if (totalSuccessful > 0) {
-                                await this.apply(userId, guildId, member, totalSuccessful);
-                            } else {
-                                await this.saveFail(userId, guildId);
-                            }
-                            
-                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
-                            const timeout = new EmbedBuilder()
-                                .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
-                                .setTitle('⏰ Time\'s Up! Challenge Complete')
-                                .setDescription(totalSuccessful > 0 ? 
-                                    `**${tierName}** earned based on your ${totalSuccessful} correct answers.` :
-                                    'No enhancement earned.')
-                                .addFields({ 
-                                    name: '📊 Final Results', 
-                                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Questions Attempted:** ${qNum}/10\n**Tier Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}`, 
-                                    inline: false 
-                                })
-                                .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
-                                .setFooter({ text: 'Daily Quiz System • Timed Out' })
-                                .setTimestamp();
-                                
-                            try {
-                                await msg.edit({ embeds: [timeout], components: [] });
-                            } catch (error) {
-                                console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
-                            }
-                        } else {
-                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
-                            const timeout = new EmbedBuilder()
-                                .setColor('#FFA500')
-                                .setTitle('⏰ Testing Timeout - Results')
-                                .setDescription(`**Testing Results:** ${totalSuccessful}/
+};
