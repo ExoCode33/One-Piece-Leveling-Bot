@@ -135,9 +135,13 @@ class QuizManager {
         }
     }
 
-    // ✅ FIXED: Preload 13 questions for user (10 main + 3 rerolls)
+    // ✅ OPTIMIZED: Preload 13 questions for user (10 main + 3 rerolls) - REDUCED LOGGING
     async preloadQuestions(userId) {
-        console.log(`[QUIZ] Preloading 13 questions for user ${userId} (10 main + 3 rerolls)`);
+        const isDebugMode = process.env.QUIZ_DEBUG === 'true';
+        
+        if (isDebugMode) {
+            console.log(`[QUIZ] Preloading 13 questions for user ${userId} (10 main + 3 rerolls)`);
+        }
         
         try {
             // ✅ FIXED: Generate 13 difficulties (10 main + 3 extra for rerolls)
@@ -159,11 +163,17 @@ class QuizManager {
                 if (question) {
                     questions.push(question);
                     usedQuestions.add(question.question.toLowerCase().trim());
-                    console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty}`);
                     
-                    // ✅ FIXED: Restore question/answer logging with clear tags
-                    console.log(`[QUESTION] ${question.question}`);
-                    console.log(`[ANSWER] ${question.answer}`);
+                    // ✅ OPTIMIZED: Only log every 3rd question unless debug mode
+                    if (isDebugMode || i % 3 === 0) {
+                        console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty}`);
+                    }
+                    
+                    // ✅ OPTIMIZED: Only log question/answer in debug mode
+                    if (isDebugMode) {
+                        console.log(`[QUESTION] ${question.question}`);
+                        console.log(`[ANSWER] ${question.answer}`);
+                    }
                 } else {
                     console.error(`[QUIZ] Failed to load question ${i + 1}`);
                     return false;
@@ -183,7 +193,7 @@ class QuizManager {
                 createdAt: Date.now()
             });
             
-            console.log(`[QUIZ] Successfully preloaded ${questions.length} questions for user ${userId}`);
+            console.log(`[QUIZ] ✅ Loaded ${questions.length} questions for ${userId}`);
             return true;
             
         } catch (error) {
@@ -245,9 +255,15 @@ class QuizManager {
                 return;
             }
             
-            // ✅ FIXED: Restore question/answer logging with clear tags
-            console.log(`[QUESTION] Q${questionNumber}: ${question.question}`);
-            console.log(`[ANSWER] Q${questionNumber}: ${question.answer}`);
+            // ✅ OPTIMIZED: Restore question/answer logging with clear tags (only in debug mode or for current question)
+            const isDebugMode = process.env.QUIZ_DEBUG === 'true';
+            if (isDebugMode) {
+                console.log(`[QUESTION] Q${questionNumber}: ${question.question}`);
+                console.log(`[ANSWER] Q${questionNumber}: ${question.answer}`);
+            } else {
+                // Show only current question in production
+                console.log(`[QUIZ] Q${questionNumber}: ${question.difficulty} question loaded`);
+            }
             
             // Update question history
             this.updateUserQuestionHistory(userId, question.question);
@@ -386,6 +402,9 @@ class QuizManager {
             }
         }
         
+        // ✅ FIXED: Use same join method as progress for consistent spacing
+        const progressDisplay = progressSteps.join(' ');
+        
         // Tier progression info
         const successfulAnswers = questionResults.filter(result => result === true).length;
         const currentTargetTier = Math.min(10, successfulAnswers + 1);
@@ -422,8 +441,8 @@ class QuizManager {
                 }
             }
             
-            // ✅ FIXED: Join without spaces to match challenge progress style
-            return emojis.join('');
+            // ✅ FIXED: Join with spaces to match challenge progress style  
+            return emojis.join(' ');
         };
 
         const timeEmojis = createTimeEmojis(timeRemaining);
@@ -450,7 +469,7 @@ class QuizManager {
             .addFields(
                 {
                     name: '📊 Challenge Progress (10 Questions)',
-                    value: progressSteps.join(' '),
+                    value: progressDisplay,
                     inline: false
                 },
                 {
