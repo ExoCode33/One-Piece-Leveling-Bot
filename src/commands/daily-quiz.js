@@ -147,9 +147,10 @@ async function safeDeleteMessage(message) {
 
 // Enhanced anime-only question fetching with multiple APIs
 async function fetchQuestion(difficulty) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
         
         const animeAPIs = [
             // Existing reliable APIs
@@ -297,6 +298,8 @@ async function fetchQuestion(difficulty) {
         }
     } catch (error) {
         console.log(`[API] ❌ All APIs failed: ${error.message}`);
+    } finally {
+        clearTimeout(timeoutId);
     }
     
     console.log(`[API] 🛡️ Using enhanced anime fallback ${difficulty} question`);
