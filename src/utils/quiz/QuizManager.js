@@ -591,4 +591,194 @@ class QuizManager {
                     
                 } else if (contButton.customId.startsWith('claim_')) {
                     const claimTier = parseInt(contButton.customId.split('_')[2]);
-                    await this.handleSecureTier(contButton, userI
+                    await this.handleSecureTier(contButton, userId, guildId, member, questionResults);
+                    continueCollector.stop();
+                }
+            } catch (error) {
+                console.error('[QUIZ] Continue button error:', error);
+            }
+        });
+        
+        continueCollector.on('end', async (collected, reason) => {
+            if (reason === 'time' && collected.size === 0) {
+                // Auto-continue if no button clicked
+                await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, questionResults, rerollsUsed);
+            }
+        });
+    }
+
+    // Handle incorrect answer
+    async handleIncorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, question, selectedOption, questionNumber, questionResults, rerollsUsed) {
+        const newResults = [...questionResults, false];
+        
+        console.log(`[QUIZ] Q${questionNumber} INCORRECT: Selected "${selectedOption}" | Correct: "${question.answer}"`);
+        
+        // Show answer reveal
+        const revealEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
+            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+            .addFields({
+                name: '⏳ Next Question Loading...',
+                value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
+                inline: false
+            })
+            .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+            .setTimestamp();
+
+        await buttonInteraction.editReply({ embeds: [revealEmbed], components: [] });
+        
+        // 5-second countdown
+        let countdown = 5;
+        const countdownInterval = setInterval(async () => {
+            countdown--;
+            if (countdown > 0) {
+                try {
+                    const updatedEmbed = new EmbedBuilder()
+                        .setColor('#FF0000')
+                        .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
+                        .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                        .addFields({
+                            name: '⏳ Next Question Loading...',
+                            value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in ${countdown} seconds` : `Calculating final results in ${countdown} seconds...`,
+                            inline: false
+                        })
+                        .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+                        .setTimestamp();
+                        
+                    await buttonInteraction.editReply({ embeds: [updatedEmbed], components: [] });
+                } catch (error) {
+                    clearInterval(countdownInterval);
+                }
+            } else {
+                clearInterval(countdownInterval);
+                
+                if (questionNumber < 10) {
+                    await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
+                } else {
+                    await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
+                }
+            }
+        }, 1000);
+    }
+
+    // Handle quiz completion
+    async handleQuizComplete(buttonInteraction, userId, guildId, member, questionResults) {
+        const totalSuccessful = questionResults.filter(r => r === true).length;
+        
+        this.cleanupQuiz(userId);
+        
+        if (!isTestingMode()) {
+            if (totalSuccessful > 0) {
+                await this.roleManager.applyTier(userId, guildId, member, totalSuccessful);
+                await this.databaseManager.saveQuizResult(userId, guildId, totalSuccessful);
+            } else {
+                await this.databaseManager.saveFailedQuiz(userId, guildId);
+            }
+            
+            const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
+            const resultEmbed = new EmbedBuilder()
+                .setTitle(totalSuccessful === 10 ? '🔴 DIVINE PERFECTION ACHIEVED!' : `🏁 Challenge Complete - ${tierName}`)
+                .setColor(totalSuccessful > 0 ? TIER_COLORS[totalSuccessful] : '#FF0000')
+                .setDescription(totalSuccessful > 0 ? 
+                    `**${tierName}** unlocked!\n*${TIER_DESC[totalSuccessful] || 'Challenge completed'}*` :
+                    '**No Enhancement** earned. Better luck tomorrow!')
+                .addFields({
+                    name: '📊 Final Results',
+                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(totalSuccessful)} ${tierName}\n**Challenge by:** ${member.displayName}\nNext: <t:${this.getNextResetTimestamp()}:R>`,
+                    inline: false
+                })
+                .setFooter({ text: totalSuccessful > 0 ? `${this.getTierEmoji(totalSuccessful)} ${tierName} Active` : 'Challenge Complete' })
+                .setTimestamp();
+                
+            await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
+        } else {
+            const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
+            const resultEmbed = new EmbedBuilder()
+                .setTitle('🧪 Testing Complete - No Rewards Given')
+                .setColor('#FFA500')
+                .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
+                .addFields({
+                    name: '📊 Test Results',
+                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`,
+                    inline: false
+                })
+                .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
+                .setTimestamp();
+                
+            await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
+        }
+    }
+
+    // Handle timeout
+    async handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults) {
+        console.log(`[QUIZ] Q${questionNumber} timed out for ${member.displayName}`);
+        
+        const newResults = [...questionResults, false];
+        
+        if (questionNumber === 10) {
+            await this.handleQuizComplete({ editReply: interaction.editReply.bind(interaction) }, userId, guildId, member, newResults);
+        } else {
+            const timeoutEmbed = new EmbedBuilder()
+                .setColor('#FF6B6B')
+                .setTitle(`⏰ Time's Up - Question ${questionNumber}/10`)
+                .setDescription(`No answer selected in time. Moving to question ${questionNumber + 1}/10...${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                .setFooter({ text: isTestingMode() ? '🧪 Testing Mode - Auto-continuing...' : 'Auto-continuing to next question...' });
+            
+            try {
+                const message = await interaction.fetchReply();
+                await message.edit({ embeds: [timeoutEmbed], components: [] });
+            } catch (error) {
+                console.log('[QUIZ] Could not edit timeout message:', error.message);
+            }
+            
+            // Continue after delay
+            setTimeout(async () => {
+                await this.askQuestion(interaction, userId, guildId, member, questionNumber + 1, newResults, 0);
+            }, 2000);
+        }
+    }
+
+    // Get tier emoji
+    getTierEmoji(tier) {
+        const tierEmojis = {
+            0: '⬛', 1: '⚪', 2: '🟢', 3: '🔵', 4: '🟣', 5: '🟡',
+            6: '🟡', 7: '🟠', 8: '🟠', 9: '🔴', 10: '🔴'
+        };
+        return tierEmojis[tier] || '⬛';
+    }
+
+    // Clean up quiz data
+    cleanupQuiz(userId) {
+        console.log(`[QUIZ] Cleaning up quiz for user ${userId}`);
+        this.activeQuizzes.delete(userId);
+        this.questionCache.delete(userId);
+    }
+
+    // Clean up old caches
+    cleanupOldCaches() {
+        const now = Date.now();
+        const maxAge = 30 * 60 * 1000; // 30 minutes
+        
+        // Clean up old question caches
+        for (const [userId, cache] of this.questionCache.entries()) {
+            if (now - cache.createdAt > maxAge) {
+                console.log(`[QUIZ] Removing old question cache for user ${userId}`);
+                this.questionCache.delete(userId);
+                this.activeQuizzes.delete(userId);
+            }
+        }
+        
+        // Clean up old user histories
+        if (this.userQuestionHistory.size > 1000) {
+            console.log('[QUIZ] Trimming user question history');
+            const historyArray = Array.from(this.userQuestionHistory.entries());
+            this.userQuestionHistory.clear();
+            historyArray.slice(-500).forEach(([userId, history]) => {
+                this.userQuestionHistory.set(userId, history);
+            });
+        }
+    }
+}
+
+module.exports = QuizManager;
