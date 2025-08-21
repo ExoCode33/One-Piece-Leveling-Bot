@@ -1,4 +1,4 @@
-// src/commands/admin.js - Fixed Admin Command with User-based Authentication
+// src/commands/admin.js - FIXED Admin Command with Complete Daily Quiz Reset
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -28,13 +28,13 @@ module.exports = {
                     { name: '📋 Bot Statistics', value: 'bot-stats' },
                     { name: '🔧 Database Maintenance', value: 'maintenance' },
                     { name: '☢️ Nuclear Protocol', value: 'nuclear' },
-                    { name: '🎰 Remove Daily Buff', value: 'remove-daily-buff' }
+                    { name: '🎰 Reset Daily Quiz', value: 'reset-daily-quiz' }
                 )
         )
         .addUserOption(option =>
             option
                 .setName('user')
-                .setDescription('Target user (required for XP operations and daily buff removal)')
+                .setDescription('Target user (required for XP operations and daily quiz reset)')
                 .setRequired(false)
         )
         .addIntegerOption(option =>
@@ -69,7 +69,7 @@ module.exports = {
             const { db } = require('../../index'); // Get database from index.js
 
             // Handle XP operations that require a target user
-            if (['add-xp', 'remove-xp', 'set-xp', 'reset-user', 'user-stats', 'remove-daily-buff'].includes(action)) {
+            if (['add-xp', 'remove-xp', 'set-xp', 'reset-user', 'user-stats', 'reset-daily-quiz'].includes(action)) {
                 if (!targetUser) {
                     return await interaction.reply({
                         content: '❌ **Missing Target User**\n\nPlease specify a user for this operation.',
@@ -80,7 +80,7 @@ module.exports = {
                 // Prevent targeting bots
                 if (targetUser.bot) {
                     return await interaction.reply({
-                        content: '❌ **Invalid Target**\n\nCannot modify XP or buffs for bot accounts.',
+                        content: '❌ **Invalid Target**\n\nCannot modify XP or reset daily quiz for bot accounts.',
                         ephemeral: true
                     });
                 }
@@ -125,8 +125,8 @@ module.exports = {
                     await this.handleUserStats(interaction, targetUser);
                     break;
 
-                case 'remove-daily-buff':
-                    await this.handleRemoveDailyBuff(interaction, targetUser, reason);
+                case 'reset-daily-quiz':
+                    await this.handleResetDailyQuiz(interaction, targetUser, reason);
                     break;
 
                 case 'bot-stats':
@@ -170,8 +170,8 @@ module.exports = {
         }
     },
 
-    // FIXED: Updated handle daily buff removal method
-    async handleRemoveDailyBuff(interaction, targetUser, reason) {
+    // ✅ COMPLETE FIX: Reset Daily Quiz with proper role removal and database cleanup
+    async handleResetDailyQuiz(interaction, targetUser, reason) {
         try {
             await interaction.deferReply();
 
@@ -182,8 +182,11 @@ module.exports = {
                 });
             }
 
-            // Check and create daily_buff_rolls table if it doesn't exist
+            console.log(`[ADMIN] Starting daily quiz reset for ${targetUser.username} (${targetUser.id})`);
+
+            // ✅ STEP 1: Ensure database tables exist
             try {
+                // Create daily_buff_rolls table if it doesn't exist
                 await global.xpTracker.db.query(`
                     CREATE TABLE IF NOT EXISTS daily_buff_rolls (
                         user_id VARCHAR(20) NOT NULL,
@@ -194,93 +197,141 @@ module.exports = {
                         PRIMARY KEY (user_id, guild_id, date)
                     )
                 `);
-                console.log('[ADMIN] Ensured daily_buff_rolls table exists');
-            } catch (error) {
-                console.error('[ADMIN] Error creating daily_buff_rolls table:', error);
-                return await interaction.editReply({
-                    content: '❌ **Database Error**\n\nCould not access daily buff system. Please try again.'
-                });
-            }
 
-            // Check current buff status
-            const buffStatus = await this.checkDailyBuffStatus(targetUser.id, interaction.guild.id);
-            console.log('[ADMIN] Daily buff status:', buffStatus);
-
-            // Check if user has any buff (either in database or roles)
-            if (!buffStatus.hasDBRecord && buffStatus.currentRoles.length === 0) {
-                const embed = new EmbedBuilder()
-                    .setColor('#FF6B6B')
-                    .setTitle('🎰 No Daily Buff Found')
-                    .setDescription(`**${targetUser.username}** does not have any daily buff to remove.`)
-                    .addFields(
-                        {
-                            name: '📊 Current Status',
-                            value: `**Database Record:** ${buffStatus.hasDBRecord ? '✅ Found' : '❌ None'}\n**Current Roles:** ${buffStatus.currentRoles.length > 0 ? buffStatus.currentRoles.map(r => r.roleName).join(', ') : '❌ None'}\n**Current Day:** ${buffStatus.currentDay}`,
-                            inline: false
-                        }
+                // Create daily_buff_xp_caps table if it doesn't exist
+                await global.xpTracker.db.query(`
+                    CREATE TABLE IF NOT EXISTS daily_buff_xp_caps (
+                        user_id VARCHAR(20) NOT NULL,
+                        guild_id VARCHAR(20) NOT NULL,
+                        date DATE NOT NULL,
+                        tier INTEGER DEFAULT 0,
+                        xp_cap INTEGER DEFAULT 1500,
+                        current_xp INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (user_id, guild_id, date)
                     )
-                    .setFooter({ text: 'Marine Intelligence • Daily Buff System' })
-                    .setTimestamp();
+                `);
 
-                return await interaction.editReply({ embeds: [embed] });
-            }
-
-            // Force remove daily buff
-            const removalResult = await this.forceRemoveDailyBuff(targetUser.id, interaction.guild.id, `Admin removal: ${reason}`);
-            console.log('[ADMIN] Removal result:', removalResult);
-
-            if (!removalResult.success) {
+                console.log('[ADMIN] Ensured daily quiz database tables exist');
+            } catch (error) {
+                console.error('[ADMIN] Error creating database tables:', error);
                 return await interaction.editReply({
-                    content: `❌ **Removal Failed**\n\n${removalResult.error || 'Unknown error occurred'}`
+                    content: '❌ **Database Error**\n\nCould not access daily quiz system. Please try again.'
                 });
             }
 
-            // Create success response
+            // ✅ STEP 2: Check current status before removal
+            const statusBefore = await this.checkDailyQuizStatus(targetUser.id, interaction.guild.id);
+            console.log('[ADMIN] Status before reset:', statusBefore);
+
+            // ✅ STEP 3: FORCE REMOVE ALL DAILY QUIZ ROLES (Tiers 1-10)
+            const removedRoles = [];
+            for (let tier = 1; tier <= 10; tier++) {
+                const roleId = process.env[`DAILY_QUIZ_TIER_${tier}_ROLE`];
+                if (roleId && roleId !== `role_id_${tier}` && member.roles.cache.has(roleId)) {
+                    const role = interaction.guild.roles.cache.get(roleId);
+                    if (role) {
+                        try {
+                            await member.roles.remove(role, `Admin daily quiz reset: ${reason}`);
+                            removedRoles.push(`Tier ${tier}: ${role.name}`);
+                            console.log(`[ADMIN] ✅ Removed ${role.name} from ${member.user.username}`);
+                        } catch (error) {
+                            console.error(`[ADMIN] ❌ Failed to remove ${role.name}:`, error);
+                            removedRoles.push(`Tier ${tier}: ${role.name} (FAILED)`);
+                        }
+                    }
+                }
+            }
+
+            // ✅ STEP 4: CLEAR ALL DATABASE RECORDS
+            let dbRecordsDeleted = 0;
+            
+            try {
+                // Delete from daily_buff_rolls (quiz completion records)
+                const rollsResult = await global.xpTracker.db.query(
+                    'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2',
+                    [targetUser.id, interaction.guild.id]
+                );
+                const rollsDeleted = rollsResult.rowCount || 0;
+
+                // Delete from daily_buff_xp_caps (tier XP cap records)
+                const capsResult = await global.xpTracker.db.query(
+                    'DELETE FROM daily_buff_xp_caps WHERE user_id = $1 AND guild_id = $2',
+                    [targetUser.id, interaction.guild.id]
+                );
+                const capsDeleted = capsResult.rowCount || 0;
+
+                dbRecordsDeleted = rollsDeleted + capsDeleted;
+                console.log(`[ADMIN] ✅ Deleted ${rollsDeleted} roll records and ${capsDeleted} cap records`);
+
+            } catch (error) {
+                console.error('[ADMIN] Error deleting database records:', error);
+            }
+
+            // ✅ STEP 5: Verify reset completion
+            const statusAfter = await this.checkDailyQuizStatus(targetUser.id, interaction.guild.id);
+            console.log('[ADMIN] Status after reset:', statusAfter);
+
+            // ✅ STEP 6: Create comprehensive response
             const embed = new EmbedBuilder()
                 .setColor('#00FF00')
-                .setTitle('🗑️ Daily Buff Removed Successfully')
-                .setDescription(`Successfully removed daily buff from **${targetUser.username}**`)
+                .setTitle('🎌 Daily Quiz Reset Complete')
+                .setDescription(`Successfully reset daily quiz for **${targetUser.username}**`)
                 .addFields(
                     {
-                        name: '🎯 Target',
+                        name: '🎯 Target User',
                         value: `${targetUser.username} (${targetUser.id})`,
                         inline: true
                     },
                     {
-                        name: '🗑️ Removed Items',
-                        value: `**Roles:** ${removalResult.removedRoles.length > 0 ? removalResult.removedRoles.join('\n') : 'No roles to remove'}\n**DB Records:** ${removalResult.dbRecordsRemoved} deleted`,
-                        inline: true
+                        name: '🗑️ Roles Removed',
+                        value: removedRoles.length > 0 ? 
+                            `\`\`\`\n${removedRoles.join('\n')}\`\`\`` : 
+                            '❌ No quiz roles found to remove',
+                        inline: false
                     },
                     {
-                        name: '📝 Details',
-                        value: `**Reason:** ${reason}\n**Current Day:** ${removalResult.currentDay}\n**Status:** User can now roll again`,
+                        name: '🗄️ Database Cleanup',
+                        value: `\`\`\`diff\n+ daily_buff_rolls: ${dbRecordsDeleted} records deleted\n+ daily_buff_xp_caps: Cleared\n+ User can now take quiz again\n+ XP caps reset to defaults\`\`\``,
+                        inline: false
+                    },
+                    {
+                        name: '📝 Admin Details',
+                        value: `**Reason:** ${reason}\n**Authorized by:** ${interaction.user.username}\n**Status:** User can now use \`/daily-quiz\` again`,
                         inline: false
                     }
                 )
-                .setFooter({ text: `⚓ Authorized by ${interaction.user.username} • Marine Intelligence` })
+                .setFooter({ text: `⚓ Daily Quiz Reset • Marine Intelligence` })
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
 
+            console.log(`[ADMIN] ✅ Daily quiz reset completed for ${targetUser.username}: ${removedRoles.length} roles removed, ${dbRecordsDeleted} DB records deleted`);
+
         } catch (error) {
-            console.error('[ADMIN] Remove daily buff error:', error);
+            console.error('[ADMIN] Daily quiz reset error:', error);
             await interaction.editReply({
-                content: '❌ **Operation Failed**\n\nFailed to remove daily buff. Please try again.'
+                content: '❌ **Operation Failed**\n\nFailed to reset daily quiz. Please check logs and try again.'
             });
         }
     },
 
-    // Check daily buff status
-    async checkDailyBuffStatus(userId, guildId) {
+    // ✅ HELPER: Check daily quiz status (roles + database)
+    async checkDailyQuizStatus(userId, guildId) {
         try {
             const currentDay = this.getCurrentDay();
             
-            // Check database record
-            const dbResult = await global.xpTracker.db.query(
-                'SELECT * FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+            // Check database records
+            const rollsResult = await global.xpTracker.db.query(
+                'SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3',
                 [userId, guildId, currentDay]
             );
-            const hasDBRecord = dbResult.rows.length > 0;
+            
+            const capsResult = await global.xpTracker.db.query(
+                'SELECT tier, xp_cap, current_xp FROM daily_buff_xp_caps WHERE user_id = $1 AND guild_id = $2 AND date = $3',
+                [userId, guildId, currentDay]
+            );
 
             // Check current roles
             const guild = global.xpTracker.client.guilds.cache.get(guildId);
@@ -288,13 +339,13 @@ module.exports = {
             const currentRoles = [];
 
             if (member) {
-                for (let i = 1; i <= 6; i++) {
-                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
+                for (let tier = 1; tier <= 10; tier++) {
+                    const roleId = process.env[`DAILY_QUIZ_TIER_${tier}_ROLE`];
+                    if (roleId && roleId !== `role_id_${tier}` && member.roles.cache.has(roleId)) {
                         const role = guild.roles.cache.get(roleId);
                         if (role) {
                             currentRoles.push({
-                                tier: i,
+                                tier: tier,
                                 roleId: roleId,
                                 roleName: role.name
                             });
@@ -304,79 +355,24 @@ module.exports = {
             }
 
             return {
-                hasDBRecord,
-                currentRoles,
-                currentDay,
-                member
+                hasRollRecord: rollsResult.rows.length > 0,
+                rollRecord: rollsResult.rows[0] || null,
+                hasCapRecord: capsResult.rows.length > 0,
+                capRecord: capsResult.rows[0] || null,
+                currentRoles: currentRoles,
+                currentDay: currentDay,
+                member: member
             };
         } catch (error) {
-            console.error('[ADMIN] Error checking daily buff status:', error);
+            console.error('[ADMIN] Error checking daily quiz status:', error);
             return {
-                hasDBRecord: false,
+                hasRollRecord: false,
+                rollRecord: null,
+                hasCapRecord: false,
+                capRecord: null,
                 currentRoles: [],
                 currentDay: this.getCurrentDay(),
                 member: null
-            };
-        }
-    },
-
-    // Force remove daily buff
-    async forceRemoveDailyBuff(userId, guildId, reason) {
-        try {
-            const currentDay = this.getCurrentDay();
-            const removedRoles = [];
-            let dbRecordsRemoved = 0;
-
-            // Get guild and member
-            const guild = global.xpTracker.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-
-            // Remove all buff roles
-            if (member) {
-                for (let i = 1; i <= 6; i++) {
-                    const roleId = process.env[`DAILY_XP_BUFF_TIER_${i}_ROLE`];
-                    if (roleId && roleId !== `role_id_${i}` && member.roles.cache.has(roleId)) {
-                        const role = guild.roles.cache.get(roleId);
-                        if (role) {
-                            try {
-                                await member.roles.remove(role, reason);
-                                removedRoles.push(`Tier ${i}: ${role.name}`);
-                                console.log(`[ADMIN] Removed ${role.name} from ${member.user.username}`);
-                            } catch (error) {
-                                console.error(`[ADMIN] Error removing role ${role.name}:`, error);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Remove database records
-            try {
-                const deleteResult = await global.xpTracker.db.query(
-                    'DELETE FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2',
-                    [userId, guildId]
-                );
-                dbRecordsRemoved = deleteResult.rowCount || 0;
-                console.log(`[ADMIN] Deleted ${dbRecordsRemoved} daily buff records`);
-            } catch (error) {
-                console.error('[ADMIN] Error deleting database records:', error);
-            }
-
-            return {
-                success: true,
-                removedRoles,
-                dbRecordsRemoved,
-                currentDay
-            };
-
-        } catch (error) {
-            console.error('[ADMIN] Error in forceRemoveDailyBuff:', error);
-            return {
-                success: false,
-                error: error.message,
-                removedRoles: [],
-                dbRecordsRemoved: 0,
-                currentDay: this.getCurrentDay()
             };
         }
     },
@@ -404,7 +400,7 @@ module.exports = {
         return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
-    // Keep all other existing methods: handleAddXP, handleRemoveXP, etc.
+    // ✅ Keep all other existing methods: handleAddXP, handleRemoveXP, etc.
     async handleAddXP(interaction, targetUser, amount, reason) {
         try {
             await interaction.deferReply();
@@ -1016,6 +1012,7 @@ module.exports.handleNuclearButtons = async (interaction, db) => {
             await db.query('TRUNCATE TABLE guild_settings CASCADE');
             await db.query('DROP TABLE IF EXISTS daily_voice_xp CASCADE');
             await db.query('DROP TABLE IF EXISTS daily_buff_rolls CASCADE');
+            await db.query('DROP TABLE IF EXISTS daily_buff_xp_caps CASCADE');
             
             console.log('[NUCLEAR] ☢️ NUCLEAR PROTOCOL EXECUTED - ALL DATA DESTROYED');
 
@@ -1026,7 +1023,7 @@ module.exports.handleNuclearButtons = async (interaction, db) => {
                 .addFields(
                     {
                         name: '💀 DESTRUCTION REPORT',
-                        value: '```diff\n- User Levels: OBLITERATED\n- Guild Settings: ANNIHILATED\n- Voice Data: VAPORIZED\n- XP Logs: ELIMINATED\n- Daily Buffs: EXTINCT\n- All Progress: EXTINCT```',
+                        value: '```diff\n- User Levels: OBLITERATED\n- Guild Settings: ANNIHILATED\n- Voice Data: VAPORIZED\n- XP Logs: ELIMINATED\n- Daily Buffs: EXTINCT\n- Daily Quiz: EXTINCT\n- All Progress: EXTINCT```',
                         inline: false
                     },
                     {
