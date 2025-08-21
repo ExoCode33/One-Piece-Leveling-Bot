@@ -940,37 +940,80 @@ module.exports = {
                         const successfulAnswers = questionResults.filter(result => result === true).length;
                         const securedTier = successfulAnswers;
                         
-                        await this.apply(userId, guildId, member, securedTier);
-                        
-                        // ✅ NEW: Clear cache when quiz ends early
-                        clearQuestionCache(userId);
-                        
-                        let xpMultiplier = 'Unknown';
-                        try {
-                            const roleId = process.env[`DAILY_QUIZ_TIER_${securedTier}_ROLE`];
-                            if (roleId && global.xpBoostManager) {
-                                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
-                                if (boostInfo && boostInfo.boost_multiplier) {
-                                    xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                        this.apply(userId, guildId, member, securedTier).then(() => {
+                            let xpMultiplier = 'Unknown';
+                            try {
+                                const roleId = process.env[`DAILY_QUIZ_TIER_${securedTier}_ROLE`];
+                                if (roleId && global.xpBoostManager) {
+                                    global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                        if (boostInfo && boostInfo.boost_multiplier) {
+                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                        }
+                                        
+                                        const res = new EmbedBuilder()
+                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                            .setColor(TIER_COLORS[securedTier])
+                                            .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                            .addFields({ 
+                                                name: '📊 Results', 
+                                                value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                inline: false 
+                                            })
+                                            .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                            .setTimestamp();
+                                        btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                                    }).catch(error => {
+                                        console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                        xpMultiplier = 'Active';
+                                        
+                                        const res = new EmbedBuilder()
+                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                            .setColor(TIER_COLORS[securedTier])
+                                            .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                            .addFields({ 
+                                                name: '📊 Results', 
+                                                value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                inline: false 
+                                            })
+                                            .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                            .setTimestamp();
+                                        btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                                    });
+                                } else {
+                                    const res = new EmbedBuilder()
+                                        .setTitle('Strategic Withdrawal - Tier Secured!')
+                                        .setColor(TIER_COLORS[securedTier])
+                                        .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                        .addFields({ 
+                                            name: '📊 Results', 
+                                            value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                            inline: false 
+                                        })
+                                        .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                        .setTimestamp();
+                                    btn.editReply({ embeds: [res], components: [] }).catch(console.error);
                                 }
+                            } catch (error) {
+                                console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                xpMultiplier = 'Active';
+                                
+                                const res = new EmbedBuilder()
+                                    .setTitle('Strategic Withdrawal - Tier Secured!')
+                                    .setColor(TIER_COLORS[securedTier])
+                                    .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                    .addFields({ 
+                                        name: '📊 Results', 
+                                        value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                        inline: false 
+                                    })
+                                    .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                    .setTimestamp();
+                                btn.editReply({ embeds: [res], components: [] }).catch(console.error);
                             }
-                        } catch (error) {
-                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
-                            xpMultiplier = 'Active';
-                        }
+                        }).catch(error => {
+                            console.error('[DAILY QUIZ] Error applying secure tier:', error);
+                        });
                         
-                        const res = new EmbedBuilder()
-                            .setTitle('Strategic Withdrawal - Tier Secured!')
-                            .setColor(TIER_COLORS[securedTier])
-                            .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
-                            .addFields({ 
-                                name: '📊 Results', 
-                                value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
-                                inline: false 
-                            })
-                            .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
-                            .setTimestamp();
-                        await btn.editReply({ embeds: [res], components: [] });
                         collector.stop('secured'); 
                         return;
                     }
@@ -990,8 +1033,13 @@ module.exports = {
                             const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
                             if (global.xpTracker && correctAnswerXP > 0) {
                                 try {
-                                    await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
-                                    console.log(`[DAILY QUIZ] Q${qNum} FLAT XP: Awarded ${correctAnswerXP} XP to ${member.displayName} (no multipliers applied)`);
+                                    global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true)
+                                        .then(() => {
+                                            console.log(`[DAILY QUIZ] Q${qNum} FLAT XP: Awarded ${correctAnswerXP} XP to ${member.displayName} (no multipliers applied)`);
+                                        })
+                                        .catch(error => {
+                                            console.error(`[DAILY QUIZ] Error awarding flat XP for correct answer:`, error);
+                                        });
                                 } catch (error) {
                                     console.error(`[DAILY QUIZ] Error awarding flat XP for correct answer:`, error);
                                 }
@@ -1007,16 +1055,20 @@ module.exports = {
                             clearQuestionCache(userId);
                             
                             if (!testingMode) {
-                                await this.apply(userId, guildId, member, totalSuccessful);
+                                this.apply(userId, guildId, member, totalSuccessful).catch(console.error);
                             
                                 let xpMultiplier = 'Unknown';
                                 try {
                                     const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
                                     if (roleId && global.xpBoostManager) {
-                                        const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
-                                        if (boostInfo && boostInfo.boost_multiplier) {
-                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
-                                        }
+                                        global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                            if (boostInfo && boostInfo.boost_multiplier) {
+                                                xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                            }
+                                        }).catch(error => {
+                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                            xpMultiplier = 'Active';
+                                        });
                                     }
                                 } catch (error) {
                                     console.error('[DAILY BUFF] Error getting XP multiplier:', error);
@@ -1037,7 +1089,7 @@ module.exports = {
                                     })
                                     .setFooter({ text: totalSuccessful > 0 ? `${this.getTierEmoji(totalSuccessful)} ${tierName} ${xpMultiplier} Active` : 'Challenge Complete' })
                                     .setTimestamp();
-                                await btn.editReply({ embeds: [res], components: [] });
+                                btn.editReply({ embeds: [res], components: [] }).catch(console.error);
                             } else {
                                 const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
                                 const res = new EmbedBuilder()
@@ -1051,7 +1103,7 @@ module.exports = {
                                     })
                                     .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
                                     .setTimestamp();
-                                await btn.editReply({ embeds: [res], components: [] });
+                                btn.editReply({ embeds: [res], components: [] }).catch(console.error);
                             }
                         } else {
                             const successfulAnswers = newResults.filter(r => r === true).length;
@@ -1099,10 +1151,10 @@ module.exports = {
                                         
                                     } else {
                                         if (testingMode) {
-                                            await contBtn.editReply({
+                                            contBtn.editReply({
                                                 content: '🧪 **Testing Mode**: Cannot claim rewards in testing mode!',
                                                 components: []
-                                            });
+                                            }).catch(console.error);
                                             return;
                                         }
                                         
@@ -1110,37 +1162,82 @@ module.exports = {
                                         const actualSuccessful = newResults.filter(r => r === true).length;
                                         const finalTier = Math.min(cTier, actualSuccessful);
                                         
-                                        await this.apply(userId, guildId, member, finalTier);
-                                        
+                                        this.apply(userId, guildId, member, finalTier).then(() => {
+                                            let xpMultiplier = 'Unknown';
+                                            try {
+                                                const roleId = process.env[`DAILY_QUIZ_TIER_${finalTier}_ROLE`];
+                                                if (roleId && global.xpBoostManager) {
+                                                    global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                                        if (boostInfo && boostInfo.boost_multiplier) {
+                                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                                        }
+                                                        
+                                                        const claim = new EmbedBuilder()
+                                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                            .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                            .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                            .addFields({ 
+                                                                name: '📊 Results', 
+                                                                value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                                inline: false 
+                                                            })
+                                                            .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                            .setTimestamp();
+                                                        contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                                    }).catch(error => {
+                                                        console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                        xpMultiplier = 'Active';
+                                                        
+                                                        const claim = new EmbedBuilder()
+                                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                            .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                            .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                            .addFields({ 
+                                                                name: '📊 Results', 
+                                                                value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                                inline: false 
+                                                            })
+                                                            .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                            .setTimestamp();
+                                                        contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                                    });
+                                                } else {
+                                                    const claim = new EmbedBuilder()
+                                                        .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                        .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                        .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                        .addFields({ 
+                                                            name: '📊 Results', 
+                                                            value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                            inline: false 
+                                                        })
+                                                        .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                        .setTimestamp();
+                                                    contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                                }
+                                            } catch (error) {
+                                                console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                xpMultiplier = 'Active';
+                                                
+                                                const claim = new EmbedBuilder()
+                                                    .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                    .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                    .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                    .addFields({ 
+                                                        name: '📊 Results', 
+                                                        value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                        inline: false 
+                                                    })
+                                                    .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                    .setTimestamp();
+                                                contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                            }
+                                        }).catch(error => {
+                                            console.error('[DAILY QUIZ] Error applying tier:', error);
+                                        }); 
                                         // ✅ NEW: Clear cache when quiz ends early
                                         clearQuestionCache(userId);
                                         
-                                        let xpMultiplier = 'Unknown';
-                                        try {
-                                            const roleId = process.env[`DAILY_QUIZ_TIER_${finalTier}_ROLE`];
-                                            if (roleId && global.xpBoostManager) {
-                                                const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
-                                                if (boostInfo && boostInfo.boost_multiplier) {
-                                                    xpMultiplier = `${boostInfo.boost_multiplier}x`;
-                                                }
-                                            }
-                                        } catch (error) {
-                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
-                                            xpMultiplier = 'Active';
-                                        }
-                                        
-                                        const claim = new EmbedBuilder()
-                                            .setTitle('Strategic Withdrawal - Tier Secured!')
-                                            .setColor(TIER_COLORS[finalTier] || '#FF0000')
-                                            .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
-                                            .addFields({ 
-                                                name: '📊 Results', 
-                                                value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
-                                                inline: false 
-                                            })
-                                            .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
-                                            .setTimestamp();
-                                        await contBtn.editReply({ embeds: [claim], components: [] }); 
                                         contColl.stop();
                                     }
                                 } catch (error) {
