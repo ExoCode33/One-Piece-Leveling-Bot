@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - FIXED Main Command File (Split Architecture)
+// src/commands/daily-quiz.js - COMPLETE FIXED Main Command File (Split Architecture)
 
 const { SlashCommandBuilder } = require('discord.js');
 const QuizManager = require('../utils/quiz/QuizManager');
@@ -14,13 +14,23 @@ module.exports = {
 
     async execute(interaction) {
         try {
-            // Initialize quiz manager if not already done
+            // ✅ FIXED: Better error handling for initialization
             if (!quizManager) {
-                quizManager = new QuizManager(global.xpTracker);
+                try {
+                    quizManager = new QuizManager(global.xpTracker);
+                    console.log('[DAILY QUIZ] Quiz manager initialized successfully');
+                } catch (initError) {
+                    console.error('[DAILY QUIZ] Failed to initialize quiz manager:', initError);
+                    return await interaction.reply({
+                        content: '❌ **Quiz System Error**\n\nThe quiz system failed to initialize. Please try again in a few moments.',
+                        ephemeral: true
+                    });
+                }
             }
 
             const testingMode = isTestingMode();
             const userId = interaction.user.id;
+            const guildId = interaction.guild.id; // ✅ FIXED: Get guild ID here to pass to quiz manager
             
             // Check channel restriction
             const allowedChannelId = process.env.DAILY_QUIZ_CHANNEL;
@@ -42,7 +52,6 @@ module.exports = {
                 });
             }
 
-            const guildId = interaction.guild.id;
             const member = interaction.member;
             
             // Check XP tracker availability (skip in testing mode)
@@ -55,23 +64,42 @@ module.exports = {
 
             // Check if already completed today (skip in testing mode)
             if (!testingMode) {
-                const existingRecord = await quizManager.checkExistingQuiz(userId, guildId);
-                
-                if (existingRecord && existingRecord.tier >= 0) {
-                    const buff = await quizManager.getCurrentBuff(userId, guildId, member);
-                    const nextReset = quizManager.getNextResetTimestamp();
+                try {
+                    const existingRecord = await quizManager.checkExistingQuiz(userId, guildId);
                     
-                    return await interaction.reply({
-                        content: `You've already completed today's challenge!\n\n**Current Enhancement:** ${buff.name}\n**Next Challenge:** <t:${nextReset}:R>`,
-                        ephemeral: true
-                    });
+                    if (existingRecord && existingRecord.tier >= 0) {
+                        const buff = await quizManager.getCurrentBuff(userId, guildId, member);
+                        const nextReset = quizManager.getNextResetTimestamp();
+                        
+                        return await interaction.reply({
+                            content: `You've already completed today's challenge!\n\n**Current Enhancement:** ${buff.name}\n**Next Challenge:** <t:${nextReset}:R>`,
+                            ephemeral: true
+                        });
+                    }
+                } catch (checkError) {
+                    console.error('[DAILY QUIZ] Error checking existing quiz:', checkError);
+                    // Continue anyway in case it's a database issue
                 }
             } else {
                 console.log(`[DAILY QUIZ] Testing mode - allowing unlimited attempts for ${interaction.user.username}`);
             }
             
-            // Start the quiz
-            await quizManager.startQuiz(interaction, userId, guildId, member);
+            // ✅ FIXED: Pass guildId explicitly to startQuiz
+            try {
+                await quizManager.startQuiz(interaction, userId, guildId, member);
+            } catch (startError) {
+                console.error('[DAILY QUIZ] Error starting quiz:', startError);
+                
+                // Clean up on error
+                if (quizManager && interaction.user?.id) {
+                    quizManager.cleanupQuiz(interaction.user.id);
+                }
+                
+                return await interaction.reply({
+                    content: '❌ **Quiz Start Error**\n\nFailed to start the quiz. Please try again.',
+                    ephemeral: true
+                });
+            }
             
         } catch (error) {
             console.error('[DAILY QUIZ] Execute error:', error);
