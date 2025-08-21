@@ -1,4 +1,4 @@
-// index.js - FIXED with proper XPTracker initialization and error handling
+// index.js - ENHANCED with Robust Initialization, Error Recovery & Performance Monitoring
 
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const { Pool } = require('pg');
@@ -8,72 +8,256 @@ const path = require('path');
 // Load environment variables
 require('dotenv').config();
 
-// Configuration
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const DEBUG = process.env.DEBUG === 'true';
+// ✅ ENHANCED: Configuration validation and error handling
+const CONFIG = {
+    DISCORD_TOKEN: process.env.DISCORD_TOKEN,
+    CLIENT_ID: process.env.CLIENT_ID,
+    DATABASE_URL: process.env.DATABASE_URL,
+    DEBUG: process.env.DEBUG === 'true',
+    NODE_ENV: process.env.NODE_ENV || 'development',
+    HEALTH_CHECK_PORT: process.env.PORT || 3000
+};
 
-// Global variables
-let db;
-let xpTracker;
-let xpBoostManager;
-
-// ✅ CRITICAL FIX: Add initialization status tracking
-let isXPTrackerReady = false;
-let initializationPromise = null;
-
-// Initialize database connection
-async function initializeConnection() {
-    if (process.env.DATABASE_URL) {
-        console.log('🚂 Connecting to Railway PostgreSQL...');
-        db = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: { rejectUnauthorized: false }
-        });
-    } else {
-        const config = {
-            user: process.env.PGUSER,
-            password: process.env.PGPASSWORD,
-            host: process.env.PGHOST,
-            port: process.env.PGPORT || 5432,
-            database: process.env.PGDATABASE,
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-        };
-        
-        if (!config.user || !config.password || !config.host || !config.database) {
-            throw new Error('DATABASE_URL or individual PostgreSQL environment variables are required');
-        }
-        
-        console.log('🗄️ Connecting to PostgreSQL with manual config...');
-        db = new Pool(config);
+// ✅ ENHANCED: Validate required environment variables at startup
+function validateEnvironment() {
+    const requiredVars = [
+        { name: 'DISCORD_TOKEN', value: CONFIG.DISCORD_TOKEN },
+        { name: 'CLIENT_ID', value: CONFIG.CLIENT_ID },
+        { name: 'DATABASE_URL', value: CONFIG.DATABASE_URL }
+    ];
+    
+    const missing = requiredVars.filter(({ value }) => !value);
+    
+    if (missing.length > 0) {
+        console.error('❌ CRITICAL: Missing required environment variables:');
+        missing.forEach(({ name }) => console.error(`   - ${name}`));
+        console.error('\n💡 Please check your .env file or Railway environment variables');
+        process.exit(1);
     }
     
-    try {
-        const client = await db.connect();
-        const result = await client.query('SELECT NOW()');
-        console.log(`✅ PostgreSQL connected successfully at ${result.rows[0].now}`);
-        client.release();
-    } catch (error) {
-        console.log(`❌ PostgreSQL connection failed: ${error.message}`);
-        throw error;
+    console.log('✅ Environment validation passed');
+}
+
+// ✅ ENHANCED: System state management
+class SystemState {
+    constructor() {
+        this.components = {
+            database: { ready: false, error: null, retries: 0 },
+            xpTracker: { ready: false, error: null, retries: 0 },
+            xpBoostManager: { ready: false, error: null, retries: 0 },
+            discordClient: { ready: false, error: null, retries: 0 },
+            slashCommands: { ready: false, error: null, retries: 0 }
+        };
+        
+        this.startTime = Date.now();
+        this.isShuttingDown = false;
+        this.maxRetries = 3;
+        this.retryDelay = 5000; // 5 seconds
+    }
+    
+    setComponentState(component, ready, error = null) {
+        if (this.components[component]) {
+            this.components[component].ready = ready;
+            this.components[component].error = error;
+            
+            if (error) {
+                this.components[component].retries++;
+            } else if (ready) {
+                this.components[component].retries = 0;
+            }
+        }
+    }
+    
+    isSystemReady() {
+        return Object.values(this.components).every(comp => comp.ready);
+    }
+    
+    getSystemStatus() {
+        const readyComponents = Object.entries(this.components)
+            .filter(([, comp]) => comp.ready)
+            .map(([name]) => name);
+            
+        const failedComponents = Object.entries(this.components)
+            .filter(([, comp]) => comp.error && comp.retries >= this.maxRetries)
+            .map(([name, comp]) => ({ name, error: comp.error.message }));
+            
+        return {
+            ready: this.isSystemReady(),
+            uptime: Date.now() - this.startTime,
+            readyComponents,
+            failedComponents,
+            isShuttingDown: this.isShuttingDown
+        };
+    }
+    
+    canRetry(component) {
+        return this.components[component] && 
+               this.components[component].retries < this.maxRetries;
     }
 }
 
-// Create Discord client
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessageReactions
-    ]
-});
+// ✅ ENHANCED: Error recovery manager
+class ErrorRecoveryManager {
+    constructor() {
+        this.errorCounts = new Map();
+        this.circuitBreakers = new Map();
+        this.recoveryStrategies = new Map();
+    }
+    
+    async executeWithRecovery(operation, context, maxRetries = 3) {
+        const errorCount = this.errorCounts.get(context) || 0;
+        
+        if (errorCount >= maxRetries) {
+            const strategy = this.recoveryStrategies.get(context);
+            if (strategy) {
+                console.log(`[RECOVERY] Applying recovery strategy for ${context}`);
+                return await strategy();
+            }
+            throw new Error(`Max retries exceeded for ${context}`);
+        }
+        
+        try {
+            const result = await operation();
+            this.errorCounts.delete(context);
+            return result;
+        } catch (error) {
+            this.errorCounts.set(context, errorCount + 1);
+            console.error(`[RECOVERY] Attempt ${errorCount + 1} failed for ${context}:`, error.message);
+            
+            if (errorCount + 1 < maxRetries) {
+                const delay = Math.min(1000 * Math.pow(2, errorCount), 10000);
+                console.log(`[RECOVERY] Retrying ${context} in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return this.executeWithRecovery(operation, context, maxRetries);
+            }
+            
+            throw error;
+        }
+    }
+    
+    setRecoveryStrategy(context, strategy) {
+        this.recoveryStrategies.set(context, strategy);
+    }
+}
 
-// Database functions for XP system
+// ✅ ENHANCED: Health monitoring system
+class HealthMonitor {
+    constructor() {
+        this.metrics = {
+            commandsExecuted: 0,
+            xpAwarded: 0,
+            errorsLogged: 0,
+            voiceSessionsActive: 0,
+            memoryUsage: [],
+            lastHealthCheck: Date.now()
+        };
+        
+        this.healthCheckInterval = setInterval(() => this.collectMetrics(), 60000);
+    }
+    
+    collectMetrics() {
+        const memUsage = process.memoryUsage();
+        this.metrics.memoryUsage.push({
+            timestamp: Date.now(),
+            heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024), // MB
+            heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024), // MB
+            rss: Math.round(memUsage.rss / 1024 / 1024) // MB
+        });
+        
+        // Keep only last 24 entries (24 hours if collecting every hour)
+        if (this.metrics.memoryUsage.length > 24) {
+            this.metrics.memoryUsage = this.metrics.memoryUsage.slice(-24);
+        }
+        
+        this.metrics.lastHealthCheck = Date.now();
+        
+        // Memory usage warning
+        const currentMem = this.metrics.memoryUsage[this.metrics.memoryUsage.length - 1];
+        if (currentMem && currentMem.heapUsed > 500) {
+            console.warn(`[HEALTH] High memory usage: ${currentMem.heapUsed}MB`);
+        }
+    }
+    
+    incrementMetric(metric, value = 1) {
+        if (this.metrics.hasOwnProperty(metric)) {
+            this.metrics[metric] += value;
+        }
+    }
+    
+    getHealthStatus() {
+        const lastMemory = this.metrics.memoryUsage[this.metrics.memoryUsage.length - 1];
+        
+        return {
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            memory: lastMemory || { heapUsed: 0, heapTotal: 0, rss: 0 },
+            metrics: {
+                commandsExecuted: this.metrics.commandsExecuted,
+                xpAwarded: this.metrics.xpAwarded,
+                errorsLogged: this.metrics.errorsLogged,
+                voiceSessionsActive: global.xpTracker?.voiceSessions?.size || 0
+            },
+            bot: {
+                guilds: client.guilds?.cache?.size || 0,
+                users: client.users?.cache?.size || 0
+            }
+        };
+    }
+    
+    cleanup() {
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+        }
+    }
+}
+
+// Global instances
+let db;
+let xpTracker;
+let xpBoostManager;
+const systemState = new SystemState();
+const errorRecovery = new ErrorRecoveryManager();
+const healthMonitor = new HealthMonitor();
+
+// ✅ ENHANCED: Database initialization with connection pooling and retry logic
 async function initializeDatabase() {
+    console.log('🔄 Initializing database connection...');
+    
+    return await errorRecovery.executeWithRecovery(async () => {
+        if (CONFIG.DATABASE_URL) {
+            console.log('🚂 Connecting to Railway PostgreSQL...');
+            db = new Pool({
+                connectionString: CONFIG.DATABASE_URL,
+                ssl: { rejectUnauthorized: false },
+                max: 20,
+                idleTimeoutMillis: 30000,
+                connectionTimeoutMillis: 10000
+            });
+        } else {
+            throw new Error('DATABASE_URL is required');
+        }
+        
+        // Test connection
+        const client = await db.connect();
+        const result = await client.query('SELECT NOW()');
+        console.log(`✅ PostgreSQL connected at ${result.rows[0].now}`);
+        client.release();
+        
+        // Initialize tables
+        await initializeDatabaseTables();
+        
+        systemState.setComponentState('database', true);
+        return true;
+        
+    }, 'database_init');
+}
+
+// ✅ ENHANCED: Database table initialization
+async function initializeDatabaseTables() {
     try {
+        console.log('🔄 Creating database tables...');
+        
         // User levels table
         await db.query(`
             CREATE TABLE IF NOT EXISTS user_levels (
@@ -104,25 +288,46 @@ async function initializeDatabase() {
             )
         `);
 
+        // Create indexes for better performance
+        await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_guild_xp ON user_levels(guild_id, total_xp DESC)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_user_levels_updated ON user_levels(updated_at)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_guild_settings_guild ON guild_settings(guild_id)');
+
         console.log('✅ Database tables initialized successfully');
     } catch (error) {
-        console.error('❌ Error initializing database:', error);
+        console.error('❌ Error initializing database tables:', error);
+        throw error;
     }
 }
 
-// Register slash commands
-async function registerSlashCommands(clientId, token) {
-    try {
+// Create Discord client with enhanced configuration
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions
+    ],
+    failIfNotExists: false
+});
+
+// ✅ ENHANCED: Slash command registration with better error handling
+async function registerSlashCommands() {
+    return await errorRecovery.executeWithRecovery(async () => {
         const { REST, Routes } = require('discord.js');
         const commands = [];
         const commandsPath = path.join(__dirname, 'src', 'commands');
         
         if (!fs.existsSync(commandsPath)) {
             console.warn('⚠️ Commands directory not found, skipping slash command registration');
-            return;
+            systemState.setComponentState('slashCommands', true);
+            return true;
         }
         
         const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+        console.log(`🔄 Loading ${commandFiles.length} command files...`);
         
         for (const file of commandFiles) {
             const filePath = path.join(commandsPath, file);
@@ -132,7 +337,7 @@ async function registerSlashCommands(clientId, token) {
                     commands.push(command.data.toJSON());
                     console.log(`📋 Loaded command: ${command.data.name}`);
                 } else {
-                    console.warn(`⚠️ Command at ${filePath} is missing required "data" or "execute" property.`);
+                    console.warn(`⚠️ Command at ${filePath} is missing required properties`);
                 }
             } catch (error) {
                 console.warn(`⚠️ Could not load command ${file}:`, error.message);
@@ -141,198 +346,246 @@ async function registerSlashCommands(clientId, token) {
 
         if (commands.length === 0) {
             console.warn('⚠️ No valid commands found to register');
-            return;
+            systemState.setComponentState('slashCommands', true);
+            return true;
         }
 
-        const rest = new REST().setToken(token);
-        console.log(`🔄 Started refreshing ${commands.length} application (/) commands.`);
+        const rest = new REST().setToken(CONFIG.DISCORD_TOKEN);
+        console.log(`🔄 Registering ${commands.length} slash commands...`);
         
         const data = await rest.put(
-            Routes.applicationCommands(clientId),
+            Routes.applicationCommands(CONFIG.CLIENT_ID),
             { body: commands },
         );
 
-        console.log(`✅ Successfully reloaded ${data.length} application (/) commands.`);
-    } catch (error) {
-        console.error('❌ Error registering slash commands:', error);
-    }
+        console.log(`✅ Successfully registered ${data.length} slash commands`);
+        systemState.setComponentState('slashCommands', true);
+        return true;
+        
+    }, 'slash_commands');
 }
 
-// ✅ CRITICAL FIX: Enhanced XP system initialization with proper error handling
-async function initializeXP() {
-    try {
-        // ✅ CRITICAL FIX: Prevent multiple initialization attempts
-        if (initializationPromise) {
-            console.log('[XP INIT] XP system initialization already in progress, waiting...');
-            return await initializationPromise;
+// ✅ ENHANCED: XP system initialization with comprehensive error handling
+async function initializeXPSystem() {
+    return await errorRecovery.executeWithRecovery(async () => {
+        console.log('🔄 Initializing XP system...');
+        
+        // Test if required files exist
+        const xpTrackerPath = path.join(__dirname, 'src', 'utils', 'xpTracker.js');
+        const xpBoostPath = path.join(__dirname, 'src', 'utils', 'xpBoost.js');
+        
+        if (!fs.existsSync(xpTrackerPath)) {
+            throw new Error('xpTracker.js file not found');
         }
         
-        initializationPromise = (async () => {
-            // Test if files exist first
-            const xpTrackerPath = path.join(__dirname, 'src', 'utils', 'xpTracker.js');
-            const xpBoostPath = path.join(__dirname, 'src', 'utils', 'xpBoost.js');
-            
-            if (!fs.existsSync(xpTrackerPath)) {
-                throw new Error('xpTracker.js file not found');
-            }
-            
-            if (!fs.existsSync(xpBoostPath)) {
-                throw new Error('xpBoost.js file not found');
-            }
-            
-            console.log('📁 XP system files found, attempting to load...');
-            
-            // ✅ CRITICAL FIX: Initialize XPTracker with proper error handling
-            const XPTracker = require('./src/utils/xpTracker');
-            console.log('✅ XPTracker class loaded');
-            
-            xpTracker = new XPTracker(client, process.env.DATABASE_URL);
-            
-            // ✅ CRITICAL FIX: Wait for initialization to complete
-            console.log('🔄 Initializing XP Tracker...');
-            const initSuccess = await xpTracker.initialize();
-            
-            if (!initSuccess) {
-                throw new Error('XP Tracker initialization failed');
-            }
-            
-            global.xpTracker = xpTracker;
-            isXPTrackerReady = true;
-            console.log(`⏱️ XP Tracker initialized successfully`);
-            
-            // ✅ CRITICAL FIX: Initialize XP Boost Manager only after XP Tracker is ready
-            const XPBoostManager = require('./src/utils/xpBoost');
-            console.log('✅ XPBoostManager class loaded');
-            
-            xpBoostManager = new XPBoostManager(xpTracker.db);
-            global.xpBoostManager = xpBoostManager;
-            console.log(`🚀 XP Boost Manager initialized successfully`);
-            
-            return true;
-        })();
-        
-        const result = await initializationPromise;
-        
-        // ✅ CRITICAL FIX: Only start intervals if initialization was successful
-        if (result && isXPTrackerReady) {
-            // Start voice XP processing with safety checks
-            setInterval(() => {
-                if (xpTracker && xpTracker.isReady && xpTracker.isReady() && xpTracker.processVoiceXP) {
-                    xpTracker.processVoiceXP().catch(error => {
-                        console.error('[VOICE XP] Error in processing:', error);
-                    });
-                } else {
-                    console.warn('[VOICE XP] XP Tracker not ready, skipping voice XP processing');
-                }
-            }, 60000);
-            
-            // Daily cleanup with safety checks
-            setInterval(() => {
-                if (xpTracker && xpTracker.dailyResetManager && xpTracker.dailyResetManager.cleanupDailyVoiceXP) {
-                    xpTracker.dailyResetManager.cleanupDailyVoiceXP().catch(error => {
-                        console.error('[DAILY CLEANUP] Error:', error);
-                    });
-                }
-            }, 24 * 60 * 60 * 1000);
+        if (!fs.existsSync(xpBoostPath)) {
+            throw new Error('xpBoost.js file not found');
         }
         
-        return result;
+        // Initialize XP Tracker
+        const XPTracker = require('./src/utils/xpTracker');
+        console.log('✅ XPTracker class loaded');
         
-    } catch (error) {
-        console.error('⚠️ XP System initialization error:', error);
-        console.error('Stack trace:', error.stack);
-        console.log('🚢 Bot will run without XP tracking');
+        xpTracker = new XPTracker(client, CONFIG.DATABASE_URL);
         
-        // ✅ CRITICAL FIX: Reset initialization promise on failure
-        initializationPromise = null;
-        isXPTrackerReady = false;
+        console.log('🔄 Initializing XP Tracker...');
+        const initSuccess = await xpTracker.initialize();
         
-        return false;
-    }
+        if (!initSuccess) {
+            throw new Error('XP Tracker initialization failed');
+        }
+        
+        global.xpTracker = xpTracker;
+        systemState.setComponentState('xpTracker', true);
+        console.log('✅ XP Tracker initialized successfully');
+        
+        // Initialize XP Boost Manager
+        const XPBoostManager = require('./src/utils/xpBoost');
+        console.log('✅ XPBoostManager class loaded');
+        
+        xpBoostManager = new XPBoostManager(xpTracker.db);
+        global.xpBoostManager = xpBoostManager;
+        systemState.setComponentState('xpBoostManager', true);
+        console.log('✅ XP Boost Manager initialized successfully');
+        
+        return true;
+        
+    }, 'xp_system');
 }
 
-// ✅ CRITICAL FIX: Add utility function to check if XP system is ready
-function isXPSystemReady() {
-    return isXPTrackerReady && 
-           xpTracker && 
-           xpTracker.isReady && 
-           xpTracker.isReady();
+// ✅ ENHANCED: Setup intervals with error handling
+function setupIntervals() {
+    console.log('🔄 Setting up background intervals...');
+    
+    // Voice XP processing with safety checks
+    setInterval(() => {
+        if (systemState.components.xpTracker.ready && xpTracker?.processVoiceXP) {
+            xpTracker.processVoiceXP().catch(error => {
+                console.error('[VOICE XP] Error in processing:', error);
+                healthMonitor.incrementMetric('errorsLogged');
+            });
+        }
+    }, 60000);
+    
+    // Daily cleanup with safety checks
+    setInterval(() => {
+        if (systemState.components.xpTracker.ready && 
+            xpTracker?.dailyResetManager?.cleanupDailyVoiceXP) {
+            xpTracker.dailyResetManager.cleanupDailyVoiceXP().catch(error => {
+                console.error('[DAILY CLEANUP] Error:', error);
+                healthMonitor.incrementMetric('errorsLogged');
+            });
+        }
+    }, 24 * 60 * 60 * 1000);
+    
+    // System health monitoring
+    setInterval(() => {
+        if (CONFIG.DEBUG) {
+            const status = systemState.getSystemStatus();
+            const health = healthMonitor.getHealthStatus();
+            
+            console.log(`🏴‍☠️ System Status - Ready: ${status.ready}, ` +
+                       `Guilds: ${client.guilds.cache.size}, ` +
+                       `Voice Sessions: ${health.metrics.voiceSessionsActive}, ` +
+                       `Memory: ${health.memory.heapUsed}MB, ` +
+                       `Uptime: ${Math.floor(health.uptime/60)}m`);
+        }
+    }, 300000); // Every 5 minutes
+    
+    console.log('✅ Background intervals configured');
 }
 
-// Bot ready event
+// ✅ ENHANCED: Bot ready event with sequential initialization
 client.once('ready', async () => {
-    console.log(`One Piece Leveling Bot is ready to set sail!`);
+    console.log(`\n🏴‍☠️ One Piece Leveling Bot is starting initialization...`);
     console.log(`⚓ Logged in as ${client.user.tag}`);
-    console.log(`🏴‍☠️ Serving ${client.guilds.cache.size} server(s)`);
+    console.log(`🏴‍☠️ Serving ${client.guilds.cache.size} server(s)\n`);
+    
+    systemState.setComponentState('discordClient', true);
     
     try {
-        await initializeConnection();
+        // Sequential initialization to avoid race conditions
+        console.log('🔄 Starting sequential system initialization...\n');
+        
+        // Step 1: Database
         await initializeDatabase();
+        console.log('✅ Database initialization complete\n');
         
-        // ✅ CRITICAL FIX: Initialize XP system after database is ready
-        const xpInitSuccess = await initializeXP();
+        // Step 2: XP System
+        await initializeXPSystem();
+        console.log('✅ XP system initialization complete\n');
         
-        if (CLIENT_ID) {
-            await registerSlashCommands(CLIENT_ID, DISCORD_TOKEN);
+        // Step 3: Slash Commands
+        if (CONFIG.CLIENT_ID) {
+            await registerSlashCommands();
+            console.log('✅ Slash commands registration complete\n');
+        } else {
+            console.warn('⚠️ CLIENT_ID not provided, skipping slash command registration\n');
+            systemState.setComponentState('slashCommands', true);
         }
         
-        const result = await db.query('SELECT NOW()');
-        console.log(`⏰ Database time: ${result.rows[0].now}`);
-        console.log('🗄️ Database connection test successful!');
+        // Step 4: Background processes
+        setupIntervals();
+        console.log('✅ Background processes started\n');
         
-        if (xpInitSuccess) {
-            console.log('🎯 All systems initialized and ready!');
+        // Final system check
+        const systemStatus = systemState.getSystemStatus();
+        
+        if (systemStatus.ready) {
+            console.log('🎯 ===============================================');
+            console.log('🎯 ALL SYSTEMS OPERATIONAL AND READY TO SAIL!');
+            console.log('🎯 ===============================================\n');
+            
+            console.log('📊 System Components Status:');
+            systemStatus.readyComponents.forEach(component => {
+                console.log(`  ✅ ${component}`);
+            });
+            
         } else {
-            console.log('⚠️ Bot ready but XP system failed to initialize');
+            console.log('⚠️ ===============================================');
+            console.log('⚠️ PARTIAL SYSTEM INITIALIZATION');
+            console.log('⚠️ ===============================================\n');
+            
+            console.log('📊 Ready Components:');
+            systemStatus.readyComponents.forEach(component => {
+                console.log(`  ✅ ${component}`);
+            });
+            
+            if (systemStatus.failedComponents.length > 0) {
+                console.log('\n❌ Failed Components:');
+                systemStatus.failedComponents.forEach(({ name, error }) => {
+                    console.log(`  ❌ ${name}: ${error}`);
+                });
+            }
+        }
+        
+        // Database time check
+        if (systemState.components.database.ready) {
+            const result = await db.query('SELECT NOW()');
+            console.log(`\n⏰ Database time: ${result.rows[0].now}`);
         }
         
     } catch (error) {
-        console.error('❌ Initialization failed:', error);
-        console.error('❌ Bot will continue without some features');
+        console.error('❌ Critical initialization failure:', error);
+        console.error('❌ Bot will continue with limited functionality');
+        healthMonitor.incrementMetric('errorsLogged');
     }
 });
 
-// ✅ CRITICAL FIX: Enhanced voice state update handler with safety checks
+// ✅ ENHANCED: Voice state update with error handling
 client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-        // ✅ CRITICAL FIX: Check if XP system is ready before processing
-        if (!isXPSystemReady()) {
-            console.warn('[VOICE] XP system not ready, skipping voice state update');
+        if (!systemState.components.xpTracker.ready) {
             return;
         }
         
-        // Handle voice time tracking with XP system
-        if (xpTracker.handleVoiceStateUpdate) {
+        if (xpTracker?.handleVoiceStateUpdate) {
             await xpTracker.handleVoiceStateUpdate(oldState, newState);
         }
     } catch (error) {
         console.error('❌ Error in voiceStateUpdate:', error);
+        healthMonitor.incrementMetric('errorsLogged');
     }
 });
 
-// Slash command handler
+// ✅ ENHANCED: Slash command handler with comprehensive error handling
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
-
+    
+    // Track command execution
+    healthMonitor.incrementMetric('commandsExecuted');
+    
     try {
+        // Check if system is ready for complex commands
+        if (['leaderboard', 'level', 'admin', 'settings', 'daily-quiz'].includes(commandName) && 
+            !systemState.components.xpTracker.ready) {
+            return await interaction.reply({
+                content: '⚠️ **System Starting Up**\n\nXP system is still initializing. Please try again in a few moments.',
+                ephemeral: true
+            });
+        }
+        
         // Try to load command from file
         const commandsPath = path.join(__dirname, 'src', 'commands');
         const commandFile = path.join(commandsPath, `${commandName}.js`);
         
         if (fs.existsSync(commandFile)) {
             try {
+                delete require.cache[require.resolve(commandFile)]; // Clear cache for hot reloading in dev
                 const command = require(commandFile);
                 if (command.execute) {
                     await command.execute(interaction);
                     return;
                 }
             } catch (error) {
-                console.error(`Error executing command ${commandName}:`, error);
-                if (!interaction.replied) {
+                console.error(`❌ Error executing command ${commandName}:`, error);
+                healthMonitor.incrementMetric('errorsLogged');
+                
+                if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({
-                        content: `❌ Error executing command: ${error.message}`,
+                        content: `❌ **Command Error**\n\nThere was an error executing this command. The error has been logged.`,
                         ephemeral: true
                     });
                 }
@@ -343,18 +596,32 @@ client.on('interactionCreate', async (interaction) => {
         // Fallback commands
         if (commandName === 'ping') {
             const ping = Date.now() - interaction.createdTimestamp;
-            await interaction.reply(`🏴‍☠️ **Pong!** 
-📡 Bot Latency: \`${ping}ms\`
-💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
-⚓ Ready to set sail!`);
+            const systemStatus = systemState.getSystemStatus();
+            const readyComponents = systemStatus.readyComponents.length;
+            const totalComponents = Object.keys(systemState.components).length;
+            
+            const embed = new EmbedBuilder()
+                .setColor(systemStatus.ready ? '#00FF00' : '#FFA500')
+                .setTitle('🏴‍☠️ One Piece Bot Status')
+                .addFields(
+                    { name: '📡 Latency', value: `\`${ping}ms\``, inline: true },
+                    { name: '💓 API Latency', value: `\`${Math.round(client.ws.ping)}ms\``, inline: true },
+                    { name: '🎯 System Status', value: systemStatus.ready ? '✅ All Systems Ready' : `⚠️ ${readyComponents}/${totalComponents} Ready`, inline: true },
+                    { name: '⏰ Uptime', value: `\`${Math.floor(systemStatus.uptime / 60000)}m\``, inline: true },
+                    { name: '🏴‍☠️ Guilds', value: `\`${client.guilds.cache.size}\``, inline: true },
+                    { name: '👥 Users', value: `\`${client.users.cache.size}\``, inline: true }
+                )
+                .setFooter({ text: 'Ready to set sail!' })
+                .setTimestamp();
+                
+            await interaction.reply({ embeds: [embed] });
         }
         else if (commandName === 'check-voice-time') {
             const targetUser = interaction.options.getUser('user') || interaction.user;
             
-            // ✅ CRITICAL FIX: Check if XP system is ready
-            if (!isXPSystemReady()) {
+            if (!systemState.components.xpTracker.ready) {
                 return await interaction.reply({
-                    content: '❌ XP Tracker not initialized.',
+                    content: '❌ **XP System Not Ready**\n\nXP tracker is still initializing.',
                     ephemeral: true
                 });
             }
@@ -387,28 +654,30 @@ client.on('interactionCreate', async (interaction) => {
         }
         else {
             await interaction.reply({
-                content: '❌ Command not found or not implemented yet.',
+                content: '❌ **Command Not Found**\n\nThis command is not implemented yet.',
                 ephemeral: true
             });
         }
 
     } catch (error) {
         console.error('❌ Error handling slash command:', error);
+        healthMonitor.incrementMetric('errorsLogged');
+        
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({
-                content: '❌ An error occurred while processing this command.',
+                content: '❌ **Unexpected Error**\n\nAn error occurred while processing this command.',
                 ephemeral: true
             }).catch(console.error);
         }
     }
 });
 
-// ✅ CRITICAL FIX: Enhanced message XP handling with safety checks
+// ✅ ENHANCED: Message XP handling with system state checks
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
     
-    // ✅ CRITICAL FIX: Check if XP system is ready before awarding XP
-    if (isXPSystemReady()) {
+    // Award XP if system is ready
+    if (systemState.components.xpTracker.ready && xpTracker?.awardXP) {
         try {
             const cooldownKey = `${message.guild.id}:${message.author.id}:message`;
             const cooldown = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
@@ -416,23 +685,29 @@ client.on('messageCreate', async (message) => {
             if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
                 xpTracker.setCooldown(cooldownKey);
                 await xpTracker.awardXP(message.author.id, message.guild.id, null, 'message', message.author);
+                healthMonitor.incrementMetric('xpAwarded');
             }
         } catch (error) {
             console.error('[MESSAGE XP] Error awarding XP:', error);
+            healthMonitor.incrementMetric('errorsLogged');
         }
     }
     
     // Legacy commands
     if (message.content === '!ping') {
         const ping = Date.now() - message.createdTimestamp;
+        const systemStatus = systemState.getSystemStatus();
+        
         message.reply(`🏴‍☠️ **Pong!** 
 📡 Bot Latency: \`${ping}ms\`
 💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
+🎯 System: ${systemStatus.ready ? '✅ All Ready' : '⚠️ Starting Up'}
 ⚓ Ready to set sail with XP tracking!`);
     }
     
     if (message.content === '!help') {
-        const xpStatus = isXPSystemReady() ? '⚡ All XP systems operational' : '⚠️ XP system initializing...';
+        const systemStatus = systemState.getSystemStatus();
+        const xpStatus = systemStatus.ready ? '⚡ All XP systems operational' : '⚠️ XP system initializing...';
         
         message.reply(`🏴‍☠️ **One Piece Leveling Bot Commands**
 
@@ -441,6 +716,7 @@ client.on('messageCreate', async (message) => {
 \`/leaderboard\` - Show server leaderboard with wanted posters
 \`/settings\` - Configure XP settings (Admin only)
 \`/admin\` - Advanced XP management (Admin only)
+\`/daily-quiz\` - Take the daily anime quiz for XP bonuses
 
 **⚡ XP System:**
 • **Message XP**: ${process.env.MESSAGE_XP_MIN || 25}-${process.env.MESSAGE_XP_MAX || 35} per message
@@ -455,18 +731,41 @@ client.on('messageCreate', async (message) => {
 • **Marine Intelligence logging system**
 • **Comprehensive slash commands for XP management**
 • **Wanted poster generation for level-ups**
+• **Daily anime quiz with tier-based bonuses**
 
 **💡 Use slash commands (/) for the best experience!**
 **🔧 System Status:** ${xpStatus}`);
     }
+    
+    if (message.content === '!health') {
+        const systemStatus = systemState.getSystemStatus();
+        const healthStatus = healthMonitor.getHealthStatus();
+        
+        const embed = new EmbedBuilder()
+            .setColor(systemStatus.ready ? '#00FF00' : '#FFA500')
+            .setTitle('🏥 System Health Report')
+            .addFields(
+                { name: '🎯 Overall Status', value: systemStatus.ready ? '✅ Healthy' : '⚠️ Partial', inline: true },
+                { name: '⏰ Uptime', value: `${Math.floor(healthStatus.uptime / 3600)}h ${Math.floor((healthStatus.uptime % 3600) / 60)}m`, inline: true },
+                { name: '💾 Memory', value: `${healthStatus.memory.heapUsed}MB / ${healthStatus.memory.heapTotal}MB`, inline: true },
+                { name: '📊 Commands Executed', value: `${healthStatus.metrics.commandsExecuted}`, inline: true },
+                { name: '⚡ XP Awarded', value: `${healthStatus.metrics.xpAwarded}`, inline: true },
+                { name: '🎤 Active Voice Sessions', value: `${healthStatus.metrics.voiceSessionsActive}`, inline: true },
+                { name: '🏴‍☠️ Guilds', value: `${healthStatus.bot.guilds}`, inline: true },
+                { name: '👥 Users', value: `${healthStatus.bot.users}`, inline: true }
+            )
+            .setFooter({ text: 'Health check completed' })
+            .setTimestamp();
+            
+        message.reply({ embeds: [embed] });
+    }
 });
 
-// ✅ CRITICAL FIX: Enhanced reaction XP handling with safety checks
+// ✅ ENHANCED: Reaction XP handling with system state checks
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot || !reaction.message.guild) return;
     
-    // ✅ CRITICAL FIX: Check if XP system is ready before awarding XP
-    if (isXPSystemReady()) {
+    if (systemState.components.xpTracker.ready && xpTracker?.awardXP) {
         try {
             const cooldownKey = `${reaction.message.guild.id}:${user.id}:reaction`;
             const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
@@ -474,16 +773,19 @@ client.on('messageReactionAdd', async (reaction, user) => {
             if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
                 xpTracker.setCooldown(cooldownKey);
                 await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
+                healthMonitor.incrementMetric('xpAwarded');
             }
         } catch (error) {
             console.error('[REACTION XP] Error awarding XP:', error);
+            healthMonitor.incrementMetric('errorsLogged');
         }
     }
 });
 
-// Error handling
+// ✅ ENHANCED: Error handling and logging
 client.on('error', error => {
     console.error('❌ Discord client error:', error);
+    healthMonitor.incrementMetric('errorsLogged');
 });
 
 client.on('warn', warning => {
@@ -492,87 +794,180 @@ client.on('warn', warning => {
 
 process.on('unhandledRejection', error => {
     console.error('❌ Unhandled promise rejection:', error);
+    healthMonitor.incrementMetric('errorsLogged');
 });
 
 process.on('uncaughtException', error => {
     console.error('❌ Uncaught exception:', error);
-    process.exit(1);
+    healthMonitor.incrementMetric('errorsLogged');
+    
+    // Don't exit immediately, try graceful shutdown
+    gracefulShutdown();
 });
 
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
-
-// ✅ CRITICAL FIX: Enhanced graceful shutdown with XP tracker cleanup
+// ✅ ENHANCED: Graceful shutdown with comprehensive cleanup
 async function gracefulShutdown() {
-    console.log('🛑 Shutting down bot gracefully...');
+    if (systemState.isShuttingDown) return;
+    
+    console.log('\n🛑 Graceful shutdown initiated...');
+    systemState.isShuttingDown = true;
     
     try {
-        // ✅ CRITICAL FIX: Clean up XP tracker with safety checks
+        // Stop accepting new work
+        client.removeAllListeners();
+        
+        // Clean up health monitor
+        healthMonitor.cleanup();
+        console.log('✅ Health monitor cleaned up');
+        
+        // Clean up XP tracker
         if (xpTracker && typeof xpTracker.cleanup === 'function') {
             console.log('🧹 Cleaning up XP tracker...');
             await xpTracker.cleanup();
+            console.log('✅ XP tracker cleaned up');
         }
         
-        // Close database connection
-        console.log('🗄️ Closing database connection...');
+        // Close database connections
         if (db) {
+            console.log('🗄️ Closing database connections...');
             await db.end();
+            console.log('✅ Database connections closed');
         }
         
         // Destroy Discord client
         client.destroy();
+        console.log('✅ Discord client destroyed');
         
-        console.log('👋 Bot shutdown complete!');
+        console.log('👋 Graceful shutdown completed successfully!');
+        
     } catch (error) {
         console.error('❌ Error during shutdown:', error);
+    } finally {
+        process.exit(0);
     }
-    
-    process.exit(0);
 }
 
-// ✅ CRITICAL FIX: Enhanced status logging with XP system status
-setInterval(() => {
-    if (DEBUG) {
-        const activeSessions = (xpTracker && xpTracker.voiceSessions) ? 
-            xpTracker.voiceSessions.size : 0;
-        const xpSystemStatus = isXPSystemReady() ? '✅ Ready' : '⚠️ Not Ready';
-        
-        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, XP System: ${xpSystemStatus}, Uptime: ${Math.floor(process.uptime()/60)}m`);
-    }
-}, 300000); // Log every 5 minutes in debug mode
+// ✅ ENHANCED: Health check HTTP endpoint for Railway/Docker
+if (CONFIG.HEALTH_CHECK_PORT) {
+    const http = require('http');
+    
+    const server = http.createServer((req, res) => {
+        if (req.url === '/health') {
+            const systemStatus = systemState.getSystemStatus();
+            const healthStatus = healthMonitor.getHealthStatus();
+            
+            const response = {
+                status: systemStatus.ready ? 'healthy' : 'degraded',
+                timestamp: new Date().toISOString(),
+                system: systemStatus,
+                health: healthStatus,
+                version: require('./package.json').version || 'unknown'
+            };
+            
+            res.writeHead(systemStatus.ready ? 200 : 503, {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            });
+            res.end(JSON.stringify(response, null, 2));
+            
+        } else if (req.url === '/') {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>One Piece Discord Bot</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #1a1a1a; color: #fff; }
+                        .status { padding: 20px; border-radius: 10px; margin: 20px 0; }
+                        .healthy { background: #2d5a27; }
+                        .degraded { background: #5a4227; }
+                    </style>
+                </head>
+                <body>
+                    <h1>🏴‍☠️ One Piece Discord Bot</h1>
+                    <div class="status ${systemState.isSystemReady() ? 'healthy' : 'degraded'}">
+                        <h2>Status: ${systemState.isSystemReady() ? '✅ All Systems Ready' : '⚠️ Initializing'}</h2>
+                        <p>Bot is ${client.readyAt ? 'online and operational' : 'starting up'}</p>
+                        <p><a href="/health" style="color: #4CAF50;">View Health Report</a></p>
+                    </div>
+                </body>
+                </html>
+            `);
+        } else {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Not Found');
+        }
+    });
+    
+    server.listen(CONFIG.HEALTH_CHECK_PORT, () => {
+        console.log(`🏥 Health check server running on port ${CONFIG.HEALTH_CHECK_PORT}`);
+    });
+}
 
-// Start the bot
+// ✅ ENHANCED: Process signal handlers
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+// ✅ ENHANCED: Bot startup sequence
 async function startBot() {
-    console.log('🚀 Starting One Piece Leveling Bot...');
-    console.log(`🔑 Discord Token: ${DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
-    console.log(`🆔 Client ID: ${CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
-    console.log(`🗄️ Database URL: ${process.env.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
+    console.log('🚀 Starting One Piece Leveling Bot...\n');
+    
+    // Validate environment first
+    validateEnvironment();
+    
+    console.log('🔑 Configuration Check:');
+    console.log(`   Discord Token: ${CONFIG.DISCORD_TOKEN ? '✅ Provided' : '❌ MISSING'}`);
+    console.log(`   Client ID: ${CONFIG.CLIENT_ID ? '✅ Provided' : '❌ MISSING'}`);
+    console.log(`   Database URL: ${CONFIG.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
+    console.log(`   Environment: ${CONFIG.NODE_ENV}`);
+    console.log(`   Debug Mode: ${CONFIG.DEBUG ? '✅ Enabled' : '❌ Disabled'}`);
+    console.log(`   Health Check Port: ${CONFIG.HEALTH_CHECK_PORT}\n`);
 
-    if (!DISCORD_TOKEN) {
-        console.error('❌ DISCORD_TOKEN is required! Please check your .env file.');
-        process.exit(1);
-    }
-
-    if (!CLIENT_ID) {
-        console.error('❌ CLIENT_ID is required for slash commands! Please check your .env file.');
-        process.exit(1);
-    }
-
-    if (!process.env.DATABASE_URL) {
-        console.error('❌ DATABASE_URL is required! Please check your .env file.');
-        process.exit(1);
-    }
+    // Setup error recovery strategies
+    errorRecovery.setRecoveryStrategy('database_init', async () => {
+        console.log('[RECOVERY] Attempting database recovery...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return await initializeDatabase();
+    });
+    
+    errorRecovery.setRecoveryStrategy('xp_system', async () => {
+        console.log('[RECOVERY] Attempting XP system recovery...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        return await initializeXPSystem();
+    });
 
     try {
-        await client.login(DISCORD_TOKEN);
+        console.log('🔄 Connecting to Discord...\n');
+        await client.login(CONFIG.DISCORD_TOKEN);
+        
     } catch (error) {
         console.error('❌ Failed to login to Discord:', error);
+        
+        if (error.code === 'TokenInvalid') {
+            console.error('💡 Please check your DISCORD_TOKEN in the environment variables');
+        }
+        
         process.exit(1);
     }
 }
 
-// Export for use in other modules
-module.exports = { client, db, xpBoostManager, isXPSystemReady };
+// ✅ ENHANCED: Export for use in other modules and testing
+module.exports = { 
+    client, 
+    db, 
+    xpTracker,
+    xpBoostManager, 
+    systemState, 
+    healthMonitor,
+    gracefulShutdown,
+    // Utility functions for external use
+    isSystemReady: () => systemState.isSystemReady(),
+    getSystemStatus: () => systemState.getSystemStatus(),
+    getHealthStatus: () => healthMonitor.getHealthStatus()
+};
 
 // Start the bot
-startBot();
+if (require.main === module) {
+    startBot();
+}
