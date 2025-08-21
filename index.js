@@ -496,8 +496,8 @@ function setupIntervals() {
     console.log(`   - Health monitoring: every 5m`);
 }
 
-// ✅ ENHANCED: Bot ready event with sequential initialization
-client.once('ready', async () => {
+// ✅ ENHANCED: Bot ready event with sequential initialization (updated for Discord.js v14+)
+client.once('clientReady', async () => {
     console.log(`\n🏴‍☠️ One Piece Leveling Bot is starting initialization...`);
     console.log(`⚓ Logged in as ${client.user.tag}`);
     console.log(`🏴‍☠️ Serving ${client.guilds.cache.size} server(s)\n`);
