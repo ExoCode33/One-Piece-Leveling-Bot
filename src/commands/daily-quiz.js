@@ -1214,9 +1214,9 @@ module.exports = {
                                         
                                         if (!testingMode) {
                                             if (totalSuccessful > 0) {
-                                                await this.apply(userId, guildId, member, totalSuccessful);
+                                                this.apply(userId, guildId, member, totalSuccessful).catch(console.error);
                                             } else {
-                                                await this.saveFail(userId, guildId);
+                                                this.saveFail(userId, guildId).catch(console.error);
                                             }
                                             
                                             let xpMultiplier = 'Unknown';
@@ -1224,10 +1224,14 @@ module.exports = {
                                                 try {
                                                     const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
                                                     if (roleId && global.xpBoostManager) {
-                                                        const boostInfo = await global.xpBoostManager.getRoleBoost(guildId, roleId);
-                                                        if (boostInfo && boostInfo.boost_multiplier) {
-                                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
-                                                        }
+                                                        global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                                            if (boostInfo && boostInfo.boost_multiplier) {
+                                                                xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                                            }
+                                                        }).catch(error => {
+                                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                            xpMultiplier = 'Active';
+                                                        });
                                                     }
                                                 } catch (error) {
                                                     console.error('[DAILY BUFF] Error getting XP multiplier:', error);
@@ -1252,7 +1256,7 @@ module.exports = {
                                                 .setFooter({ text: totalSuccessful > 0 ? `${tierEmoji} ${tierName} ${xpMultiplier} Active Until Reset` : 'Challenge Complete - No Buff Awarded' })
                                                 .setTimestamp();
                                                 
-                                            await btn.editReply({ embeds: [res], components: [] });
+                                            btn.editReply({ embeds: [res], components: [] }).catch(console.error);
                                         } else {
                                             const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
                                             const tierEmoji = this.getTierEmoji(totalSuccessful);
@@ -1269,7 +1273,7 @@ module.exports = {
                                                 .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
                                                 .setTimestamp();
                                                 
-                                            await btn.editReply({ embeds: [res], components: [] });
+                                            btn.editReply({ embeds: [res], components: [] }).catch(console.error);
                                         }
                                     }
                                 } catch (error) {
@@ -1277,11 +1281,11 @@ module.exports = {
                                     clearQuestionCache(userId);
                                     
                                     try {
-                                        await btn.editReply({
+                                        btn.editReply({
                                             content: '❌ **Error Processing Answer**\n\nSomething went wrong. Your progress has been saved.',
                                             embeds: [],
                                             components: []
-                                        });
+                                        }).catch(console.error);
                                     } catch (replyError) {
                                         console.error('[DAILY QUIZ] Could not send error message:', replyError);
                                     }
@@ -1328,9 +1332,9 @@ module.exports = {
                         
                         if (!testingMode) {
                             if (totalSuccessful > 0) {
-                                await this.apply(userId, guildId, member, totalSuccessful);
+                                this.apply(userId, guildId, member, totalSuccessful).catch(console.error);
                             } else {
-                                await this.saveFail(userId, guildId);
+                                this.saveFail(userId, guildId).catch(console.error);
                             }
                             
                             const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
@@ -1350,7 +1354,7 @@ module.exports = {
                                 .setTimestamp();
                                 
                             try {
-                                await msg.edit({ embeds: [timeout], components: [] });
+                                msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
                             } catch (error) {
                                 console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
                             }
