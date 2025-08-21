@@ -17,13 +17,144 @@ class QuizManager {
         // ✅ FIXED: Single active quiz tracking (global limit = 1)
         this.activeQuizUserId = null; // Only one user can have active quiz
         this.questionCache = new Map(); // userId -> preloaded questions
-        this.userQuestionHistory = new Map(); // userId -> Set of recent questions
+        
+        // ✅ NEW: Database-backed question history tracking
+        this.initializeQuestionHistoryTable();
         
         // ✅ NEW: Track quiz messages for cleanup
         this.quizMessages = new Map(); // userId -> array of message objects
         
         // Cleanup old caches every 10 minutes
         setInterval(() => this.cleanupOldCaches(), 10 * 60 * 1000);
+        
+        // ✅ NEW: Cleanup old question history daily
+        setInterval(() => this.cleanupOldQuestionHistory(), 24 * 60 * 60 * 1000);
+    }
+
+    // ✅ NEW: Initialize question history tracking table
+    async initializeQuestionHistoryTable() {
+        if (!this.xpTracker?.db) {
+            console.warn('[QUIZ] No database connection for question history tracking');
+            return;
+        }
+
+        try {
+            await this.xpTracker.db.query(`
+                CREATE TABLE IF NOT EXISTS quiz_question_history (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(20) NOT NULL,
+                    guild_id VARCHAR(20) NOT NULL,
+                    question_hash VARCHAR(64) NOT NULL,
+                    question_text TEXT NOT NULL,
+                    difficulty VARCHAR(10) NOT NULL,
+                    asked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX(user_id, guild_id, asked_at),
+                    INDEX(question_hash)
+                )
+            `);
+
+            // Create indexes for better performance
+            await this.xpTracker.db.query(`
+                CREATE INDEX IF NOT EXISTS idx_quiz_history_user_guild ON quiz_question_history(user_id, guild_id)
+            `);
+            
+            await this.xpTracker.db.query(`
+                CREATE INDEX IF NOT EXISTS idx_quiz_history_hash ON quiz_question_history(question_hash)
+            `);
+
+            console.log('[QUIZ] ✅ Question history tracking table initialized');
+        } catch (error) {
+            console.error('[QUIZ] Error initializing question history table:', error);
+        }
+    }
+
+    // ✅ NEW: Get user's recent question history from database
+    async getUserQuestionHistory(userId, guildId, days = 30) {
+        if (!this.xpTracker?.db) {
+            return new Set();
+        }
+
+        try {
+            const result = await this.xpTracker.db.query(`
+                SELECT question_hash, question_text 
+                FROM quiz_question_history 
+                WHERE user_id = $1 AND guild_id = $2 
+                AND asked_at > NOW() - INTERVAL '${days} days'
+                ORDER BY asked_at DESC
+            `, [userId, guildId]);
+
+            const recentQuestions = new Set();
+            result.rows.forEach(row => {
+                recentQuestions.add(row.question_text.toLowerCase().trim());
+                recentQuestions.add(row.question_hash);
+            });
+
+            console.log(`[QUIZ] Loaded ${recentQuestions.size} recent questions for user ${userId} (last ${days} days)`);
+            return recentQuestions;
+
+        } catch (error) {
+            console.error('[QUIZ] Error loading question history:', error);
+            return new Set();
+        }
+    }
+
+    // ✅ NEW: Save question to history
+    async saveQuestionToHistory(userId, guildId, question) {
+        if (!this.xpTracker?.db) {
+            return;
+        }
+
+        try {
+            // Create hash of question for deduplication
+            const questionHash = this.createQuestionHash(question.question);
+
+            await this.xpTracker.db.query(`
+                INSERT INTO quiz_question_history (user_id, guild_id, question_hash, question_text, difficulty)
+                VALUES ($1, $2, $3, $4, $5)
+            `, [userId, guildId, questionHash, question.question, question.difficulty]);
+
+            console.log(`[QUIZ] ✅ Saved question to history: ${question.difficulty} - ${question.question.substring(0, 50)}...`);
+
+        } catch (error) {
+            console.error('[QUIZ] Error saving question to history:', error);
+        }
+    }
+
+    // ✅ NEW: Create hash of question for deduplication
+    createQuestionHash(questionText) {
+        // Simple hash function for question deduplication
+        let hash = 0;
+        const cleanText = questionText.toLowerCase().trim().replace(/[^\w\s]/g, '');
+        
+        for (let i = 0; i < cleanText.length; i++) {
+            const char = cleanText.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        
+        return Math.abs(hash).toString(16);
+    }
+
+    // ✅ NEW: Cleanup old question history (keep last 60 days)
+    async cleanupOldQuestionHistory() {
+        if (!this.xpTracker?.db) {
+            return;
+        }
+
+        try {
+            const result = await this.xpTracker.db.query(`
+                DELETE FROM quiz_question_history 
+                WHERE asked_at < NOW() - INTERVAL '60 days'
+            `);
+
+            const deletedCount = result.rowCount || 0;
+            if (deletedCount > 0) {
+                console.log(`[QUIZ] ✅ Cleaned up ${deletedCount} old question history records`);
+            }
+
+        } catch (error) {
+            console.error('[QUIZ] Error cleaning up question history:', error);
+        }
     }
 
     // ✅ FIXED: Check if any user has active quiz (global check)
@@ -135,11 +266,23 @@ class QuizManager {
         }
     }
 
-    // ✅ OPTIMIZED: Preload 13 questions for user (10 main + 3 rerolls) - RESTORED LOGGING
+    // ✅ FIXED: Preload 13 questions with DATABASE question history tracking
     async preloadQuestions(userId) {
         console.log(`[QUIZ] Preloading 13 questions for user ${userId} (10 main + 3 rerolls)`);
         
         try {
+            // ✅ NEW: Get user's recent question history from database (last 30 days)
+            const guildId = this.activeQuizUserId === userId ? 
+                Object.values(this.client.guilds.cache)[0]?.id : null;
+            
+            if (!guildId) {
+                console.error('[QUIZ] Could not determine guild ID for question history');
+                return false;
+            }
+
+            const recentQuestions = await this.getUserQuestionHistory(userId, guildId, 30);
+            console.log(`[QUIZ] Avoiding ${recentQuestions.size} recent questions from database`);
+            
             // ✅ FIXED: Generate 13 difficulties (10 main + 3 extra for rerolls)
             const difficulties = [
                 'Easy', 'Easy', 'Medium', 'Medium', 'Medium', 'Medium', 'Hard', 'Hard', 'Hard', 'Hard', // 10 main questions
@@ -148,24 +291,44 @@ class QuizManager {
             const questions = [];
             const usedQuestions = new Set();
             
-            // Get user's question history for deduplication
-            const userHistory = this.userQuestionHistory.get(userId) || new Set();
-            
             for (let i = 0; i < 13; i++) {
                 const difficulty = difficulties[i];
-                const avoidQuestions = new Set([...usedQuestions, ...userHistory]);
+                const avoidQuestions = new Set([...usedQuestions, ...recentQuestions]);
                 
-                const question = await this.questionLoader.fetchQuestion(difficulty, avoidQuestions);
-                if (question) {
-                    questions.push(question);
-                    usedQuestions.add(question.question.toLowerCase().trim());
-                    console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty}`);
+                // ✅ NEW: Try up to 5 times to get a unique question
+                let question = null;
+                let attempts = 0;
+                
+                while (!question && attempts < 5) {
+                    attempts++;
+                    question = await this.questionLoader.fetchQuestion(difficulty, avoidQuestions);
                     
-                    // ✅ RESTORED: Question/answer logging with GREEN answer
-                    console.log(`[QUESTION] ${question.question}`);
-                    console.log(`\x1b[32m[ANSWER] ${question.answer}\x1b[0m`); // Green color
-                } else {
-                    console.error(`[QUIZ] Failed to load question ${i + 1}`);
+                    if (question) {
+                        const questionKey = question.question.toLowerCase().trim();
+                        const questionHash = this.createQuestionHash(question.question);
+                        
+                        // Check if we already used this question in current session or recent history
+                        if (usedQuestions.has(questionKey) || 
+                            recentQuestions.has(questionKey) || 
+                            recentQuestions.has(questionHash)) {
+                            
+                            console.log(`[QUIZ] Question ${i + 1} attempt ${attempts}: Duplicate detected, retrying...`);
+                            question = null; // Try again
+                        } else {
+                            // Unique question found
+                            questions.push(question);
+                            usedQuestions.add(questionKey);
+                            console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty} (attempt ${attempts})`);
+                            
+                            // ✅ RESTORED: Question/answer logging with GREEN answer
+                            console.log(`[QUESTION] ${question.question}`);
+                            console.log(`\x1b[32m[ANSWER] ${question.answer}\x1b[0m`); // Green color
+                        }
+                    }
+                }
+                
+                if (!question) {
+                    console.error(`[QUIZ] Failed to load unique question ${i + 1} after 5 attempts`);
                     return false;
                 }
                 
@@ -180,10 +343,11 @@ class QuizManager {
                 questions: questions,
                 currentIndex: 0,
                 usedQuestions: usedQuestions,
-                createdAt: Date.now()
+                createdAt: Date.now(),
+                guildId: guildId // Store guild ID for history saving
             });
             
-            console.log(`[QUIZ] ✅ Loaded ${questions.length} questions for ${userId}`);
+            console.log(`[QUIZ] ✅ Loaded ${questions.length} unique questions for ${userId}`);
             return true;
             
         } catch (error) {
@@ -208,19 +372,9 @@ class QuizManager {
 
     // Update user question history
     updateUserQuestionHistory(userId, questionText) {
-        if (!this.userQuestionHistory.has(userId)) {
-            this.userQuestionHistory.set(userId, new Set());
-        }
-        
-        const history = this.userQuestionHistory.get(userId);
-        history.add(questionText.toLowerCase().trim());
-        
-        // Keep only last 50 questions
-        if (history.size > 50) {
-            const historyArray = Array.from(history);
-            history.clear();
-            historyArray.slice(-30).forEach(q => history.add(q));
-        }
+        // ✅ NOTE: This method is now supplementary to database tracking
+        // Database tracking is the primary source of question history
+        console.log(`[QUIZ] Question added to session history: ${questionText.substring(0, 50)}...`);
     }
 
     // Ask a question
@@ -243,6 +397,12 @@ class QuizManager {
                     ephemeral: true
                 });
                 return;
+            }
+            
+            // ✅ NEW: Save question to database history for future avoidance
+            const cache = this.questionCache.get(userId);
+            if (cache?.guildId) {
+                await this.saveQuestionToHistory(userId, cache.guildId, question);
             }
             
             // ✅ RESTORED: Question/answer logging with GREEN answer for current question
@@ -1039,14 +1199,12 @@ class QuizManager {
             }
         }
         
-        // Clean up old user histories
-        if (this.userQuestionHistory.size > 1000) {
-            console.log('[QUIZ] Trimming user question history');
-            const historyArray = Array.from(this.userQuestionHistory.entries());
-            this.userQuestionHistory.clear();
-            historyArray.slice(-500).forEach(([userId, history]) => {
-                this.userQuestionHistory.set(userId, history);
-            });
+        // Clean up old user histories - now managed by database
+        console.log('[QUIZ] Database-backed question history - memory cleanup not needed');
+        
+        // ✅ NEW: Trigger database cleanup if needed
+        if (Math.random() < 0.1) { // 10% chance to trigger cleanup
+            this.cleanupOldQuestionHistory().catch(console.error);
         }
     }
 }
