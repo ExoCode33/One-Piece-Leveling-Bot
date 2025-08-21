@@ -14,8 +14,8 @@ class QuizManager {
         this.roleManager = new RoleManager();
         this.databaseManager = new DatabaseManager(xpTracker?.db);
         
-        // Active quiz tracking
-        this.activeQuizzes = new Set();
+        // ✅ FIXED: Single active quiz tracking (global limit = 1)
+        this.activeQuizUserId = null; // Only one user can have active quiz
         this.questionCache = new Map(); // userId -> preloaded questions
         this.userQuestionHistory = new Map(); // userId -> Set of recent questions
         
@@ -23,9 +23,17 @@ class QuizManager {
         setInterval(() => this.cleanupOldCaches(), 10 * 60 * 1000);
     }
 
-    // Check if user has active quiz
-    hasActiveQuiz(userId) {
-        return this.activeQuizzes.has(userId);
+    // ✅ FIXED: Check if any user has active quiz (global check)
+    hasActiveQuiz(userId = null) {
+        if (userId) {
+            return this.activeQuizUserId === userId;
+        }
+        return this.activeQuizUserId !== null;
+    }
+
+    // ✅ NEW: Get current active quiz user
+    getActiveQuizUser() {
+        return this.activeQuizUserId;
     }
 
     // Check existing quiz completion
@@ -76,8 +84,17 @@ class QuizManager {
         try {
             await interaction.deferReply();
             
-            // Mark user as having active quiz
-            this.activeQuizzes.add(userId);
+            // ✅ FIXED: Check if someone else already has active quiz
+            if (this.hasActiveQuiz() && !this.hasActiveQuiz(userId)) {
+                const activeUser = this.getActiveQuizUser();
+                return await interaction.editReply({
+                    content: `❌ **Quiz Already Active**\n\nAnother user is currently taking the daily quiz. Please wait for them to finish.\n\n*Only one person can take the quiz at a time to ensure fair gameplay.*`,
+                    ephemeral: true
+                });
+            }
+            
+            // ✅ FIXED: Set single active quiz user
+            this.activeQuizUserId = userId;
             
             // Show loading message
             const loadingEmbed = new EmbedBuilder()
@@ -317,7 +334,8 @@ class QuizManager {
                 }
                 
                 if (reason === 'time' && collected.size === 0) {
-                    await this.handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults);
+                    // ✅ FIXED: Pass rerollsUsed to handleTimeout to preserve reroll count
+                    await this.handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults, rerollsUsed);
                 }
                 
                 activeCollector = null;
@@ -365,7 +383,35 @@ class QuizManager {
             '🧪 TESTING MODE - ULTIMATE ANIME MASTERY CHALLENGE' : 
             '🎌 ULTIMATE ANIME MASTERY CHALLENGE';
 
-        // ✅ FIXED: Restore original time display format
+        // ✅ FIXED: Restore original 10-emoji time display (green -> yellow -> red)
+        const createTimeEmojis = (timeLeft) => {
+            const maxTime = 20;
+            const timePercentage = timeLeft / maxTime;
+            const emojis = [];
+            
+            for (let i = 0; i < 10; i++) {
+                const segmentPercentage = (10 - i) / 10;
+                if (timePercentage >= segmentPercentage) {
+                    // Green for high time (66%+)
+                    if (timePercentage > 0.66) {
+                        emojis.push('🟩');
+                    }
+                    // Yellow for medium time (33%-66%) 
+                    else if (timePercentage > 0.33) {
+                        emojis.push('🟨');
+                    }
+                    // Red for low time (0%-33%)
+                    else {
+                        emojis.push('🟥');
+                    }
+                } else {
+                    emojis.push('⬛');
+                }
+            }
+            return emojis.join('');
+        };
+
+        const timeEmojis = createTimeEmojis(timeRemaining);
         const mins = Math.floor(timeRemaining / 60);
         const secs = timeRemaining % 60;
         const timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -394,7 +440,7 @@ class QuizManager {
                 },
                 {
                     name: '⏰ Time Remaining',
-                    value: `**${timeText}** (${timeRemaining} seconds)`,
+                    value: `${timeEmojis}\n**${timeText}** (${timeRemaining} seconds)`,
                     inline: false
                 },
                 {
@@ -725,33 +771,123 @@ class QuizManager {
         }
     }
 
-    // Handle timeout
-    async handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults) {
-        console.log(`[QUIZ] Q${questionNumber} timed out for ${member.displayName}`);
+    // ✅ FIXED: Handle timeout - give Continue/Abandon options
+    async handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults, rerollsUsed = 0) {
+        console.log(`[QUIZ] Q${questionNumber} timed out for ${member.displayName} - Rerolls preserved: ${rerollsUsed}`);
         
         const newResults = [...questionResults, false];
         
         if (questionNumber === 10) {
             await this.handleQuizComplete({ editReply: interaction.editReply.bind(interaction) }, userId, guildId, member, newResults);
         } else {
+            // ✅ FIXED: Show Continue/Abandon options instead of auto-continuing
             const timeoutEmbed = new EmbedBuilder()
                 .setColor('#FF6B6B')
-                .setTitle(`⏰ Time's Up - Question ${questionNumber}/10`)
-                .setDescription(`No answer selected in time. Moving to question ${questionNumber + 1}/10...${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                .setFooter({ text: isTestingMode() ? '🧪 Testing Mode - Auto-continuing...' : 'Auto-continuing to next question...' });
+                .setTitle(`⏰ Time's Up - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
+                .setDescription(`No answer selected in time.${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                .addFields({
+                    name: '🎯 Current Progress',
+                    value: `**Questions Completed:** ${questionNumber}/10\n**Successful Answers:** ${questionResults.filter(r => r === true).length}\n**Rerolls Remaining:** ${3 - rerollsUsed}/3`,
+                    inline: false
+                })
+                .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Choose your next action' : 'Choose your next action' })
+                .setTimestamp();
+
+            // Create Continue/Abandon buttons
+            const actionButtons = [
+                new ButtonBuilder()
+                    .setCustomId(`timeout_continue_${userId}_${questionNumber + 1}_${rerollsUsed}`)
+                    .setLabel(`Continue to Question ${questionNumber + 1}`)
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('▶️'),
+                new ButtonBuilder()
+                    .setCustomId(`timeout_abandon_${userId}`)
+                    .setLabel('Abandon Quiz')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('🚪')
+            ];
+
+            const actionRow = new ActionRowBuilder().addComponents(actionButtons);
             
             try {
                 const message = await interaction.fetchReply();
-                await message.edit({ embeds: [timeoutEmbed], components: [] });
+                await message.edit({ embeds: [timeoutEmbed], components: [actionRow] });
+                
+                // Handle timeout action buttons
+                const timeoutCollector = message.createMessageComponentCollector({
+                    // ✅ FIXED: Remove time limit - no auto-abandon after 30 seconds
+                    filter: i => i.user.id === userId
+                });
+                
+                timeoutCollector.on('collect', async (timeoutButton) => {
+                    try {
+                        await timeoutButton.deferUpdate();
+                        
+                        if (timeoutButton.customId.startsWith('timeout_continue_')) {
+                            const nextQuestionNumber = parseInt(timeoutButton.customId.split('_')[3]);
+                            const preservedRerolls = parseInt(timeoutButton.customId.split('_')[4]);
+                            
+                            timeoutCollector.stop();
+                            console.log(`[QUIZ] User chose to continue after timeout - Q${nextQuestionNumber} with ${preservedRerolls} rerolls used`);
+                            await this.askQuestion(interaction, userId, guildId, member, nextQuestionNumber, newResults, preservedRerolls);
+                            
+                        } else if (timeoutButton.customId.startsWith('timeout_abandon_')) {
+                            timeoutCollector.stop();
+                            console.log(`[QUIZ] User chose to abandon quiz after timeout`);
+                            await this.handleQuizAbandon(timeoutButton, userId, guildId, member, questionResults);
+                        }
+                    } catch (error) {
+                        console.error('[QUIZ] Timeout button error:', error);
+                    }
+                });
+                
+                // ✅ FIXED: Removed auto-abandon timeout - buttons stay active indefinitely
+                
             } catch (error) {
                 console.log('[QUIZ] Could not edit timeout message:', error.message);
+                // Fallback: auto-continue if editing fails
+                setTimeout(async () => {
+                    await this.askQuestion(interaction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
+                }, 2000);
+            }
+        }
+    }
+
+    // ✅ NEW: Handle quiz abandonment
+    async handleQuizAbandon(buttonInteraction, userId, guildId, member, questionResults) {
+        try {
+            const successfulAnswers = questionResults.filter(r => r === true).length;
+            
+            if (!isTestingMode()) {
+                // Save failed quiz attempt to database
+                await this.databaseManager.saveFailedQuiz(userId, guildId);
             }
             
-            // Continue after delay
-            setTimeout(async () => {
-                await this.askQuestion(interaction, userId, guildId, member, questionNumber + 1, newResults, 0);
-            }, 2000);
+            const abandonEmbed = new EmbedBuilder()
+                .setTitle('🚪 Quiz Abandoned')
+                .setColor('#808080')
+                .setDescription(isTestingMode() ? 
+                    '**Testing session ended**\n\n🧪 **Testing Mode**: No penalties for abandoning' :
+                    '**Challenge abandoned**\n\nBetter luck tomorrow!')
+                .addFields({
+                    name: '📊 Final Results',
+                    value: `**Questions Attempted:** ${questionResults.length}/10\n**Correct Answers:** ${successfulAnswers}\n**Buff Received:** None\n**Challenge by:** ${member.displayName}${isTestingMode() ? ' 🧪' : ''}\nNext: <t:${this.getNextResetTimestamp()}:R>`,
+                    inline: false
+                })
+                .setFooter({ text: isTestingMode() ? '🧪 Testing Mode - Quiz Abandoned' : 'Quiz Abandoned' })
+                .setTimestamp();
+            
+            if (typeof buttonInteraction.editReply === 'function') {
+                await buttonInteraction.editReply({ embeds: [abandonEmbed], components: [] });
+            } else {
+                await buttonInteraction({ embeds: [abandonEmbed], components: [] });
+            }
+            
+        } catch (error) {
+            console.error('[QUIZ] Error handling quiz abandon:', error);
         }
+        
+        this.cleanupQuiz(userId);
     }
 
     // Get tier emoji
@@ -763,10 +899,16 @@ class QuizManager {
         return tierEmojis[tier] || '⬛';
     }
 
-    // Clean up quiz data
+    // ✅ FIXED: Clean up quiz data - clear single active user
     cleanupQuiz(userId) {
         console.log(`[QUIZ] Cleaning up quiz for user ${userId}`);
-        this.activeQuizzes.delete(userId);
+        
+        // Clear single active quiz user
+        if (this.activeQuizUserId === userId) {
+            this.activeQuizUserId = null;
+            console.log(`[QUIZ] Released quiz lock - quiz system now available`);
+        }
+        
         this.questionCache.delete(userId);
     }
 
@@ -780,7 +922,12 @@ class QuizManager {
             if (now - cache.createdAt > maxAge) {
                 console.log(`[QUIZ] Removing old question cache for user ${userId}`);
                 this.questionCache.delete(userId);
-                this.activeQuizzes.delete(userId);
+                
+                // ✅ FIXED: Clear active quiz if it's this user
+                if (this.activeQuizUserId === userId) {
+                    this.activeQuizUserId = null;
+                    console.log(`[QUIZ] Released abandoned quiz lock for user ${userId}`);
+                }
             }
         }
         
