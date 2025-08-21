@@ -135,13 +135,9 @@ class QuizManager {
         }
     }
 
-    // ✅ OPTIMIZED: Preload 13 questions for user (10 main + 3 rerolls) - REDUCED LOGGING
+    // ✅ OPTIMIZED: Preload 13 questions for user (10 main + 3 rerolls) - RESTORED LOGGING
     async preloadQuestions(userId) {
-        const isDebugMode = process.env.QUIZ_DEBUG === 'true';
-        
-        if (isDebugMode) {
-            console.log(`[QUIZ] Preloading 13 questions for user ${userId} (10 main + 3 rerolls)`);
-        }
+        console.log(`[QUIZ] Preloading 13 questions for user ${userId} (10 main + 3 rerolls)`);
         
         try {
             // ✅ FIXED: Generate 13 difficulties (10 main + 3 extra for rerolls)
@@ -163,17 +159,11 @@ class QuizManager {
                 if (question) {
                     questions.push(question);
                     usedQuestions.add(question.question.toLowerCase().trim());
+                    console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty}`);
                     
-                    // ✅ OPTIMIZED: Only log every 3rd question unless debug mode
-                    if (isDebugMode || i % 3 === 0) {
-                        console.log(`[QUIZ] Question ${i + 1}/13 loaded: ${difficulty}`);
-                    }
-                    
-                    // ✅ OPTIMIZED: Only log question/answer in debug mode
-                    if (isDebugMode) {
-                        console.log(`[QUESTION] ${question.question}`);
-                        console.log(`[ANSWER] ${question.answer}`);
-                    }
+                    // ✅ RESTORED: Question/answer logging with GREEN answer
+                    console.log(`[QUESTION] ${question.question}`);
+                    console.log(`\x1b[32m[ANSWER] ${question.answer}\x1b[0m`); // Green color
                 } else {
                     console.error(`[QUIZ] Failed to load question ${i + 1}`);
                     return false;
@@ -255,15 +245,9 @@ class QuizManager {
                 return;
             }
             
-            // ✅ OPTIMIZED: Restore question/answer logging with clear tags (only in debug mode or for current question)
-            const isDebugMode = process.env.QUIZ_DEBUG === 'true';
-            if (isDebugMode) {
-                console.log(`[QUESTION] Q${questionNumber}: ${question.question}`);
-                console.log(`[ANSWER] Q${questionNumber}: ${question.answer}`);
-            } else {
-                // Show only current question in production
-                console.log(`[QUIZ] Q${questionNumber}: ${question.difficulty} question loaded`);
-            }
+            // ✅ RESTORED: Question/answer logging with GREEN answer for current question
+            console.log(`[QUESTION] Q${questionNumber}: ${question.question}`);
+            console.log(`\x1b[32m[ANSWER] Q${questionNumber}: ${question.answer}\x1b[0m`); // Green color
             
             // Update question history
             this.updateUserQuestionHistory(userId, question.question);
