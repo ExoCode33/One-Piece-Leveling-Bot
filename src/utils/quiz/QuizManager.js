@@ -395,20 +395,19 @@ class QuizManager {
             '🧪 TESTING MODE - Daily Anime Quiz' : 
             '🎌 Daily Anime Quiz';
 
-        // ✅ FIXED: Restore original 10-emoji time display (countdown from RIGHT to LEFT)
+        // ✅ FIXED: Timer fills LEFT to RIGHT, empties RIGHT to LEFT
         const createTimeEmojis = (timeLeft) => {
             const maxTime = 20;
             const timePercentage = timeLeft / maxTime;
             const emojis = [];
             
-            // ✅ FIXED: Calculate how many segments should be filled (from right)
+            // ✅ FIXED: Calculate how many segments should be filled from the LEFT
             const totalSegments = 10;
-            const filledSegments = Math.ceil(timePercentage * totalSegments);
+            const filledSegments = Math.floor(timePercentage * totalSegments);
             
             for (let i = 0; i < totalSegments; i++) {
-                // ✅ FIXED: Fill from RIGHT to LEFT (countdown direction)
-                const segmentFromRight = totalSegments - i;
-                if (segmentFromRight <= filledSegments) {
+                if (i < filledSegments) {
+                    // ✅ FIXED: Fill from LEFT to RIGHT
                     // Determine color based on time percentage
                     if (timePercentage > 0.66) {
                         emojis.push('🟩'); // Green for high time (66%+)
@@ -418,7 +417,8 @@ class QuizManager {
                         emojis.push('🟥'); // Red for low time (0%-33%)
                     }
                 } else {
-                    emojis.push('⬛'); // Empty/black for no time
+                    // ✅ FIXED: Empty segments on the RIGHT
+                    emojis.push('⬛'); // Large black square
                 }
             }
             
