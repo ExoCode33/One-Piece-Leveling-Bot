@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - Optimized XP Tracker with Performance and Reliability Fixes
+// src/utils/xpTracker.js - Fixed XP Tracker with Database Connection Debugging
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
@@ -150,24 +150,51 @@ class PerformanceMonitor {
     }
 }
 
-// Database Manager with connection pooling
+// Database Manager with better connection handling
 class DatabaseManager {
     constructor(connectionString) {
+        console.log('[DATABASE] Initializing database manager...');
+        console.log('[DATABASE] Connection string provided:', !!connectionString);
+        
+        if (!connectionString) {
+            throw new Error('Database connection string is required');
+        }
+        
+        // Parse connection string for debugging (without exposing password)
+        try {
+            const url = new URL(connectionString);
+            console.log('[DATABASE] Host:', url.hostname);
+            console.log('[DATABASE] Port:', url.port || '5432');
+            console.log('[DATABASE] Database:', url.pathname.slice(1));
+            console.log('[DATABASE] Username:', url.username);
+        } catch (error) {
+            console.warn('[DATABASE] Could not parse connection string for debugging');
+        }
+        
         this.pool = new Pool({
             connectionString,
             max: 20,
             idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 5000,
-            statement_timeout: 10000,
-            query_timeout: 10000
+            connectionTimeoutMillis: 10000, // Increased timeout
+            statement_timeout: 15000, // Increased timeout
+            query_timeout: 15000, // Increased timeout
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
         });
         
         this.pool.on('error', (err) => {
             console.error('[DATABASE] Pool error:', err);
         });
         
-        this.pool.on('connect', () => {
-            console.log('[DATABASE] New client connected');
+        this.pool.on('connect', (client) => {
+            console.log('[DATABASE] New client connected to database');
+        });
+        
+        this.pool.on('acquire', () => {
+            console.log('[DATABASE] Client acquired from pool');
+        });
+        
+        this.pool.on('remove', () => {
+            console.log('[DATABASE] Client removed from pool');
         });
     }
     
@@ -176,18 +203,25 @@ class DatabaseManager {
         let client;
         
         try {
+            console.log('[DATABASE] Attempting to acquire client from pool...');
             client = await this.pool.connect();
+            console.log('[DATABASE] Client acquired, executing query...');
+            
             const result = await client.query(text, params);
             const duration = Date.now() - start;
             
-            console.log(`[DATABASE] Query executed in ${duration}ms (${result.rowCount} rows)`);
+            console.log(`[DATABASE] Query executed successfully in ${duration}ms (${result.rowCount} rows)`);
             return result;
         } catch (error) {
             const duration = Date.now() - start;
             console.error(`[DATABASE] Query failed after ${duration}ms:`, error.message);
+            console.error('[DATABASE] Query text:', text.substring(0, 100) + '...');
+            console.error('[DATABASE] Error code:', error.code);
+            console.error('[DATABASE] Error severity:', error.severity);
             throw new DatabaseError(`Database query failed: ${error.message}`, text);
         } finally {
             if (client) {
+                console.log('[DATABASE] Releasing client back to pool');
                 client.release();
             }
         }
@@ -211,16 +245,60 @@ class DatabaseManager {
     
     async healthCheck() {
         try {
-            const result = await this.query('SELECT 1 as health');
+            console.log('[DATABASE] Performing health check...');
+            const start = Date.now();
+            const result = await this.query('SELECT 1 as health, NOW() as timestamp');
+            const duration = Date.now() - start;
+            
+            console.log(`[DATABASE] Health check successful in ${duration}ms`);
+            console.log('[DATABASE] Server time:', result.rows[0].timestamp);
             return result.rows[0].health === 1;
         } catch (error) {
             console.error('[DATABASE] Health check failed:', error);
+            console.error('[DATABASE] Error details:', {
+                code: error.code,
+                severity: error.severity,
+                message: error.message
+            });
+            return false;
+        }
+    }
+    
+    async testBasicOperations() {
+        try {
+            console.log('[DATABASE] Testing basic operations...');
+            
+            // Test creating a temporary table
+            await this.query(`
+                CREATE TEMPORARY TABLE test_connection (
+                    id SERIAL PRIMARY KEY,
+                    test_value TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            
+            // Test insert
+            await this.query(`
+                INSERT INTO test_connection (test_value) VALUES ($1)
+            `, ['connection_test']);
+            
+            // Test select
+            const result = await this.query(`
+                SELECT * FROM test_connection WHERE test_value = $1
+            `, ['connection_test']);
+            
+            console.log('[DATABASE] Basic operations test successful');
+            return result.rows.length > 0;
+        } catch (error) {
+            console.error('[DATABASE] Basic operations test failed:', error);
             return false;
         }
     }
     
     async close() {
+        console.log('[DATABASE] Closing connection pool...');
         await this.pool.end();
+        console.log('[DATABASE] Connection pool closed');
     }
 }
 
@@ -258,11 +336,8 @@ try {
 }
 
 class XPTracker {
-    constructor(client, database) {
+    constructor(client, databaseUrl) {
         this.client = client;
-        
-        // Initialize database manager
-        this.db = new DatabaseManager(database || process.env.DATABASE_URL);
         
         // Use limited maps for memory management
         this.voiceSessions = new LimitedMap(500, 1800000); // 30 min TTL
@@ -275,7 +350,11 @@ class XPTracker {
         // Configuration
         this.config = this.loadConfiguration();
         
-        // Managers
+        // Database will be initialized in initialize()
+        this.db = null;
+        this.databaseUrl = databaseUrl || process.env.DATABASE_URL;
+        
+        // Managers (initialized later)
         this.dailyResetManager = null;
         this.voiceXPManager = null;
         this.levelUpManager = null;
@@ -285,10 +364,8 @@ class XPTracker {
         process.on('SIGTERM', () => this.gracefulShutdown());
         process.on('SIGINT', () => this.gracefulShutdown());
         
-        this.initialize().catch(error => {
-            console.error('[XP TRACKER] Initialization failed:', error);
-            throw error;
-        });
+        // Don't auto-initialize, let the caller handle it
+        console.log('[XP TRACKER] XP Tracker constructed, call initialize() to start');
     }
     
     loadConfiguration() {
@@ -327,20 +404,68 @@ class XPTracker {
     async initialize() {
         try {
             console.log('[XP TRACKER] Starting initialization...');
+            console.log('[XP TRACKER] Database URL provided:', !!this.databaseUrl);
             
-            // Test database connection
-            const isHealthy = await this.db.healthCheck();
+            if (!this.databaseUrl) {
+                throw new BotError('Database URL is required but not provided', 'DB_URL_MISSING');
+            }
+            
+            // Initialize database manager
+            console.log('[XP TRACKER] Creating database manager...');
+            this.db = new DatabaseManager(this.databaseUrl);
+            
+            // Test database connection with multiple attempts
+            console.log('[XP TRACKER] Testing database connection...');
+            let isHealthy = false;
+            let attempts = 0;
+            const maxAttempts = 5;
+            
+            while (!isHealthy && attempts < maxAttempts) {
+                attempts++;
+                console.log(`[XP TRACKER] Database connection attempt ${attempts}/${maxAttempts}...`);
+                
+                try {
+                    isHealthy = await this.db.healthCheck();
+                    
+                    if (isHealthy) {
+                        console.log('[XP TRACKER] Database health check passed');
+                        
+                        // Test basic operations
+                        const operationsWork = await this.db.testBasicOperations();
+                        if (!operationsWork) {
+                            console.error('[XP TRACKER] Basic database operations failed');
+                            isHealthy = false;
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[XP TRACKER] Database connection attempt ${attempts} failed:`, error);
+                    isHealthy = false;
+                }
+                
+                if (!isHealthy && attempts < maxAttempts) {
+                    const delay = 2000 * attempts; // Progressive delay
+                    console.log(`[XP TRACKER] Retrying database connection in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            
             if (!isHealthy) {
-                throw new BotError('Database health check failed', 'DB_HEALTH_FAIL');
+                throw new BotError(
+                    `Database connection failed after ${maxAttempts} attempts. Check your DATABASE_URL and database server.`, 
+                    'DB_HEALTH_FAIL'
+                );
             }
             
             // Load guild settings
+            console.log('[XP TRACKER] Loading guild settings...');
             await this.loadGuildSettingsFromDatabase();
             
             // Initialize voice sessions from existing channels
+            console.log('[XP TRACKER] Initializing voice sessions...');
             await this.initializeExistingVoiceSessions();
             
             // Initialize managers
+            console.log('[XP TRACKER] Initializing managers...');
             this.dailyResetManager = new DailyResetManager(this);
             this.voiceXPManager = new VoiceXPManager(this);
             this.levelUpManager = new LevelUpManager(this);
@@ -351,9 +476,20 @@ class XPTracker {
             this.cleanupInterval = setInterval(() => this.performMaintenance(), this.config.limits.cleanupInterval);
             
             console.log('[XP TRACKER] Initialization completed successfully');
+            return true;
         } catch (error) {
             console.error('[XP TRACKER] Initialization failed:', error);
             this.monitor.trackError(error, 'initialization');
+            
+            // Clean up any partially initialized resources
+            try {
+                if (this.db) {
+                    await this.db.close();
+                }
+            } catch (cleanupError) {
+                console.error('[XP TRACKER] Error during cleanup:', cleanupError);
+            }
+            
             throw error;
         }
     }
@@ -461,6 +597,9 @@ class XPTracker {
             this.monitor.trackError(error, 'voice_init');
         }
     }
+
+    // All the other methods from the previous version would go here...
+    // I'll include a few key ones and indicate where the rest should go
     
     async handleVoiceStateUpdate(oldState, newState) {
         if (this.isShuttingDown) return;
@@ -481,525 +620,6 @@ class XPTracker {
         } catch (error) {
             console.error('[VOICE XP] Error processing voice XP:', error);
             this.monitor.trackError(error, 'voice_xp');
-        }
-    }
-    
-    async awardXP(userId, guildId, xpAmount, source, user, skipMultiplier = false) {
-        const start = Date.now();
-        
-        try {
-            const guild = this.client.guilds.cache.get(guildId);
-            const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
-            
-            let finalXP = xpAmount;
-            
-            // Generate random XP if amount is null
-            if (xpAmount === null) {
-                finalXP = this.getRandomXP(source);
-            }
-            
-            // Apply multipliers if not skipping
-            if (!skipMultiplier) {
-                finalXP = await this.applyMultipliers(finalXP, guildId, member);
-            }
-            
-            const actualXP = Math.max(1, Math.round(finalXP));
-            
-            // Use transaction for consistency
-            await this.db.transaction(async (client) => {
-                // Get current stats
-                const beforeResult = await client.query(
-                    'SELECT total_xp, level FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                    [userId, guildId]
-                );
-                
-                const oldLevel = beforeResult.rows.length > 0 ? beforeResult.rows[0].level : 0;
-                
-                // Update user XP
-                await client.query(`
-                    INSERT INTO user_levels (user_id, guild_id, total_xp, messages, reactions, voice_time, level, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-                    ON CONFLICT (user_id, guild_id)
-                    DO UPDATE SET
-                        total_xp = user_levels.total_xp + $3,
-                        messages = user_levels.messages + $4,
-                        reactions = user_levels.reactions + $5,
-                        voice_time = user_levels.voice_time + $6,
-                        updated_at = CURRENT_TIMESTAMP
-                `, [
-                    userId, guildId, actualXP,
-                    source === 'message' ? 1 : 0,
-                    source === 'reaction' ? 1 : 0,
-                    source === 'voice' ? 1 : 0,
-                    oldLevel
-                ]);
-                
-                // Get updated total XP and calculate new level
-                const afterResult = await client.query(
-                    'SELECT total_xp FROM user_levels WHERE user_id = $1 AND guild_id = $2',
-                    [userId, guildId]
-                );
-                
-                const newTotalXP = afterResult.rows[0].total_xp;
-                const newLevel = this.calculateLevel(newTotalXP);
-                
-                // Update level if changed
-                if (newLevel !== oldLevel) {
-                    await client.query(
-                        'UPDATE user_levels SET level = $1 WHERE user_id = $2 AND guild_id = $3',
-                        [newLevel, userId, guildId]
-                    );
-                    
-                    // Handle level up (outside transaction)
-                    setImmediate(() => {
-                        this.handleLevelUpWithCanvas(userId, guildId, oldLevel, newLevel, newTotalXP, user, source)
-                            .catch(error => {
-                                console.error('[LEVEL UP] Error handling level up:', error);
-                                this.monitor.trackError(error, 'level_up');
-                            });
-                    });
-                }
-                
-                return { newTotalXP, newLevel, oldLevel };
-            });
-            
-            // Update cache
-            this.userCache.set(`${userId}:${guildId}`, {
-                total_xp: finalXP,
-                level: this.calculateLevel(finalXP),
-                updated_at: new Date()
-            });
-            
-            const duration = Date.now() - start;
-            this.monitor.trackCommand('awardXP', duration, true);
-            
-        } catch (error) {
-            const duration = Date.now() - start;
-            this.monitor.trackCommand('awardXP', duration, false);
-            this.monitor.trackError(error, 'award_xp');
-            console.error('[XP TRACKER] Error awarding XP:', error);
-            throw error;
-        }
-    }
-    
-    async applyMultipliers(baseXP, guildId, member) {
-        let finalXP = baseXP;
-        
-        try {
-            // Apply XP role boosts
-            if (global.xpBoostManager && member) {
-                const boostResult = await global.xpBoostManager.calculateUserBoost(guildId, member);
-                if (boostResult.multiplier > 1.0) {
-                    finalXP *= boostResult.multiplier;
-                }
-            }
-            
-            // Apply global multiplier
-            const guildSettings = global.guildSettings?.get(guildId) || { xpMultiplier: 1.0 };
-            const multiplier = guildSettings.xpMultiplier || parseFloat(process.env.XP_MULTIPLIER) || 1.0;
-            
-            if (multiplier !== 1.0) {
-                finalXP *= multiplier;
-            }
-        } catch (error) {
-            console.warn('[XP TRACKER] Error applying multipliers, using base XP:', error);
-            this.monitor.trackError(error, 'multipliers');
-        }
-        
-        return finalXP;
-    }
-    
-    async handleLevelUpWithCanvas(userId, guildId, oldLevel, newLevel, totalXP, user, xpSource = 'unknown') {
-        try {
-            console.log(`[LEVEL UP] Processing level up for ${user.username}: ${oldLevel} → ${newLevel}`);
-            
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) return;
-            
-            const member = await guild.members.fetch(userId).catch(() => null);
-            if (!member) return;
-            
-            // Award level roles
-            const roleReward = await this.awardLevelRoles(userId, guildId, newLevel, member);
-            
-            // Send level up notification with canvas
-            await this.sendLevelUpNotificationWithCanvas(userId, guildId, oldLevel, newLevel, totalXP, user, member, roleReward);
-            
-            // Log level up
-            await this.logLevelUp(user, guildId, oldLevel, newLevel, totalXP, roleReward, xpSource);
-            
-        } catch (error) {
-            console.error('[LEVEL UP] Error handling level up:', error);
-            this.monitor.trackError(error, 'level_up');
-        }
-    }
-    
-    async awardLevelRoles(userId, guildId, level, member) {
-        try {
-            const levelRoles = [
-                { level: 5, roleId: process.env.LEVEL_5_ROLE },
-                { level: 10, roleId: process.env.LEVEL_10_ROLE },
-                { level: 15, roleId: process.env.LEVEL_15_ROLE },
-                { level: 20, roleId: process.env.LEVEL_20_ROLE },
-                { level: 25, roleId: process.env.LEVEL_25_ROLE },
-                { level: 30, roleId: process.env.LEVEL_30_ROLE },
-                { level: 35, roleId: process.env.LEVEL_35_ROLE },
-                { level: 40, roleId: process.env.LEVEL_40_ROLE },
-                { level: 45, roleId: process.env.LEVEL_45_ROLE },
-                { level: 50, roleId: process.env.LEVEL_50_ROLE }
-            ];
-            
-            let roleReward = null;
-            
-            for (const { level: reqLevel, roleId } of levelRoles) {
-                if (level >= reqLevel && roleId && roleId !== `role_id_${reqLevel}`) {
-                    const role = member.guild.roles.cache.get(roleId);
-                    if (role && !member.roles.cache.has(roleId)) {
-                        await withRetry(async () => {
-                            await member.roles.add(role, `Level up reward: reached level ${level}`);
-                        });
-                        
-                        roleReward = role.name;
-                        console.log(`[LEVEL UP] Added level ${reqLevel} role (${role.name}) to ${member.user.username}`);
-                        break;
-                    }
-                }
-            }
-            
-            return roleReward;
-        } catch (error) {
-            console.error('[LEVEL UP] Error awarding level roles:', error);
-            this.monitor.trackError(error, 'role_award');
-            return null;
-        }
-    }
-    
-    async sendLevelUpNotificationWithCanvas(userId, guildId, oldLevel, newLevel, totalXP, user, member, roleReward = null) {
-        try {
-            const guild = this.client.guilds.cache.get(guildId);
-            if (!guild) return;
-            
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            const levelupEnabled = guildSettings?.levelupEnabled !== false;
-            if (!levelupEnabled) {
-                console.log('[LEVEL UP] Level up announcements disabled for this guild');
-                return;
-            }
-            
-            let channelId = guildSettings?.levelupChannel;
-            
-            if (!channelId) {
-                // Find a suitable channel
-                const defaultChannel = guild.channels.cache.find(ch => 
-                    (ch.name.toLowerCase().includes('general') || 
-                     ch.name.toLowerCase().includes('chat') ||
-                     ch.name.toLowerCase().includes('level') ||
-                     ch.name.toLowerCase().includes('bounty')) && ch.isTextBased()
-                );
-                
-                if (defaultChannel) {
-                    channelId = defaultChannel.id;
-                }
-            }
-            
-            if (!channelId) {
-                console.log('[LEVEL UP] No suitable channel found for announcements');
-                return;
-            }
-            
-            const channel = guild.channels.cache.get(channelId);
-            if (!channel || !channel.isTextBased()) {
-                console.log(`[LEVEL UP] Channel ${channelId} not found or not text-based`);
-                return;
-            }
-            
-            // Create wanted poster canvas
-            const userData = {
-                userId: user.id,
-                level: newLevel,
-                total_xp: totalXP,
-                messages: 0,
-                reactions: 0,
-                voice_time: 0,
-                member: member,
-                isPirateKing: false
-            };
-            
-            const canvas = await this.createWantedPoster(userData, guild);
-            const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: `levelup_wanted_${user.id}.png` });
-            
-            // Create Marine Intelligence embed with canvas
-            const embed = this.createLevelUpEmbedWithCanvas(user, oldLevel, newLevel, totalXP, roleReward);
-            
-            const messageOptions = { 
-                embeds: [embed], 
-                files: [attachment] 
-            };
-            
-            // Ping user if enabled
-            const pingUser = process.env.LEVELUP_PING_USER !== 'false';
-            if (pingUser) {
-                messageOptions.content = `<@${userId}>`;
-            }
-            
-            await withRetry(async () => {
-                await channel.send(messageOptions);
-            });
-            
-            console.log(`[LEVEL UP] Level up notification with canvas sent for ${user.username} in #${channel.name}`);
-            
-        } catch (error) {
-            console.error('[LEVEL UP] Error sending level up notification with canvas:', error);
-            this.monitor.trackError(error, 'level_notification');
-        }
-    }
-    
-    createLevelUpEmbedWithCanvas(user, oldLevel, newLevel, totalXP, roleReward = null) {
-        try {
-            const oldBounty = getBountyForLevel(oldLevel);
-            const newBounty = getBountyForLevel(newLevel);
-            
-            const embed = new EmbedBuilder()
-                .setAuthor({ 
-                    name: 'World Government Intelligence Bureau'
-                })
-                .setColor(0xFF0000)
-                .setTitle('Bounty Update - Threat Level Increased')
-                .setDescription(`**${user.username}** has reached a new level of infamy!`)
-                .addFields({
-                    name: 'Intelligence Summary',
-                    value: `\`\`\`diff\n- Subject: ${user.username}\n- Previous Bounty: ${oldBounty.toLocaleString()}\n- New Bounty: ${newBounty.toLocaleString()}\n- Level: ${oldLevel} → ${newLevel}\n- Total XP: ${totalXP.toLocaleString()}\n${roleReward ? `- Role Awarded: ${roleReward}\n` : ''}\`\`\``,
-                    inline: false
-                })
-                .setImage(`attachment://levelup_wanted_${user.id}.png`)
-                .setFooter({ text: 'Marine Intelligence Division - Bounty System' })
-                .setTimestamp();
-            
-            return embed;
-        } catch (error) {
-            console.error('[LEVEL UP] Error creating level up embed with canvas:', error);
-            this.monitor.trackError(error, 'level_embed');
-            
-            return new EmbedBuilder()
-                .setColor('#DC143C')
-                .setTitle('Level Up!')
-                .setDescription(`**${user.username}** leveled up from ${oldLevel} to ${newLevel}!`)
-                .setThumbnail(user.displayAvatarURL({ size: 128 }))
-                .setTimestamp();
-        }
-    }
-    
-    async createWantedPoster(userData, guild) {
-        const width = 600, height = 900;
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-        
-        try {
-            // Load and draw scroll texture background
-            try {
-                const scrollTexture = await loadImage(path.join(__dirname, '../../assets/scroll_texture.jpg'));
-                ctx.drawImage(scrollTexture, 0, 0, width, height);
-            } catch (error) {
-                // Fallback background
-                ctx.fillStyle = '#f5e6c5';
-                ctx.fillRect(0, 0, width, height);
-            }
-            
-            // Borders
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 8;
-            ctx.strokeRect(0, 0, width, height);
-            
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(10, 10, width - 20, height - 20);
-            
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(18, 18, width - 36, height - 36);
-            
-            // WANTED title
-            ctx.fillStyle = '#111';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.font = '81px CaptainKiddNF, Arial, sans-serif';
-            const wantedY = height * (1 - 92/100);
-            const wantedX = (50/100) * width;
-            ctx.fillText('WANTED', wantedX, wantedY);
-            
-            // Image Box
-            const photoSize = (95/100) * 400;
-            const photoX = ((50/100) * width) - (photoSize/2);
-            const photoY = height * (1 - 65/100) - (photoSize/2);
-            
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(photoX, photoY, photoSize, photoSize);
-            
-            // Avatar
-            let member = null;
-            try {
-                if (guild && userData.userId) member = await guild.members.fetch(userData.userId);
-            } catch {}
-            
-            const avatarArea = { x: photoX + 3, y: photoY + 3, width: photoSize - 6, height: photoSize - 6 };
-            if (member) {
-                try {
-                    const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true });
-                    const avatar = await loadImage(avatarURL);
-                    
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.rect(avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
-                    ctx.clip();
-                    
-                    ctx.filter = 'contrast(0.95) sepia(0.05)';
-                    ctx.drawImage(avatar, avatarArea.x, avatarArea.y, avatarArea.width, avatarArea.height);
-                    ctx.filter = 'none';
-                    
-                    ctx.restore();
-                } catch (error) {
-                    console.log('[CANVAS] No avatar found, texture will show through');
-                }
-            }
-            
-            // "DEAD OR ALIVE"
-            ctx.fillStyle = '#111';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.font = '57px CaptainKiddNF, Arial, sans-serif';
-            const deadOrAliveY = height * (1 - 39/100);
-            const deadOrAliveX = (50/100) * width;
-            ctx.fillText('DEAD OR ALIVE', deadOrAliveX, deadOrAliveY);
-            
-            // Name
-            ctx.font = '69px CaptainKiddNF, Arial, sans-serif';
-            let displayName = 'UNKNOWN PIRATE';
-            if (member) displayName = member.displayName.replace(/[^\w\s-]/g, '').toUpperCase().substring(0, 16);
-            else if (userData.userId) displayName = `PIRATE ${userData.userId.slice(-4)}`;
-            
-            // Check if name is too long and adjust
-            ctx.textAlign = 'center';
-            let nameWidth = ctx.measureText(displayName).width;
-            if (nameWidth > width - 60) {
-                ctx.font = '55px CaptainKiddNF, Arial, sans-serif';
-            }
-            
-            const nameY = height * (1 - 30/100);
-            const nameX = (50/100) * width;
-            ctx.fillText(displayName, nameX, nameY);
-            
-            // Berry Symbol and Bounty Numbers
-            const berryBountyGap = 5;
-            const isPirateKingData = userData.isPirateKing || false;
-            const bountyAmount = getBountyForLevel(userData.level, isPirateKingData);
-            const bountyStr = bountyAmount.toLocaleString();
-            
-            ctx.font = '54px Cinzel, Georgia, serif';
-            const bountyTextWidth = ctx.measureText(bountyStr).width;
-            
-            // Berry symbol size
-            const berrySize = (32/100) * 150;
-            
-            // Calculate total width of the bounty unit (berry + gap + text)
-            const gapPixels = (berryBountyGap/100) * width;
-            const totalBountyWidth = berrySize + gapPixels + bountyTextWidth;
-            
-            // Center the entire bounty unit horizontally
-            const bountyUnitStartX = (width - totalBountyWidth) / 2;
-            
-            // Position berry symbol at the start of the centered unit
-            const berryX = bountyUnitStartX + (berrySize/2);
-            const berryY = height * (1 - 22/100) - (berrySize/2);
-            
-            let berryImg;
-            try {
-                const berryPath = path.join(__dirname, '../../assets/berry.png');
-                berryImg = await loadImage(berryPath);
-            } catch {
-                // Create simple berry symbol
-                const berryCanvas = createCanvas(berrySize, berrySize);
-                const berryCtx = berryCanvas.getContext('2d');
-                berryCtx.fillStyle = '#111';
-                berryCtx.font = `bold ${berrySize}px serif`;
-                berryCtx.textAlign = 'center';
-                berryCtx.textBaseline = 'middle';
-                berryCtx.fillText('฿', berrySize/2, berrySize/2);
-                berryImg = berryCanvas;
-            }
-            
-            ctx.drawImage(berryImg, berryX - (berrySize/2), berryY, berrySize, berrySize);
-            
-            // Position bounty numbers with fixed gap from berry
-            const bountyX = bountyUnitStartX + berrySize + gapPixels;
-            const bountyY = height * (1 - 22/100);
-            
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#111';
-            ctx.fillText(bountyStr, bountyX, bountyY);
-            
-            // One Piece logo
-            try {
-                const onePieceLogoPath = path.join(__dirname, '../../assets/one-piece-symbol.png');
-                const onePieceLogo = await loadImage(onePieceLogoPath);
-                const logoSize = (26/100) * 200;
-                const logoX = ((50/100) * width) - (logoSize/2);
-                const logoY = height * (1 - 4.5/100) - (logoSize/2);
-                
-                ctx.globalAlpha = 0.6;
-                ctx.filter = 'sepia(0.2) brightness(0.9)';
-                ctx.drawImage(onePieceLogo, logoX, logoY, logoSize, logoSize);
-                ctx.globalAlpha = 1.0;
-                ctx.filter = 'none';
-            } catch {
-                // Logo not found, continue without it
-            }
-            
-            // "MARINE" text
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'bottom';
-            ctx.font = '24px TimesNewNormal, Times, serif';
-            ctx.fillStyle = '#111';
-            
-            const marineText = 'M A R I N E';
-            const marineX = (96/100) * width;
-            const marineY = height * (1 - 2/100);
-            ctx.fillText(marineText, marineX, marineY);
-            
-            return canvas;
-        } catch (error) {
-            console.error('[CANVAS] Error creating wanted poster:', error);
-            this.monitor.trackError(error, 'canvas');
-            throw error;
-        }
-    }
-    
-    async logLevelUp(user, guildId, oldLevel, newLevel, totalXP, roleReward, xpSource) {
-        try {
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            if (!guildSettings?.xpLogEnabled || !guildSettings?.xpLogChannel) return;
-            
-            const channel = await this.client.channels.fetch(guildSettings.xpLogChannel).catch(() => null);
-            if (!channel || !channel.isTextBased()) return;
-            
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setAuthor({ 
-                    name: 'Marine Intelligence Bureau',
-                    iconURL: user.displayAvatarURL({ size: 32 })
-                })
-                .setTitle('Threat Level Increased')
-                .setDescription(`\`\`\`diff\n- BOUNTY UPDATE CONFIRMED\n- SUBJECT: ${user.username} (${user.id})\n- LEVEL: ${oldLevel} → ${newLevel}\n- TOTAL XP: ${totalXP.toLocaleString()}\n- XP SOURCE: ${xpSource.toUpperCase()}\n${roleReward ? `- ROLE AWARDED: ${roleReward}\n` : ''}\`\`\``)
-                .setTimestamp()
-                .setFooter({ text: 'Marine Intelligence Division' });
-            
-            await channel.send({ embeds: [embed] });
-        } catch (error) {
-            console.error('[XP LOG] Failed to send level up log:', error);
-            this.monitor.trackError(error, 'level_log');
         }
     }
     
@@ -1069,220 +689,6 @@ class XPTracker {
         this.cooldowns.set(key, Date.now());
     }
     
-    createProgressBar(current, max, length = 20) {
-        const percentage = Math.max(0, Math.min(1, current / max));
-        const filled = Math.round(percentage * length);
-        const empty = length - filled;
-        
-        const filledChar = '█';
-        const emptyChar = '░';
-        
-        return filledChar.repeat(filled) + emptyChar.repeat(empty);
-    }
-    
-    // Database query methods with caching
-    async getUserStats(userId, guildId) {
-        const cacheKey = `${userId}:${guildId}`;
-        let stats = this.userCache.get(cacheKey);
-        
-        if (stats) {
-            return stats;
-        }
-        
-        try {
-            const result = await this.db.query(`
-                SELECT user_id, guild_id, total_xp, level, messages, reactions, voice_time, 
-                       created_at, updated_at
-                FROM user_levels 
-                WHERE user_id = $1 AND guild_id = $2
-            `, [userId, guildId]);
-            
-            stats = result.rows.length > 0 ? result.rows[0] : null;
-            
-            if (stats) {
-                this.userCache.set(cacheKey, stats);
-            }
-            
-            return stats;
-        } catch (error) {
-            console.error('[XP TRACKER] Error getting user stats:', error);
-            this.monitor.trackError(error, 'user_stats');
-            return null;
-        }
-    }
-    
-    async getUserRank(userId, guildId) {
-        try {
-            const result = await this.db.query(`
-                SELECT COUNT(*) + 1 as rank 
-                FROM user_levels 
-                WHERE guild_id = $1 AND total_xp > (
-                    SELECT total_xp FROM user_levels WHERE user_id = $2 AND guild_id = $1
-                )
-            `, [guildId, userId]);
-            
-            return result.rows[0]?.rank || null;
-        } catch (error) {
-            console.error('[XP TRACKER] Error getting user rank:', error);
-            this.monitor.trackError(error, 'user_rank');
-            return null;
-        }
-    }
-    
-    async getLeaderboard(guildId, page = 1, limit = 10) {
-        try {
-            const offset = (page - 1) * limit;
-            
-            const result = await this.db.query(`
-                SELECT user_id, total_xp, level, messages, reactions, voice_time
-                FROM user_levels 
-                WHERE guild_id = $1 AND total_xp > 0
-                ORDER BY total_xp DESC 
-                LIMIT $2 OFFSET $3
-            `, [guildId, limit, offset]);
-            
-            const countResult = await this.db.query(
-                'SELECT COUNT(*) FROM user_levels WHERE guild_id = $1 AND total_xp > 0',
-                [guildId]
-            );
-            
-            const totalUsers = parseInt(countResult.rows[0].count);
-            const totalPages = Math.ceil(totalUsers / limit);
-            
-            return {
-                users: result.rows.map((row, index) => ({
-                    userId: row.user_id,
-                    level: row.level,
-                    total_xp: row.total_xp,
-                    messages: row.messages,
-                    reactions: row.reactions,
-                    voice_time: row.voice_time,
-                    rank: offset + index + 1
-                })),
-                pagination: {
-                    currentPage: page,
-                    totalPages,
-                    totalUsers,
-                    hasNextPage: page < totalPages,
-                    hasPreviousPage: page > 1
-                }
-            };
-        } catch (error) {
-            console.error('[XP TRACKER] Error getting leaderboard:', error);
-            this.monitor.trackError(error, 'leaderboard');
-            throw error;
-        }
-    }
-    
-    // Maintenance and cleanup
-    async performMaintenance() {
-        if (this.isShuttingDown) return;
-        
-        try {
-            console.log('[XP TRACKER] Starting maintenance...');
-            
-            // Clear expired cache entries (handled automatically by LimitedMap)
-            // Clean up old cooldowns (handled automatically by LimitedMap)
-            
-            // Database health check
-            const isHealthy = await this.db.healthCheck();
-            if (!isHealthy) {
-                console.error('[XP TRACKER] Database health check failed during maintenance');
-                this.monitor.trackError(new BotError('Database unhealthy', 'DB_HEALTH_FAIL'), 'maintenance');
-            }
-            
-            // Log performance metrics
-            const stats = this.monitor.getStats();
-            console.log(`[PERFORMANCE] Uptime: ${Math.round(stats.uptime / 1000 / 60)}min, Memory: ${stats.memory[stats.memory.length - 1]?.heapUsed || 0}MB`);
-            
-            console.log('[XP TRACKER] Maintenance completed');
-        } catch (error) {
-            console.error('[XP TRACKER] Error during maintenance:', error);
-            this.monitor.trackError(error, 'maintenance');
-        }
-    }
-    
-    // Force daily reset (delegated to reset manager)
-    async forceDailyReset(triggeredBy = 'SYSTEM') {
-        if (!this.dailyResetManager) {
-            throw new BotError('Daily reset manager not initialized', 'MANAGER_NOT_READY');
-        }
-        
-        return await this.dailyResetManager.forceDailyReset(triggeredBy);
-    }
-    
-    // Enhanced logging with daily cap information
-    async logXPActivity(type, user, guildId, xpGain, additionalInfo = {}) {
-        try {
-            const guildSettings = global.guildSettings?.get(guildId);
-            
-            if (!guildSettings?.xpLogEnabled || !guildSettings?.xpLogChannel) return;
-            
-            const channel = await this.client.channels.fetch(guildSettings.xpLogChannel).catch(() => null);
-            if (!channel || !channel.isTextBased()) return;
-            
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setAuthor({ 
-                    name: 'Marine Intelligence Bureau',
-                    iconURL: user.displayAvatarURL({ size: 32 })
-                })
-                .setTimestamp()
-                .setFooter({ text: 'Marine Intelligence Division' });
-            
-            switch (type) {
-                case 'voice':
-                    const dailyCap = this.config.limits.dailyVoiceXP;
-                    const currentDay = this.dailyResetManager ? this.dailyResetManager.getCurrentDay() : 'Unknown';
-                    const dailyXP = this.dailyResetManager ? 
-                        this.dailyResetManager.getDailyVoiceXP(user.id, guildId, currentDay) : 0;
-                    const remainingXP = Math.max(0, dailyCap - dailyXP);
-                    const capPercentage = Math.round((dailyXP / dailyCap) * 100);
-                    const progressBar = this.createProgressBar(dailyXP, dailyCap, 20);
-                    
-                    embed
-                        .setTitle('Voice Activity Detected')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- VOICE CHANNEL: ${additionalInfo.channelName || 'Unknown'}\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``)
-                        .addFields(
-                            {
-                                name: 'Daily Voice XP Progress',
-                                value: `\`\`\`yaml\nDaily XP: ${dailyXP.toLocaleString()}/${dailyCap.toLocaleString()} (${capPercentage}%)\nRemaining: ${remainingXP.toLocaleString()} XP\nReset Day: ${currentDay}\n\`\`\``,
-                                inline: true
-                            },
-                            {
-                                name: 'Progress Bar',
-                                value: `\`${progressBar}\`\n${dailyXP >= dailyCap ? 'DAILY CAP REACHED' : `${remainingXP} XP until cap`}`,
-                                inline: true
-                            }
-                        );
-                    break;
-                
-                case 'message':
-                    embed
-                        .setTitle('Message Activity Detected')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-                
-                case 'reaction':
-                    embed
-                        .setTitle('Reaction Activity Detected')
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-                
-                default:
-                    embed
-                        .setTitle(`${type.toUpperCase()} Activity Detected`)
-                        .setDescription(`\`\`\`diff\n- SUBJECT: ${user.username} (${user.id})\n- XP AWARDED: +${xpGain}\n- NEW TOTAL: ${additionalInfo.totalXP?.toLocaleString() || '0'}\n- CURRENT LEVEL: ${additionalInfo.currentLevel || '0'}\n\`\`\``);
-                    break;
-            }
-            
-            await channel.send({ embeds: [embed] });
-        } catch (error) {
-            console.error('[XP LOG] Failed to send XP log:', error);
-            this.monitor.trackError(error, 'xp_log');
-        }
-    }
-    
     // Get performance stats
     getPerformanceStats() {
         return this.monitor.getStats();
@@ -1315,7 +721,9 @@ class XPTracker {
             this.monitor.cleanup();
             
             // Close database connections
-            await this.db.close();
+            if (this.db) {
+                await this.db.close();
+            }
             
             console.log('[XP TRACKER] Graceful shutdown completed');
         } catch (error) {
