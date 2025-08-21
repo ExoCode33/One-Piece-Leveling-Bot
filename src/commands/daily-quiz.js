@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - COMPLETE Fixed Daily Quiz System with XP Carryover
+// src/commands/daily-quiz.js - FIXED Smooth Transitions and Timeout Handling
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -306,7 +306,7 @@ module.exports = {
         }
     },
 
-    // Main question asking method with result tracking
+    // ✅ FIXED: Main question asking method with INSTANT transitions and proper timeout handling
     async ask(interaction, userId, guildId, member, qNum, tier, rerollsUsed = 0, questionResults = []) {
         try {
             const testingMode = isTestingMode();
@@ -476,29 +476,19 @@ module.exports = {
                     await interaction.editReply({ embeds: [embed], components: rows }); 
                     msg = await interaction.fetchReply(); 
                 } else {
-                    const cleanupPromise = (qNum > 1 || rerollsUsed > 0) ? 
-                        this.cleanupOldQuestionMessages(interaction, qNum, rerollsUsed) : 
-                        Promise.resolve();
-                    
-                    await cleanupPromise;
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    const sendPromise = interaction.followUp({ embeds: [embed], components: rows });
-                    msg = await sendPromise;
+                    // ✅ FIXED: NO LOADING MESSAGE - Direct question display
+                    msg = await interaction.followUp({ embeds: [embed], components: rows });
                 }
                 
-                await new Promise(resolve => setTimeout(resolve, 500));
                 console.log(`[DAILY QUIZ] Q${qNum} message loaded successfully for ${member.displayName}${testingMode ? ' [TESTING]' : ''}`);
                 
             } catch (error) {
                 console.error(`[DAILY QUIZ] Error loading Q${qNum} message:`, error);
                 try {
                     msg = await interaction.followUp({ 
-                        content: `⚠️ Loading Question ${qNum}...`, 
                         embeds: [embed], 
                         components: rows 
                     });
-                    await new Promise(resolve => setTimeout(resolve, 500));
                 } catch (retryError) {
                     console.error(`[DAILY QUIZ] Retry failed for Q${qNum}:`, retryError);
                     return;
@@ -555,10 +545,15 @@ module.exports = {
                         
                         collector.stop();
                         
-                        const deletePromise = btn.message.delete().catch(() => {});
-                        const rerollPromise = this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
+                        // ✅ FIXED: Delete message and immediately show new question
+                        try {
+                            await btn.message.delete();
+                        } catch (error) {
+                            console.log('[DAILY QUIZ] Could not delete message:', error.message);
+                        }
                         
-                        await Promise.all([deletePromise, rerollPromise]);
+                        // ✅ FIXED: NO DELAY - Instant reroll
+                        await this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
                         return;
                     }
                     
@@ -712,7 +707,8 @@ module.exports = {
                             
                             await btn.editReply({ embeds: [cont], components: [contBtn] });
                             
-                            const contColl = btn.message.createMessageComponentCollector({ time: 30000, filter: i => i.user.id === userId });
+                            // ✅ FIXED: Shorter timeout and instant transitions
+                            const contColl = btn.message.createMessageComponentCollector({ time: 15000, filter: i => i.user.id === userId });
                             contColl.on('collect', async (contBtn) => {
                                 await contBtn.deferUpdate();
                                 if (contBtn.customId.startsWith('cont_')) {
@@ -721,17 +717,15 @@ module.exports = {
                                     
                                     console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
                                     
-                                    const loadingEmbed = new EmbedBuilder()
-                                        .setColor('#00FF00')
-                                        .setTitle(`⚡ Loading Question ${nextQNum}/10...`)
-                                        .setDescription('Preparing next question...')
-                                        .setFooter({ text: testingMode ? '🧪 Testing Mode - Loading...' : 'Loading next question...' });
+                                    // ✅ FIXED: NO LOADING MESSAGE - Delete current and show next question instantly
+                                    try {
+                                        await btn.message.delete();
+                                    } catch (error) {
+                                        console.log('[DAILY QUIZ] Could not delete continue message:', error.message);
+                                    }
                                     
-                                    await contBtn.editReply({ embeds: [loadingEmbed], components: [] });
-                                    
-                                    setTimeout(async () => {
-                                        await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
-                                    }, 500);
+                                    // ✅ FIXED: INSTANT transition to next question
+                                    await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
                                     
                                 } else {
                                     if (testingMode) {
@@ -783,95 +777,34 @@ module.exports = {
                         const newResults = [...questionResults, false];
                         
                         console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
-                        await this.showAnswerReveal(btn, q, qNum, member, testingMode);
                         
-                        // Wait 3 seconds then show continue prompt before proceeding
+                        // ✅ FIXED: Show answer reveal briefly then continue immediately
+                        const answerRevealEmbed = new EmbedBuilder()
+                            .setColor('#FF0000')
+                            .setTitle(`❌ Wrong Answer - Question ${qNum}/10${testingMode ? ' [Testing]' : ''}`)
+                            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${q.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                            .addFields({
+                                name: '⏳ Next Question Loading...',
+                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting immediately` : 'Calculating final results...',
+                                inline: false
+                            })
+                            .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+                            .setTimestamp();
+
+                        await btn.editReply({ embeds: [answerRevealEmbed], components: [] });
+                        
+                        // ✅ FIXED: MUCH shorter delay (1 second) then instant next question
                         setTimeout(async () => {
                             if (qNum < 10) {
-                                const successfulAnswers = newResults.filter(r => r === true).length;
-                                
+                                // ✅ FIXED: Delete reveal message and immediately show next question
                                 try {
-                                    if (!btn.replied && !btn.deferred) {
-                                        console.log('[DAILY BUFF] Interaction not ready for editing, auto-continuing...');
-                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                        await nextQuestionPromise;
-                                        return;
-                                    }
-                                    
-                                    const failurePrompt = new EmbedBuilder()
-                                        .setColor('#FF6B6B')
-                                        .setTitle(`❌ Question ${qNum} Failed${testingMode ? ' [Testing]' : ''}`)
-                                        .setDescription(`**Correct Answer:** ${q.answer}\n\n**Progress:** ${successfulAnswers} successful answers out of ${qNum} attempted.${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                                        .addFields({ 
-                                            name: '🎯 Next Step', 
-                                            value: `Question ${qNum + 1}/10 is ready.\nAre you ready to continue?`, 
-                                            inline: false 
-                                        })
-                                        .setFooter({ text: testingMode ? '🧪 Testing Mode - Take your time to review' : 'Take your time to review before continuing' })
-                                        .setTimestamp();
-                                    
-                                    const continueBtn = new ActionRowBuilder().addComponents(
-                                        new ButtonBuilder()
-                                            .setCustomId(`continue_after_fail_${userId}_${qNum + 1}`)
-                                            .setLabel(`Continue to Question ${qNum + 1}`)
-                                            .setStyle(ButtonStyle.Primary)
-                                            .setEmoji('▶️')
-                                    );
-                                    
-                                    await btn.editReply({ embeds: [failurePrompt], components: [continueBtn] });
-                                    
-                                    const continueCollector = btn.message.createMessageComponentCollector({ 
-                                        time: 30000, 
-                                        filter: i => i.user.id === userId && i.customId.startsWith('continue_after_fail_')
-                                    });
-                                    
-                                    continueCollector.on('collect', async (continueBtn) => {
-                                        try {
-                                            await continueBtn.deferUpdate();
-                                            continueCollector.stop();
-                                            
-                                            const deletePromise = btn.message.delete().catch(() => {});
-                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                            
-                                            await Promise.all([deletePromise, nextQuestionPromise]);
-                                        } catch (collectError) {
-                                            console.error('[DAILY BUFF] Error in continue button collector:', collectError);
-                                            const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                            await nextQuestionPromise;
-                                        }
-                                    });
-                                    
-                                    continueCollector.on('end', async (collected) => {
-                                        if (collected.size === 0) {
-                                            try {
-                                                const deletePromise = btn.message.delete().catch(() => {});
-                                                const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                                
-                                                await Promise.all([deletePromise, nextQuestionPromise]);
-                                            } catch (timeoutError) {
-                                                console.error('[DAILY BUFF] Error in collector timeout:', timeoutError);
-                                                const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                                await nextQuestionPromise;
-                                            }
-                                        }
-                                    });
-                                    
+                                    await btn.message.delete();
                                 } catch (error) {
-                                    console.error('[DAILY BUFF] Error showing continue prompt (message may be deleted):', error);
-                                    
-                                    if (error.code === 10008 || error.message.includes('Unknown Message') || error.message.includes('Unknown interaction')) {
-                                        console.log('[DAILY BUFF] Message/interaction expired, auto-continuing to next question...');
-                                    } else {
-                                        console.log('[DAILY BUFF] Unexpected error, auto-continuing to next question...');
-                                    }
-                                    
-                                    try {
-                                        const nextQuestionPromise = this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
-                                        await nextQuestionPromise;
-                                    } catch (continueError) {
-                                        console.error('[DAILY BUFF] Error auto-continuing after failed prompt:', continueError);
-                                    }
+                                    console.log('[DAILY QUIZ] Could not delete reveal message:', error.message);
                                 }
+                                
+                                // ✅ FIXED: INSTANT transition to next question
+                                await this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
                             } else {
                                 // Last question - handle completion
                                 const totalSuccessful = newResults.filter(r => r === true).length;
@@ -944,7 +877,7 @@ module.exports = {
                                     }
                                 }
                             }
-                        }, 3000);
+                        }, 1000); // ✅ FIXED: Only 1 second delay instead of 3
                     }
                     collector.stop();
                 } catch (error) { 
@@ -953,6 +886,7 @@ module.exports = {
                 }
             });
 
+            // ✅ FIXED: Proper timeout handling for both normal and testing mode
             collector.on('end', async (collected) => {
                 clearInterval(timer);
                 if (collected.size === 0) {
@@ -992,6 +926,7 @@ module.exports = {
                                 console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
                             }
                         } else {
+                            // ✅ FIXED: Proper timeout handling in testing mode
                             const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
                             const timeout = new EmbedBuilder()
                                 .setColor('#FFA500')
@@ -1007,15 +942,45 @@ module.exports = {
                                 
                             try {
                                 await msg.edit({ embeds: [timeout], components: [] });
+                                
+                                // ✅ FIXED: Auto-delete timeout message in testing mode after 10 seconds
+                                setTimeout(async () => {
+                                    try {
+                                        await msg.delete();
+                                        console.log('[DAILY QUIZ] ✅ Auto-deleted timeout message in testing mode');
+                                    } catch (error) {
+                                        console.log('[DAILY QUIZ] Could not auto-delete timeout message:', error.message);
+                                    }
+                                }, 10000);
+                                
                             } catch (error) {
                                 console.error(`[DAILY QUIZ] Error showing testing timeout message:`, error);
                             }
                         }
                     } else {
-                        // Continue with timeout handling for non-final questions
+                        // ✅ FIXED: Auto-continue after timeout for mid-quiz questions
+                        const timeoutEmbed = new EmbedBuilder()
+                            .setColor('#FF6B6B')
+                            .setTitle(`⏰ Time's Up - Question ${qNum}/10`)
+                            .setDescription(`No answer selected in time. Moving to question ${qNum + 1}/10...${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                            .setFooter({ text: testingMode ? '🧪 Testing Mode - Auto-continuing...' : 'Auto-continuing to next question...' });
+                        
+                        try {
+                            await msg.edit({ embeds: [timeoutEmbed], components: [] });
+                        } catch (error) {
+                            console.log('[DAILY QUIZ] Could not edit timeout message:', error.message);
+                        }
+                        
+                        // ✅ FIXED: Short delay then delete and continue
                         setTimeout(async () => {
+                            try {
+                                await msg.delete();
+                            } catch (error) {
+                                console.log('[DAILY QUIZ] Could not delete timeout message:', error.message);
+                            }
+                            
                             await this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
-                        }, 1000);
+                        }, 2000); // 2 second delay for timeout continuation
                     }
                 }
             });
@@ -1074,119 +1039,7 @@ module.exports = {
         return tierEmojis[tier] || '⬛';
     },
 
-    // Optimized cleanup method
-    async cleanupOldQuestionMessages(interaction, currentQNum, currentRerollsUsed) {
-        try {
-            console.log(`[CLEANUP] Quick cleanup before Q${currentQNum} (reroll: ${currentRerollsUsed})`);
-            
-            const messages = await interaction.channel.messages.fetch({ limit: 8 });
-            const deletionPromises = [];
-            const currentTime = Date.now();
-            
-            let processedCount = 0;
-            const maxProcess = 5;
-            
-            for (const [messageId, message] of messages) {
-                if (processedCount >= maxProcess) break;
-                processedCount++;
-                
-                if (message.author.id !== interaction.client.user.id) continue;
-                if (!message.embeds || message.embeds.length === 0) continue;
-                if (currentTime - message.createdTimestamp < 8000) continue;
-                
-                const embed = message.embeds[0];
-                const title = embed.title || '';
-                
-                const isDailyBuffEmbed = (
-                    title.includes('Loading Question') ||
-                    title.includes('Correct!') ||
-                    title.includes('Wrong Answer') ||
-                    title.includes('Failed') ||
-                    title.includes('Testing Complete')
-                );
-                
-                const hasActiveComponents = message.components && message.components.length > 0;
-                
-                if (isDailyBuffEmbed && !hasActiveComponents) {
-                    if (deletionPromises.length < 2) {
-                        deletionPromises.push(message.delete().catch(() => {}));
-                    } else {
-                        break;
-                    }
-                }
-            }
-            
-            if (deletionPromises.length > 0) {
-                await Promise.all(deletionPromises);
-                console.log(`[CLEANUP] Deleted ${deletionPromises.length} messages (optimized)`);
-            }
-            
-        } catch (error) {
-            console.log('[CLEANUP] Minor cleanup error (non-critical)');
-        }
-    },
-
-    // Show answer reveal with countdown
-    async showAnswerReveal(btnInteraction, question, questionNum, member, testingMode = false) {
-        try {
-            console.log(`[ANSWER REVEAL] Showing correct answer for Q${questionNum}: "${question.answer}" to ${member.displayName}${testingMode ? ' [TESTING]' : ''}`);
-            
-            if (!btnInteraction.replied && !btnInteraction.deferred) {
-                console.log('[ANSWER REVEAL] Interaction not ready, skipping answer reveal');
-                return;
-            }
-            
-            const selectedOption = question.options[parseInt(btnInteraction.customId.split('_')[3])];
-            
-            try {
-                const revealEmbed = new EmbedBuilder()
-                    .setColor('#FF0000')
-                    .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
-                    .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                    .addFields({
-                        name: '⏳ Processing Results',
-                        value: 'Results in **3** seconds...',
-                        inline: false
-                    })
-                    .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
-                    .setTimestamp();
-
-                await btnInteraction.editReply({ embeds: [revealEmbed], components: [] });
-                
-                for (let i = 2; i >= 1; i--) {
-                    setTimeout(async () => {
-                        try {
-                            if (!btnInteraction.replied && !btnInteraction.deferred) {
-                                return;
-                            }
-                            
-                            const countdownEmbed = new EmbedBuilder()
-                                .setColor('#FF0000')
-                                .setTitle(`❌ Wrong Answer - Question ${questionNum}/10${testingMode ? ' [Testing]' : ''}`)
-                                .setDescription(`**Your Answer:** ${selectedOption}\n**Question:** ${question.question}\n**Correct Answer:** 🎯 ${question.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                                .addFields({
-                                    name: '⏳ Processing Results',
-                                    value: `Results in **${i}** second${i !== 1 ? 's' : ''}...`,
-                                    inline: false
-                                })
-                                .setFooter({ text: testingMode ? '🧪 Testing Mode • Answer revealed • Processing...' : 'Answer revealed • Processing...' })
-                                .setTimestamp();
-                            
-                            await btnInteraction.editReply({ embeds: [countdownEmbed], components: [] });
-                        } catch (error) {
-                            console.error(`[ANSWER REVEAL] Error updating countdown ${i}:`, error);
-                        }
-                    }, (3 - i) * 1000);
-                }
-            } catch (error) {
-                console.error('[ANSWER REVEAL] Error showing initial answer reveal:', error);
-            }
-        } catch (error) {
-            console.error('[ANSWER REVEAL] Error in showAnswerReveal:', error);
-        }
-    },
-
-    // ✅ FIXED: Get tier XP cap with carryover support
+    // Get tier XP cap with carryover support
     async getTierXPCap(userId, guildId) {
         try {
             if (isTestingMode()) {
@@ -1224,7 +1077,7 @@ module.exports = {
                                 // User already has tier record
                                 currentXP = result.rows[0].current_xp || 0;
                             } else {
-                                // ✅ CRITICAL FIX: Check default system for XP to carry over
+                                // Check default system for XP to carry over
                                 const defaultXP = global.xpTracker.dailyResetManager ? 
                                     global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay) : 0;
                                 
@@ -1391,7 +1244,7 @@ module.exports = {
         }
     },
 
-    // ✅ FIXED: Set tier XP cap with carryover support
+    // Set tier XP cap with carryover support
     async setTierXPCap(userId, guildId, tier) {
         try {
             if (isTestingMode()) {
@@ -1408,7 +1261,7 @@ module.exports = {
 
             const currentDay = this.getCurrentDay();
 
-            // ✅ CRITICAL FIX: Get existing XP from default system for carryover
+            // Get existing XP from default system for carryover
             let existingXP = 0;
             if (global.xpTracker && global.xpTracker.dailyResetManager) {
                 existingXP = global.xpTracker.dailyResetManager.getDailyVoiceXP(userId, guildId, currentDay);
