@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - COMPLETE FIXED with crash prevention and anime-only APIs
+// src/commands/daily-quiz.js - COMPLETE FIXED with question preloading and duplicate prevention
 
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -41,7 +41,7 @@ const TIER_DESC = {
     10: '🔴 Divine perfection' 
 };
 
-// Enhanced anime-only fallback questions
+// Enhanced anime-only fallback questions with more variety
 const ANIME_ONLY_FALLBACK = {
     'Easy': [
         { question: "Who is the main protagonist of One Piece?", options: ["Monkey D. Luffy", "Roronoa Zoro", "Nami", "Sanji"], answer: "Monkey D. Luffy" },
@@ -53,7 +53,12 @@ const ANIME_ONLY_FALLBACK = {
         { question: "In My Hero Academia, what is Deku's real name?", options: ["Izuku Midoriya", "Katsuki Bakugo", "Shoto Todoroki", "Tenya Iida"], answer: "Izuku Midoriya" },
         { question: "What anime features a notebook that can kill people?", options: ["Death Note", "Code Geass", "Psycho-Pass", "Future Diary"], answer: "Death Note" },
         { question: "In Dragon Ball Z, what is Goku's Saiyan name?", options: ["Kakarot", "Vegeta", "Raditz", "Bardock"], answer: "Kakarot" },
-        { question: "What is the name of the main character in Bleach?", options: ["Ichigo Kurosaki", "Rukia Kuchiki", "Uryu Ishida", "Chad Sado"], answer: "Ichigo Kurosaki" }
+        { question: "What is the name of the main character in Bleach?", options: ["Ichigo Kurosaki", "Rukia Kuchiki", "Uryu Ishida", "Chad Sado"], answer: "Ichigo Kurosaki" },
+        { question: "In One Piece, what is Zoro's fighting style?", options: ["Three Sword Style", "Two Sword Style", "One Sword Style", "Four Sword Style"], answer: "Three Sword Style" },
+        { question: "What is the name of the titan that can control other titans?", options: ["Founding Titan", "Attack Titan", "Colossal Titan", "Beast Titan"], answer: "Founding Titan" },
+        { question: "In Demon Slayer, what breathing technique does Tanjiro use?", options: ["Water Breathing", "Fire Breathing", "Wind Breathing", "Stone Breathing"], answer: "Water Breathing" },
+        { question: "What is the name of the school in Assassination Classroom?", options: ["Kunugigaoka Junior High", "U.A. High School", "Honnouji Academy", "Death Weapon Meister Academy"], answer: "Kunugigaoka Junior High" },
+        { question: "In Fairy Tail, what is Natsu's magic type?", options: ["Fire Dragon Slayer", "Ice Make", "Celestial Spirit", "Requip"], answer: "Fire Dragon Slayer" }
     ],
     'Medium': [
         { question: "What is the name of the sea where most of One Piece takes place?", options: ["Grand Line", "East Blue", "West Blue", "Red Line"], answer: "Grand Line" },
@@ -65,7 +70,12 @@ const ANIME_ONLY_FALLBACK = {
         { question: "What studio animated Spirited Away?", options: ["Studio Ghibli", "Madhouse", "Toei Animation", "Pierrot"], answer: "Studio Ghibli" },
         { question: "In One Punch Man, what is Saitama's hero rank initially?", options: ["Class C", "Class B", "Class A", "Class S"], answer: "Class C" },
         { question: "What is the name of the Death God in Death Note?", options: ["Shinigami", "Yokai", "Oni", "Kami"], answer: "Shinigami" },
-        { question: "In Jujutsu Kaisen, what grade is Yuji Itadori initially classified as?", options: ["Grade 4", "Grade 3", "Grade 2", "Grade 1"], answer: "Grade 4" }
+        { question: "In Jujutsu Kaisen, what grade is Yuji Itadori initially classified as?", options: ["Grade 4", "Grade 3", "Grade 2", "Grade 1"], answer: "Grade 4" },
+        { question: "In One Piece, what is the name of the World Government's secret police?", options: ["CP9", "Marines", "Shichibukai", "Revolutionaries"], answer: "CP9" },
+        { question: "What is the name of the virtual reality game in Sword Art Online?", options: ["Sword Art Online", "Alfheim Online", "Gun Gale Online", "Underworld"], answer: "Sword Art Online" },
+        { question: "In Tokyo Ghoul, what are the creatures that eat humans called?", options: ["Ghouls", "Titans", "Demons", "Hollows"], answer: "Ghouls" },
+        { question: "What is the name of the magic system in Black Clover?", options: ["Magic", "Nen", "Chakra", "Reiatsu"], answer: "Magic" },
+        { question: "In Mob Psycho 100, what percentage does Mob reach for an explosion?", options: ["100%", "200%", "150%", "300%"], answer: "100%" }
     ],
     'Hard': [
         { question: "In One Piece, where do the Straw Hats first meet Brook?", options: ["Thriller Bark", "Sabaody Archipelago", "Water 7", "Enies Lobby"], answer: "Thriller Bark" },
@@ -77,9 +87,19 @@ const ANIME_ONLY_FALLBACK = {
         { question: "In Code Geass, what is Lelouch's Geass power?", options: ["Absolute Obedience", "Mind Reading", "Time Stop", "Precognition"], answer: "Absolute Obedience" },
         { question: "What is the name of Light's Shinigami in Death Note?", options: ["Ryuk", "Rem", "Misa", "Near"], answer: "Ryuk" },
         { question: "In Evangelion, what is the name of Shinji's father?", options: ["Gendo Ikari", "Ryoji Kaji", "Kozo Fuyutsuki", "Shigeru Aoba"], answer: "Gendo Ikari" },
-        { question: "What is the real name of the character known as 'L' in Death Note?", options: ["L Lawliet", "Near", "Mello", "Watari"], answer: "L Lawliet" }
+        { question: "What is the real name of the character known as 'L' in Death Note?", options: ["L Lawliet", "Near", "Mello", "Watari"], answer: "L Lawliet" },
+        { question: "In One Piece, what is the name of the ancient weapons?", options: ["Pluton, Poseidon, Uranus", "Zeus, Hera, Poseidon", "Ares, Athena, Apollo", "Thor, Odin, Loki"], answer: "Pluton, Poseidon, Uranus" },
+        { question: "What is the name of the organization that Lelouch leads in Code Geass?", options: ["Black Knights", "White Fang", "Blue Cosmos", "Red Frame"], answer: "Black Knights" },
+        { question: "In Steins;Gate, what is the name of the time machine?", options: ["Phone Microwave", "Time Machine", "D-Mail", "SERN"], answer: "Phone Microwave" },
+        { question: "What is the name of the virtual world in .hack//SIGN?", options: ["The World", "ALfheim", "Underworld", "Gun Gale"], answer: "The World" },
+        { question: "In Cowboy Bebop, what is the name of Spike's ship?", options: ["Swordfish II", "Hammerhead", "Redtail", "Bebop"], answer: "Swordfish II" }
     ]
 };
+
+// ✅ NEW: Question cache and session management
+const questionCache = new Map(); // userId -> {questions: [], currentIndex: 0, usedQuestions: Set()}
+const activeQuizzes = new Set(); // Track active quiz users
+const userQuestionHistory = new Map(); // userId -> Set of question texts (last 50 questions)
 
 // Check if testing mode is enabled
 function isTestingMode() {
@@ -133,33 +153,20 @@ function getNextResetUnixTimestamp() {
     return Math.floor(utcReset.getTime() / 1000);
 }
 
-// Safe message deletion to prevent crashes
-async function safeDeleteMessage(message) {
-    try {
-        if (message && !message.deleted && message.deletable) {
-            await message.delete();
-            console.log('[DAILY QUIZ] ✅ Message deleted safely');
-        }
-    } catch (error) {
-        console.log('[DAILY QUIZ] ⚠️ Could not delete message (likely already deleted)');
-    }
-}
-
-// Enhanced anime-only question fetching with multiple APIs
-async function fetchQuestion(difficulty) {
+// ✅ NEW: Enhanced question fetching with better deduplication
+async function fetchQuestion(difficulty, avoidQuestions = new Set()) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // Reduced timeout
     
     try {
         const animeAPIs = [
-            'https://opentdb.com/api.php?amount=1&category=31&type=multiple',
-            'https://aniquizapi.vercel.app/api/quiz',
-            'https://the-trivia-api.com/v2/questions?categories=anime_and_manga&limit=1',
+            'https://opentdb.com/api.php?amount=5&category=31&type=multiple', // Get 5 questions at once
+            'https://the-trivia-api.com/v2/questions?categories=anime_and_manga&limit=5'
         ];
         
         for (const apiUrl of animeAPIs) {
             try {
-                console.log(`[API] Trying ${getAPIName(apiUrl)} API...`);
+                console.log(`[API] Trying ${getAPIName(apiUrl)} API for ${difficulty}...`);
                 
                 const response = await fetch(apiUrl, {
                     method: 'GET',
@@ -170,71 +177,53 @@ async function fetchQuestion(difficulty) {
                     signal: controller.signal
                 });
                 
-                clearTimeout(timeoutId);
-                
                 if (response.ok) {
                     const data = await response.json();
-                    let question, options, answer;
+                    let questions = [];
                     
                     if (data.results && data.results.length > 0) {
-                        const result = data.results[0];
-                        question = result.question;
-                        answer = result.correct_answer;
-                        options = [...result.incorrect_answers, result.correct_answer].sort(() => Math.random() - 0.5);
+                        questions = data.results.map(result => ({
+                            question: result.question,
+                            answer: result.correct_answer,
+                            options: [...result.incorrect_answers, result.correct_answer].sort(() => Math.random() - 0.5),
+                            difficulty: difficulty,
+                            source: 'api'
+                        }));
+                    } else if (data.length > 0) {
+                        questions = data.map(item => ({
+                            question: item.question?.text || item.question,
+                            answer: item.correctAnswer,
+                            options: [...(item.incorrectAnswers || []), item.correctAnswer].sort(() => Math.random() - 0.5),
+                            difficulty: difficulty,
+                            source: 'api'
+                        }));
+                    }
+                    
+                    // Filter out bad questions and duplicates
+                    const validQuestions = questions.filter(q => {
+                        if (!q.question || !q.answer || !q.options || q.options.length < 2) return false;
                         
                         const badKeywords = ['voice actor', 'voiced by', 'seiyuu', 'dub', 'english dub', 'studio', 'director', 'composer'];
-                        if (badKeywords.some(keyword => question.toLowerCase().includes(keyword))) {
-                            console.log('[API] Skipping voice actor/production question');
-                            continue;
-                        }
-                    } else if (data[0] && data[0].question) {
-                        question = data[0].question.text;
-                        answer = data[0].correctAnswer;
-                        options = [...data[0].incorrectAnswers, data[0].correctAnswer].sort(() => Math.random() - 0.5);
-                    } else if (data.data?.question || data.question) {
-                        const questionData = data.data || data;
-                        question = questionData.question;
-                        options = Array.isArray(questionData.options) ? questionData.options : [];
-                        answer = questionData.correct;
+                        if (badKeywords.some(keyword => q.question.toLowerCase().includes(keyword))) return false;
                         
-                        const badKeywords = ['voice actor', 'voiced by', 'seiyuu', 'dub', 'english dub', 'studio', 'director', 'composer'];
-                        if (badKeywords.some(keyword => question.toLowerCase().includes(keyword))) {
-                            console.log('[API] Skipping voice actor/production question');
-                            continue;
-                        }
-                    } else {
-                        continue;
+                        // Check against avoid list
+                        if (avoidQuestions.has(q.question.toLowerCase().trim())) return false;
+                        
+                        return true;
+                    }).map(q => ({
+                        ...q,
+                        question: cleanText(q.question),
+                        answer: cleanText(q.answer),
+                        options: q.options.map(opt => cleanText(opt)).filter(opt => opt.length > 0)
+                    }));
+                    
+                    if (validQuestions.length > 0) {
+                        // Return first valid question that's not in avoid list
+                        const selectedQuestion = validQuestions[0];
+                        console.log(`[API] ✅ Fetched ${difficulty} anime question from ${getAPIName(apiUrl)}`);
+                        clearTimeout(timeoutId);
+                        return selectedQuestion;
                     }
-                    
-                    const clean = (text) => {
-                        if (!text) return '';
-                        return text.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-                            .replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#x([0-9A-Fa-f]+);/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
-                            .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(parseInt(d, 10))).trim();
-                    };
-                    
-                    question = clean(question);
-                    answer = clean(answer);
-                    options = options.map(opt => clean(opt)).filter(opt => opt.length > 0);
-                    
-                    if (!question || options.length < 2 || !answer) continue;
-                    
-                    if (!options.includes(answer)) {
-                        const match = options.find(opt => opt.toLowerCase() === answer.toLowerCase());
-                        if (match) answer = match;
-                        else if (options.length >= 4) options[3] = answer;
-                        else options.push(answer);
-                    }
-                    
-                    if (options.length > 4) {
-                        const correctIndex = options.indexOf(answer);
-                        const others = options.filter((opt, i) => i !== correctIndex);
-                        const randomOthers = others.sort(() => 0.5 - Math.random()).slice(0, 3);
-                        options = [answer, ...randomOthers].sort(() => 0.5 - Math.random());
-                    }
-                    
-                    console.log(`[API] ✅ Fetched ${difficulty} anime question from ${getAPIName(apiUrl)}`);
-                    return { question, options, answer, difficulty };
                 }
             } catch (error) {
                 console.log(`[API] API ${getAPIName(apiUrl)} failed: ${error.message}`);
@@ -247,17 +236,125 @@ async function fetchQuestion(difficulty) {
         clearTimeout(timeoutId);
     }
     
+    // Fallback to local questions with deduplication
     console.log(`[API] 🛡️ Using enhanced anime fallback ${difficulty} question`);
     const fallbacks = ANIME_ONLY_FALLBACK[difficulty] || ANIME_ONLY_FALLBACK['Medium'];
-    const selectedQuestion = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    return selectedQuestion;
+    
+    // Find questions not in avoid list
+    const availableFallbacks = fallbacks.filter(q => !avoidQuestions.has(q.question.toLowerCase().trim()));
+    
+    if (availableFallbacks.length === 0) {
+        // If all questions have been used, reset and use any
+        console.log(`[API] All ${difficulty} fallback questions used, resetting...`);
+        return { ...fallbacks[Math.floor(Math.random() * fallbacks.length)], source: 'fallback-reset' };
+    }
+    
+    const selectedQuestion = availableFallbacks[Math.floor(Math.random() * availableFallbacks.length)];
+    return { ...selectedQuestion, source: 'fallback' };
+}
+
+function cleanText(text) {
+    if (!text) return '';
+    return text.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#x([0-9A-Fa-f]+);/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(parseInt(d, 10))).trim();
 }
 
 function getAPIName(url) {
     if (url.includes('opentdb')) return 'OpenTDB';
-    if (url.includes('aniquizapi')) return 'AniQuiz';
     if (url.includes('trivia-api')) return 'The Trivia API';
     return 'Custom';
+}
+
+// ✅ NEW: Preload 10 questions with deduplication
+async function preloadQuestions(userId) {
+    console.log(`[PRELOAD] Starting question preload for user ${userId}`);
+    
+    try {
+        const difficulties = ['Easy', 'Easy', 'Medium', 'Medium', 'Medium', 'Medium', 'Hard', 'Hard', 'Hard', 'Hard'];
+        const questions = [];
+        const usedQuestions = new Set();
+        
+        // Get user's question history for better deduplication
+        const userHistory = userQuestionHistory.get(userId) || new Set();
+        
+        for (let i = 0; i < 10; i++) {
+            const difficulty = difficulties[i];
+            
+            // Combine used questions in this session + user history
+            const avoidQuestions = new Set([...usedQuestions, ...userHistory]);
+            
+            const question = await fetchQuestion(difficulty, avoidQuestions);
+            if (question) {
+                questions.push(question);
+                usedQuestions.add(question.question.toLowerCase().trim());
+                console.log(`[PRELOAD] Question ${i + 1}/10 loaded: ${difficulty} - "${question.question.substring(0, 50)}..."`);
+            } else {
+                console.error(`[PRELOAD] Failed to load question ${i + 1}`);
+                // Add a fallback question
+                const fallbacks = ANIME_ONLY_FALLBACK[difficulty] || ANIME_ONLY_FALLBACK['Medium'];
+                const fallbackQuestion = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+                questions.push({ ...fallbackQuestion, source: 'emergency-fallback' });
+            }
+            
+            // Small delay to prevent API rate limiting
+            if (i < 9) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+        
+        // Cache the preloaded questions
+        questionCache.set(userId, {
+            questions: questions,
+            currentIndex: 0,
+            usedQuestions: usedQuestions,
+            createdAt: Date.now()
+        });
+        
+        console.log(`[PRELOAD] ✅ Successfully preloaded ${questions.length} questions for user ${userId}`);
+        return questions.length === 10;
+        
+    } catch (error) {
+        console.error(`[PRELOAD] ❌ Error preloading questions for user ${userId}:`, error);
+        return false;
+    }
+}
+
+// ✅ NEW: Get next question from cache
+function getNextCachedQuestion(userId) {
+    const cache = questionCache.get(userId);
+    if (!cache || cache.currentIndex >= cache.questions.length) {
+        return null;
+    }
+    
+    const question = cache.questions[cache.currentIndex];
+    cache.currentIndex++;
+    
+    return question;
+}
+
+// ✅ NEW: Clear question cache
+function clearQuestionCache(userId) {
+    console.log(`[CACHE] Clearing question cache for user ${userId}`);
+    questionCache.delete(userId);
+    activeQuizzes.delete(userId);
+}
+
+// ✅ NEW: Update user question history
+function updateUserQuestionHistory(userId, questionText) {
+    if (!userQuestionHistory.has(userId)) {
+        userQuestionHistory.set(userId, new Set());
+    }
+    
+    const history = userQuestionHistory.get(userId);
+    history.add(questionText.toLowerCase().trim());
+    
+    // Keep only last 50 questions to prevent memory issues
+    if (history.size > 50) {
+        const historyArray = Array.from(history);
+        history.clear();
+        historyArray.slice(-30).forEach(q => history.add(q)); // Keep last 30
+    }
 }
 
 function getDay() { return getCurrentDayKey(); }
@@ -269,6 +366,15 @@ module.exports = {
     async execute(interaction) {
         try {
             const testingMode = isTestingMode();
+            const userId = interaction.user.id;
+            
+            // Check if user already has an active quiz
+            if (activeQuizzes.has(userId)) {
+                return await interaction.reply({
+                    content: '❌ **Quiz Already Active**\n\nYou already have an active daily quiz session. Please complete it first.',
+                    ephemeral: true
+                });
+            }
             
             const allowedChannelId = process.env.DAILY_QUIZ_CHANNEL;
             
@@ -288,7 +394,8 @@ module.exports = {
                 });
             }
 
-            const userId = interaction.user.id, guildId = interaction.guild.id, member = interaction.member;
+            const guildId = interaction.guild.id;
+            const member = interaction.member;
             
             if (!global.xpTracker?.db && !testingMode) {
                 return await interaction.reply({ 
@@ -322,11 +429,42 @@ module.exports = {
             
             await interaction.deferReply();
             
+            // ✅ NEW: Mark user as having active quiz and preload questions
+            activeQuizzes.add(userId);
+            
+            const preloadingEmbed = new EmbedBuilder()
+                .setColor('#FFA500')
+                .setTitle('🎌 PREPARING ULTIMATE ANIME CHALLENGE')
+                .setDescription('🔄 **Loading your personalized quiz questions...**\n\n*Please wait while we fetch 10 unique anime questions for you.*')
+                .setFooter({ text: testingMode ? '🧪 Testing Mode • Preloading Questions' : 'Daily Quiz • Preloading Questions' })
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [preloadingEmbed] });
+            
+            // Preload questions
+            const preloadSuccess = await preloadQuestions(userId);
+            
+            if (!preloadSuccess) {
+                activeQuizzes.delete(userId);
+                clearQuestionCache(userId);
+                return await interaction.editReply({
+                    content: '❌ **Failed to Load Questions**\n\nUnable to prepare your quiz questions. Please try again.',
+                });
+            }
+            
             // Start the quiz
             await this.ask(interaction, userId, guildId, member, 1, 0, 0);
             
         } catch (error) {
             console.error('[DAILY QUIZ] Execute error:', error);
+            
+            // Clean up on error
+            const userId = interaction.user?.id;
+            if (userId) {
+                activeQuizzes.delete(userId);
+                clearQuestionCache(userId);
+            }
+            
             const content = '❌ Error occurred. Please try again.';
             try {
                 if (interaction.deferred) {
@@ -340,7 +478,7 @@ module.exports = {
         }
     },
 
-    // Main question asking method with crash prevention
+    // ✅ FIXED: Main question asking method with cached questions
     async ask(interaction, userId, guildId, member, qNum, tier, rerollsUsed = 0, questionResults = []) {
         let timer = null;
         let revealTimeout = null;
@@ -349,18 +487,30 @@ module.exports = {
         try {
             const testingMode = isTestingMode();
             
-            // 10-question structure: 2 Easy, 4 Medium, 4 Hard
-            const difficulties = ['Easy', 'Easy', 'Medium', 'Medium', 'Medium', 'Medium', 'Hard', 'Hard', 'Hard', 'Hard'];
-            const diff = difficulties[qNum - 1];
-            console.log(`[DAILY BUFF] Starting Question ${qNum}/10 - Difficulty: ${diff} - User: ${member.displayName}${testingMode ? ' [TESTING MODE]' : ''}`);
+            console.log(`[DAILY QUIZ] Starting Question ${qNum}/10 - User: ${member.displayName}${testingMode ? ' [TESTING MODE]' : ''}`);
             
-            const q = await fetchQuestion(diff);
-            console.log(`[DAILY BUFF] Question ${qNum} loaded: "${q.question}" | Correct: "${q.answer}"`);
+            // ✅ NEW: Get question from cache instead of fetching
+            const q = getNextCachedQuestion(userId);
+            
+            if (!q) {
+                console.error(`[DAILY QUIZ] No cached question available for Q${qNum}`);
+                await interaction.followUp({
+                    content: '❌ **Question Loading Error**\n\nFailed to load question. Please restart the quiz.',
+                    ephemeral: true
+                });
+                return;
+            }
+            
+            // Update user question history
+            updateUserQuestionHistory(userId, q.question);
+            
+            console.log(`[DAILY QUIZ] Question ${qNum} from cache: "${q.question}" | Correct: "${q.answer}" | Source: ${q.source}`);
             let time = 20;
 
             // Create embed function
             const makeEmbed = (timeRemaining) => {
                 const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
+                const difficulty = q.difficulty || 'Medium';
                 
                 // Create countdown bar
                 const totalTime = 20;
@@ -434,7 +584,7 @@ module.exports = {
 
                 return new EmbedBuilder()
                     .setAuthor({ name: challengeTitle })
-                    .setTitle(`${diffEmoji[diff]} Question ${qNum}/10 • ${diff}${testingMode ? ' [TEST]' : ''}`)
+                    .setTitle(`${diffEmoji[difficulty]} Question ${qNum}/10 • ${difficulty}${testingMode ? ' [TEST]' : ''}`)
                     .setColor(embedColor)
                     .setDescription(`## **${q.question}**\n\n**Challenge by:** ${member.displayName}${testingMode ? ' 🧪' : ''}\n\n*Select your answer using the buttons below*${testingMode ? '\n\n⚠️ **TESTING MODE**: No roles or XP will be awarded' : ''}`)
                     .addFields(
@@ -463,7 +613,7 @@ module.exports = {
                             inline: true
                         }
                     )
-                    .setFooter({ text: `Enhancement Intelligence • Difficulty: ${diff}${testingMode ? ' • TESTING MODE' : ''} • ${new Date().toLocaleTimeString()}` })
+                    .setFooter({ text: `Enhancement Intelligence • Difficulty: ${difficulty}${testingMode ? ' • TESTING MODE' : ''} • ${new Date().toLocaleTimeString()}` })
                     .setTimestamp();
             };
 
@@ -597,7 +747,19 @@ module.exports = {
                         
                         collector.stop('reroll');
                         
-                        await safeDeleteMessage(btn.message);
+                        // ✅ NEW: Don't delete message, just update it
+                        console.log(`[DAILY QUIZ] Reroll requested for Q${qNum}, loading new question...`);
+                        
+                        // Get a new question for reroll (we'll fetch one since rerolls should give different questions)
+                        const newQuestion = await fetchQuestion(q.difficulty || 'Medium', new Set([q.question.toLowerCase().trim()]));
+                        
+                        if (newQuestion) {
+                            // Update the question cache with the new question
+                            const cache = questionCache.get(userId);
+                            if (cache && cache.currentIndex > 0) {
+                                cache.questions[cache.currentIndex - 1] = newQuestion;
+                            }
+                        }
                         
                         await this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
                         return;
@@ -616,6 +778,9 @@ module.exports = {
                         const securedTier = successfulAnswers;
                         
                         await this.apply(userId, guildId, member, securedTier);
+                        
+                        // ✅ NEW: Clear cache when quiz ends early
+                        clearQuestionCache(userId);
                         
                         let xpMultiplier = 'Unknown';
                         try {
@@ -652,7 +817,7 @@ module.exports = {
                     const passedRerollsUsed = parseInt(currentRerollsUsed);
                     
                     const selectedOption = q.options[parseInt(btn.customId.split('_')[3])];
-                    console.log(`[DAILY BUFF] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
+                    console.log(`[DAILY QUIZ] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
                     
                     if (isCorrect) {
                         const newResults = [...questionResults, true];
@@ -665,7 +830,7 @@ module.exports = {
                                     await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
                                     console.log(`[DAILY QUIZ] Q${qNum} FLAT XP: Awarded ${correctAnswerXP} XP to ${member.displayName} (no multipliers applied)`);
                                 } catch (error) {
-                                    console.error(`[DAILY BUFF] Error awarding flat XP for correct answer:`, error);
+                                    console.error(`[DAILY QUIZ] Error awarding flat XP for correct answer:`, error);
                                 }
                             }
                         } else {
@@ -674,6 +839,9 @@ module.exports = {
                         
                         if (qNum === 10) {
                             const totalSuccessful = newResults.filter(r => r === true).length;
+                            
+                            // ✅ NEW: Clear cache when quiz completes
+                            clearQuestionCache(userId);
                             
                             if (!testingMode) {
                                 await this.apply(userId, guildId, member, totalSuccessful);
@@ -764,8 +932,6 @@ module.exports = {
                                         
                                         console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
                                         
-                                        await safeDeleteMessage(btn.message);
-                                        
                                         await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
                                         
                                     } else {
@@ -782,6 +948,9 @@ module.exports = {
                                         const finalTier = Math.min(cTier, actualSuccessful);
                                         
                                         await this.apply(userId, guildId, member, finalTier);
+                                        
+                                        // ✅ NEW: Clear cache when quiz ends early
+                                        clearQuestionCache(userId);
                                         
                                         let xpMultiplier = 'Unknown';
                                         try {
@@ -820,16 +989,16 @@ module.exports = {
                         // Record failed answer and continue
                         const newResults = [...questionResults, false];
                         
-                        console.log(`[DAILY BUFF] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
+                        console.log(`[DAILY QUIZ] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
                         
-                        // Show answer reveal briefly then continue immediately with 5-second delay
+                        // Show answer reveal briefly then continue immediately with 3-second delay
                         const answerRevealEmbed = new EmbedBuilder()
                             .setColor('#FF0000')
                             .setTitle(`❌ Wrong Answer - Question ${qNum}/10${testingMode ? ' [Testing]' : ''}`)
                             .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${q.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
                             .addFields({
                                 name: '⏳ Next Question Loading...',
-                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
+                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting in 3 seconds` : 'Calculating final results in 3 seconds...',
                                 inline: false
                             })
                             .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
@@ -837,16 +1006,17 @@ module.exports = {
 
                         await btn.editReply({ embeds: [answerRevealEmbed], components: [] });
                         
-                        // 5-second delay then instant next question
+                        // 3-second delay then instant next question
                         revealTimeout = setTimeout(async () => {
                             revealTimeout = null;
                             if (qNum < 10) {
-                                await safeDeleteMessage(btn.message);
-                                
                                 await this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults);
                             } else {
                                 // Last question - handle completion
                                 const totalSuccessful = newResults.filter(r => r === true).length;
+                                
+                                // ✅ NEW: Clear cache when quiz completes
+                                clearQuestionCache(userId);
                                 
                                 if (!testingMode) {
                                     if (totalSuccessful > 0) {
@@ -891,7 +1061,7 @@ module.exports = {
                                     try {
                                         await btn.editReply({ embeds: [res], components: [] });
                                     } catch (error) {
-                                        console.error('[DAILY BUFF] Error editing reply after final answer:', error);
+                                        console.error('[DAILY QUIZ] Error editing reply after final answer:', error);
                                     }
                                 } else {
                                     const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
@@ -912,11 +1082,11 @@ module.exports = {
                                     try {
                                         await btn.editReply({ embeds: [res], components: [] });
                                     } catch (error) {
-                                        console.error('[DAILY BUFF] Error editing testing mode reply:', error);
+                                        console.error('[DAILY QUIZ] Error editing testing mode reply:', error);
                                     }
                                 }
                             }
-                        }, 5000); // 5-second delay instead of 1 second
+                        }, 3000); // 3-second delay instead of 5
                     }
                     collector.stop('answered');
                 } catch (error) { 
@@ -951,6 +1121,9 @@ module.exports = {
                     
                     if (qNum === 10) {
                         const totalSuccessful = newResults.filter(r => r === true).length;
+                        
+                        // ✅ NEW: Clear cache when quiz times out
+                        clearQuestionCache(userId);
                         
                         if (!testingMode) {
                             if (totalSuccessful > 0) {
@@ -996,17 +1169,6 @@ module.exports = {
                                 
                             try {
                                 await msg.edit({ embeds: [timeout], components: [] });
-                                
-                                // Auto-delete timeout message in testing mode after 10 seconds
-                                setTimeout(async () => {
-                                    try {
-                                        await safeDeleteMessage(msg);
-                                        console.log('[DAILY QUIZ] ✅ Auto-deleted timeout message in testing mode');
-                                    } catch (error) {
-                                        console.log('[DAILY QUIZ] Could not auto-delete timeout message:', error.message);
-                                    }
-                                }, 10000);
-                                
                             } catch (error) {
                                 console.error(`[DAILY QUIZ] Error showing testing timeout message:`, error);
                             }
@@ -1025,10 +1187,8 @@ module.exports = {
                             console.log('[DAILY QUIZ] Could not edit timeout message:', error.message);
                         }
                         
-                        // Short delay then delete and continue
+                        // Short delay then continue
                         setTimeout(async () => {
-                            await safeDeleteMessage(msg);
-                            
                             await this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults);
                         }, 2000); // 2 second delay for timeout continuation
                     }
@@ -1052,6 +1212,9 @@ module.exports = {
                 activeCollector.stop('error');
                 activeCollector = null;
             }
+            
+            // ✅ NEW: Clear cache on error
+            clearQuestionCache(userId);
         }
     },
 
@@ -1168,7 +1331,7 @@ module.exports = {
                     if (role) { 
                         await member.roles.add(role); 
                         await this.setTierXPCap(userId, guildId, tier);
-                        console.log(`[DAILY BUFF] ✅ Awarded ${role.name} with tier-specific XP cap`); 
+                        console.log(`[DAILY QUIZ] ✅ Awarded ${role.name} with tier-specific XP cap`); 
                     } 
                 } 
             }
@@ -1255,3 +1418,29 @@ module.exports = {
         }
     }
 };
+
+// ✅ NEW: Cleanup function to clear old caches (call this periodically)
+setInterval(() => {
+    const now = Date.now();
+    const maxAge = 30 * 60 * 1000; // 30 minutes
+    
+    // Clean up old question caches
+    for (const [userId, cache] of questionCache.entries()) {
+        if (now - cache.createdAt > maxAge) {
+            console.log(`[CACHE CLEANUP] Removing old question cache for user ${userId}`);
+            questionCache.delete(userId);
+            activeQuizzes.delete(userId);
+        }
+    }
+    
+    // Clean up old user histories (keep only active users)
+    if (userQuestionHistory.size > 1000) {
+        console.log('[CACHE CLEANUP] Trimming user question history');
+        const historyArray = Array.from(userQuestionHistory.entries());
+        userQuestionHistory.clear();
+        // Keep last 500 users
+        historyArray.slice(-500).forEach(([userId, history]) => {
+            userQuestionHistory.set(userId, history);
+        });
+    }
+}, 10 * 60 * 1000); // Run every 10 minutes
