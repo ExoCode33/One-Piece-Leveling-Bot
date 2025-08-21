@@ -924,16 +924,20 @@ module.exports = {
                                 console.error('[DAILY QUIZ] Error fetching reroll question:', error);
                             });
                         
-                        await this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults);
+                        this.ask(interaction, userId, guildId, member, parseInt(currentQNum), tier, rerollsUsedNum + 1, questionResults)
+                            .catch(error => {
+                                console.error('[DAILY QUIZ] Error proceeding to reroll question:', error);
+                                clearQuestionCache(userId);
+                            });
                         return;
                     }
                     
                     if (btn.customId.startsWith('stop_')) {
                         if (testingMode) {
-                            await btn.editReply({
+                            btn.editReply({
                                 content: '🧪 **Testing Mode**: Cannot secure tiers in testing mode!',
                                 components: []
-                            });
+                            }).catch(console.error);
                             return;
                         }
                         
@@ -1138,16 +1142,20 @@ module.exports = {
                             
                             // Shorter timeout and instant transitions
                             const contColl = btn.message.createMessageComponentCollector({ time: 15000, filter: i => i.user.id === userId });
-                            contColl.on('collect', async (contBtn) => {
+                            contColl.on('collect', (contBtn) => {
                                 try {
-                                    await contBtn.deferUpdate();
-                                    if (contBtn.customId.startsWith('cont_')) {
+                                    contBtn.deferUpdate().then(() => {
+                                        if (contBtn.customId.startsWith('cont_')) {
                                         const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
                                         contColl.stop();
                                         
                                         console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
                                         
-                                        await this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults);
+                                        this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults)
+                                            .catch(error => {
+                                                console.error('[DAILY QUIZ] Error proceeding to next question:', error);
+                                                clearQuestionCache(userId);
+                                            });
                                         
                                     } else {
                                         if (testingMode) {
@@ -1264,7 +1272,7 @@ module.exports = {
                             .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
                             .setTimestamp();
 
-                        await btn.editReply({ embeds: [answerRevealEmbed], components: [] });
+                        btn.editReply({ embeds: [answerRevealEmbed], components: [] }).catch(console.error);
                         
                         // ✅ FIXED: Proper 5-second countdown with updates
                         let countdown = 5;
