@@ -19,6 +19,9 @@ class QuizManager {
         this.questionCache = new Map(); // userId -> preloaded questions
         this.userQuestionHistory = new Map(); // userId -> Set of recent questions
         
+        // ✅ NEW: Track quiz messages for cleanup
+        this.quizMessages = new Map(); // userId -> array of message objects
+        
         // Cleanup old caches every 10 minutes
         setInterval(() => this.cleanupOldCaches(), 10 * 60 * 1000);
     }
@@ -96,15 +99,21 @@ class QuizManager {
             // ✅ FIXED: Set single active quiz user
             this.activeQuizUserId = userId;
             
+            // ✅ NEW: Initialize message tracking for this user
+            this.quizMessages.set(userId, []);
+            
             // Show loading message
             const loadingEmbed = new EmbedBuilder()
                 .setColor('#FFA500')
-                .setTitle('🎌 PREPARING ULTIMATE ANIME CHALLENGE')
-                .setDescription('🔄 **Loading your personalized quiz questions...**\n\n*Please wait while we fetch 13 unique anime questions for you (10 + 3 rerolls).*')
-                .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Preloading Questions' : 'Daily Quiz • Preloading Questions' })
+                .setTitle('🎌 Daily Anime Quiz')
+                .setDescription('🔄 **Loading quiz...**')
+                .setFooter({ text: isTestingMode() ? '🧪 Testing Mode' : 'Daily Quiz' })
                 .setTimestamp();
             
-            await interaction.editReply({ embeds: [loadingEmbed] });
+            const loadingMessage = await interaction.editReply({ embeds: [loadingEmbed] });
+            
+            // ✅ NEW: Track loading message
+            this.addQuizMessage(userId, loadingMessage);
             
             // ✅ FIXED: Preload 13 questions (10 + 3 rerolls)
             const success = await this.preloadQuestions(userId);
@@ -279,6 +288,9 @@ class QuizManager {
                 message = await interaction.followUp({ embeds: [embed], components: rows });
             }
 
+            // ✅ NEW: Track quiz question messages
+            this.addQuizMessage(userId, message);
+
             // ✅ FIXED: Restore original countdown animation (every 2 seconds)
             timer = setInterval(async () => {
                 timeRemaining -= 2;
@@ -380,34 +392,37 @@ class QuizManager {
         const securedTier = successfulAnswers;
 
         const challengeTitle = testingMode ? 
-            '🧪 TESTING MODE - ULTIMATE ANIME MASTERY CHALLENGE' : 
-            '🎌 ULTIMATE ANIME MASTERY CHALLENGE';
+            '🧪 TESTING MODE - Daily Anime Quiz' : 
+            '🎌 Daily Anime Quiz';
 
-        // ✅ FIXED: Restore original 10-emoji time display (green -> yellow -> red)
+        // ✅ FIXED: Restore original 10-emoji time display (countdown from RIGHT to LEFT)
         const createTimeEmojis = (timeLeft) => {
             const maxTime = 20;
             const timePercentage = timeLeft / maxTime;
             const emojis = [];
             
-            for (let i = 0; i < 10; i++) {
-                const segmentPercentage = (10 - i) / 10;
-                if (timePercentage >= segmentPercentage) {
-                    // Green for high time (66%+)
+            // ✅ FIXED: Calculate how many segments should be filled (from right)
+            const totalSegments = 10;
+            const filledSegments = Math.ceil(timePercentage * totalSegments);
+            
+            for (let i = 0; i < totalSegments; i++) {
+                // ✅ FIXED: Fill from RIGHT to LEFT (countdown direction)
+                const segmentFromRight = totalSegments - i;
+                if (segmentFromRight <= filledSegments) {
+                    // Determine color based on time percentage
                     if (timePercentage > 0.66) {
-                        emojis.push('🟩');
-                    }
-                    // Yellow for medium time (33%-66%) 
-                    else if (timePercentage > 0.33) {
-                        emojis.push('🟨');
-                    }
-                    // Red for low time (0%-33%)
-                    else {
-                        emojis.push('🟥');
+                        emojis.push('🟩'); // Green for high time (66%+)
+                    } else if (timePercentage > 0.33) {
+                        emojis.push('🟨'); // Yellow for medium time (33%-66%) 
+                    } else {
+                        emojis.push('🟥'); // Red for low time (0%-33%)
                     }
                 } else {
-                    emojis.push('⬛');
+                    emojis.push('⬛'); // Empty/black for no time
                 }
             }
+            
+            // ✅ FIXED: Join without spaces to match challenge progress style
             return emojis.join('');
         };
 
@@ -633,6 +648,10 @@ class QuizManager {
         
         await buttonInteraction.editReply({ embeds: [continueEmbed], components: [continueRow] });
         
+        // ✅ NEW: Track continue message
+        const continueMessage = await buttonInteraction.fetchReply();
+        this.addQuizMessage(userId, continueMessage);
+        
         // Handle continue buttons
         const continueCollector = buttonInteraction.message.createMessageComponentCollector({
             time: 15000,
@@ -689,6 +708,10 @@ class QuizManager {
 
         await buttonInteraction.editReply({ embeds: [revealEmbed], components: [] });
         
+        // ✅ NEW: Track answer reveal message  
+        const revealMessage = await buttonInteraction.fetchReply();
+        this.addQuizMessage(userId, revealMessage);
+        
         // ✅ FIXED: Restore original 5-second countdown
         let countdown = 5;
         const countdownInterval = setInterval(async () => {
@@ -727,8 +750,6 @@ class QuizManager {
     async handleQuizComplete(buttonInteraction, userId, guildId, member, questionResults) {
         const totalSuccessful = questionResults.filter(r => r === true).length;
         
-        this.cleanupQuiz(userId);
-        
         if (!isTestingMode()) {
             if (totalSuccessful > 0) {
                 await this.roleManager.applyTier(userId, guildId, member, totalSuccessful);
@@ -753,6 +774,9 @@ class QuizManager {
                 .setTimestamp();
                 
             await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
+            
+            // ✅ NEW: This is the final message - clean up all previous messages except this one
+            await this.cleanupQuizMessages(userId, await buttonInteraction.fetchReply());
         } else {
             const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
             const resultEmbed = new EmbedBuilder()
@@ -768,10 +792,15 @@ class QuizManager {
                 .setTimestamp();
                 
             await buttonInteraction.editReply({ embeds: [resultEmbed], components: [] });
+            
+            // ✅ NEW: This is the final message - clean up all previous messages except this one
+            await this.cleanupQuizMessages(userId, await buttonInteraction.fetchReply());
         }
+        
+        this.cleanupQuiz(userId);
     }
 
-    // ✅ FIXED: Handle timeout - give Continue/Abandon options
+    // ✅ FIXED: Handle timeout - give Continue/Abandon options (POST AFTER QUIZ QUESTIONS)
     async handleTimeout(interaction, userId, guildId, member, questionNumber, questionResults, rerollsUsed = 0) {
         console.log(`[QUIZ] Q${questionNumber} timed out for ${member.displayName} - Rerolls preserved: ${rerollsUsed}`);
         
@@ -780,7 +809,7 @@ class QuizManager {
         if (questionNumber === 10) {
             await this.handleQuizComplete({ editReply: interaction.editReply.bind(interaction) }, userId, guildId, member, newResults);
         } else {
-            // ✅ FIXED: Show Continue/Abandon options instead of auto-continuing
+            // ✅ FIXED: Show Continue/Abandon options as FOLLOW-UP (not edit existing message)
             const timeoutEmbed = new EmbedBuilder()
                 .setColor('#FF6B6B')
                 .setTitle(`⏰ Time's Up - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
@@ -810,11 +839,17 @@ class QuizManager {
             const actionRow = new ActionRowBuilder().addComponents(actionButtons);
             
             try {
-                const message = await interaction.fetchReply();
-                await message.edit({ embeds: [timeoutEmbed], components: [actionRow] });
+                // ✅ NEW: Use followUp instead of editing the timed-out question
+                const timeoutMessage = await interaction.followUp({ 
+                    embeds: [timeoutEmbed], 
+                    components: [actionRow] 
+                });
+                
+                // ✅ NEW: Track timeout message
+                this.addQuizMessage(userId, timeoutMessage);
                 
                 // Handle timeout action buttons
-                const timeoutCollector = message.createMessageComponentCollector({
+                const timeoutCollector = timeoutMessage.createMessageComponentCollector({
                     // ✅ FIXED: Remove time limit - no auto-abandon after 30 seconds
                     filter: i => i.user.id === userId
                 });
@@ -844,8 +879,8 @@ class QuizManager {
                 // ✅ FIXED: Removed auto-abandon timeout - buttons stay active indefinitely
                 
             } catch (error) {
-                console.log('[QUIZ] Could not edit timeout message:', error.message);
-                // Fallback: auto-continue if editing fails
+                console.log('[QUIZ] Could not send timeout message:', error.message);
+                // Fallback: auto-continue if sending fails
                 setTimeout(async () => {
                     await this.askQuestion(interaction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
                 }, 2000);
@@ -879,6 +914,9 @@ class QuizManager {
             
             if (typeof buttonInteraction.editReply === 'function') {
                 await buttonInteraction.editReply({ embeds: [abandonEmbed], components: [] });
+                
+                // ✅ NEW: This is the final message - clean up all previous messages except this one
+                await this.cleanupQuizMessages(userId, await buttonInteraction.fetchReply());
             } else {
                 await buttonInteraction({ embeds: [abandonEmbed], components: [] });
             }
@@ -890,6 +928,59 @@ class QuizManager {
         this.cleanupQuiz(userId);
     }
 
+    // ✅ NEW: Add message to tracking
+    addQuizMessage(userId, message) {
+        if (!this.quizMessages.has(userId)) {
+            this.quizMessages.set(userId, []);
+        }
+        
+        if (message) {
+            this.quizMessages.get(userId).push(message);
+            console.log(`[QUIZ] Tracking message for user ${userId} (Total: ${this.quizMessages.get(userId).length})`);
+        }
+    }
+
+    // ✅ NEW: Clean up quiz messages except the final one
+    async cleanupQuizMessages(userId, finalMessage) {
+        try {
+            const messages = this.quizMessages.get(userId);
+            if (!messages || messages.length === 0) {
+                console.log(`[QUIZ] No messages to clean up for user ${userId}`);
+                return;
+            }
+
+            console.log(`[QUIZ] Cleaning up ${messages.length} quiz messages for user ${userId}, keeping final message`);
+            
+            let deletedCount = 0;
+            for (const message of messages) {
+                try {
+                    // Don't delete the final message
+                    if (message.id === finalMessage?.id) {
+                        console.log(`[QUIZ] Skipping final message: ${message.id}`);
+                        continue;
+                    }
+                    
+                    await message.delete();
+                    deletedCount++;
+                    console.log(`[QUIZ] Deleted message: ${message.id}`);
+                    
+                    // Small delay between deletions to avoid rate limits
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                } catch (error) {
+                    console.log(`[QUIZ] Could not delete message ${message.id}: ${error.message}`);
+                }
+            }
+            
+            console.log(`[QUIZ] ✅ Cleanup complete: deleted ${deletedCount} messages, kept final message`);
+            
+            // Clear the message tracking
+            this.quizMessages.delete(userId);
+            
+        } catch (error) {
+            console.error('[QUIZ] Error during message cleanup:', error);
+        }
+    }
+
     // Get tier emoji
     getTierEmoji(tier) {
         const tierEmojis = {
@@ -899,7 +990,7 @@ class QuizManager {
         return tierEmojis[tier] || '⬛';
     }
 
-    // ✅ FIXED: Clean up quiz data - clear single active user
+    // ✅ FIXED: Clean up quiz data - clear single active user and messages
     cleanupQuiz(userId) {
         console.log(`[QUIZ] Cleaning up quiz for user ${userId}`);
         
@@ -910,6 +1001,12 @@ class QuizManager {
         }
         
         this.questionCache.delete(userId);
+        
+        // ✅ NEW: Clear message tracking (if not already cleared by cleanup)
+        if (this.quizMessages.has(userId)) {
+            this.quizMessages.delete(userId);
+            console.log(`[QUIZ] Cleared message tracking for user ${userId}`);
+        }
     }
 
     // Clean up old caches
@@ -927,6 +1024,12 @@ class QuizManager {
                 if (this.activeQuizUserId === userId) {
                     this.activeQuizUserId = null;
                     console.log(`[QUIZ] Released abandoned quiz lock for user ${userId}`);
+                }
+                
+                // ✅ NEW: Clear message tracking for old caches
+                if (this.quizMessages.has(userId)) {
+                    this.quizMessages.delete(userId);
+                    console.log(`[QUIZ] Cleared old message tracking for user ${userId}`);
                 }
             }
         }
