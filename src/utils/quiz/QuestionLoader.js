@@ -1,4 +1,4 @@
-// src/utils/quiz/QuestionLoader.js - COMPLETE FIXED Question Loading and Fetching
+// src/utils/quiz/QuestionLoader.js - UPDATED with AniQuiz API and Dynamic Difficulty
 
 const { ANIME_ONLY_FALLBACK } = require('./constants');
 
@@ -13,112 +13,71 @@ class QuestionLoader {
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
         try {
-            // Try anime-specific APIs first
-            const animeAPIs = [
-                'https://opentdb.com/api.php?amount=3&category=31&type=multiple&difficulty=easy',
-            ];
+            // ✅ NEW: Use AniQuiz API with dynamic difficulty
+            const aniQuizUrl = `https://aniquiz-api.vercel.app/api/quiz?difficulty=${difficulty.toLowerCase()}`;
             
-            for (const apiUrl of animeAPIs) {
-                try {
-                    console.log(`[API] Trying ${this.getAPIName(apiUrl)} API for ${difficulty}...`);
+            console.log(`[API] Trying AniQuiz API for ${difficulty}...`);
+            
+            try {
+                const response = await fetch(aniQuizUrl, {
+                    method: 'GET',
+                    headers: { 
+                        'User-Agent': 'DiscordBot-AnimeQuiz/2.0', 
+                        'Accept': 'application/json'
+                    },
+                    signal: controller.signal
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    let question = null;
                     
-                    const response = await fetch(apiUrl, {
-                        method: 'GET',
-                        headers: { 
-                            'User-Agent': 'DiscordBot-AnimeQuiz/2.0', 
-                            'Accept': 'application/json'
-                        },
-                        signal: controller.signal
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        let questions = [];
+                    // Parse AniQuiz API response format
+                    if (data && data.question && data.options && data.answer) {
+                        // Convert AniQuiz format to our internal format
+                        question = {
+                            question: data.question,
+                            answer: data.answer,
+                            options: Array.isArray(data.options) ? data.options : [data.answer],
+                            difficulty: difficulty, // Use the requested difficulty
+                            source: 'aniquiz-api'
+                        };
                         
-                        if (data.results && data.results.length > 0) {
-                            questions = data.results.map(result => ({
-                                question: result.question,
-                                answer: result.correct_answer,
-                                options: [...result.incorrect_answers, result.correct_answer].sort(() => Math.random() - 0.5),
-                                difficulty: difficulty, // ✅ FIXED: ALWAYS set difficulty from parameter
-                                source: 'api'
-                            }));
-                        }
+                        // Clean the question text
+                        question.question = this.cleanText(question.question);
+                        question.answer = this.cleanText(question.answer);
+                        question.options = question.options.map(opt => this.cleanText(opt)).filter(opt => opt.length > 0);
                         
-                        // Filter for anime content
-                        const validQuestions = questions.filter(q => {
-                            if (!q.question || !q.answer || !q.options || q.options.length < 2) return false;
-                            
-                            const questionLower = q.question.toLowerCase();
-                            
-                            // Filter out production-related questions
-                            const badKeywords = [
-                                'studio that animated', 'animation studio', 'produced by', 'directed by',
-                                'composed by', 'music by', 'soundtrack by', 'opening theme', 'ending theme',
-                                'manga author', 'mangaka', 'light novel author', 'creator of',
-                                'published by', 'serialized in', 'magazine', 'publisher',
-                                'network that aired', 'broadcast on', 'streaming platform',
-                                'budget', 'box office', 'sales figures', 'episode count of',
-                                'animation technique', 'art style', 'animation quality'
-                            ];
-                            
-                            // Allow voice actor questions
-                            const allowedPatterns = [
-                                'year.*air', 'when.*air', 'what year.*release',
-                                'voice.*actor', 'voiced by', 'seiyuu', 'dub.*actor',
-                                'original.*air', 'first.*broadcast', 'premiere'
-                            ];
-                            
-                            const hasAllowedPattern = allowedPatterns.some(pattern => 
-                                new RegExp(pattern, 'i').test(questionLower)
-                            );
-                            
-                            const hasBadKeyword = badKeywords.some(keyword => 
-                                questionLower.includes(keyword.toLowerCase())
-                            );
-                            
-                            if (hasBadKeyword && !hasAllowedPattern) return false;
-                            
-                            // Require anime keywords
-                            const animeKeywords = [
-                                'anime', 'manga', 'character', 'protagonist', 'antagonist',
-                                'power', 'ability', 'technique', 'jutsu', 'devil fruit',
-                                'titan', 'demon', 'soul reaper', 'ninja', 'pirate',
-                                'hero', 'villain', 'quirk', 'stand', 'magic',
-                                'guild', 'crew', 'team', 'squad', 'organization'
-                            ];
-                            
-                            const hasAnimeContent = animeKeywords.some(keyword => questionLower.includes(keyword)) ||
-                                                  this.isKnownAnimeTitle(questionLower);
-                            
-                            if (!hasAnimeContent) return false;
-                            
+                        // Ensure we have at least 2 options and the answer is included
+                        if (question.options.length >= 2 && question.options.includes(question.answer)) {
                             // Check against avoid list
-                            if (avoidQuestions.has(q.question.toLowerCase().trim())) return false;
-                            
-                            return true;
-                        }).map(q => ({
-                            ...q,
-                            question: this.cleanText(q.question),
-                            answer: this.cleanText(q.answer),
-                            options: q.options.map(opt => this.cleanText(opt)).filter(opt => opt.length > 0),
-                            difficulty: difficulty // ✅ FIXED: ENSURE difficulty is preserved after mapping
-                        }));
-                        
-                        if (validQuestions.length > 0) {
-                            const selectedQuestion = validQuestions[0];
-                            console.log(`[API] ✅ Fetched ANIME question from ${this.getAPIName(apiUrl)} with difficulty: ${selectedQuestion.difficulty}`);
-                            clearTimeout(timeoutId);
-                            return selectedQuestion;
+                            const questionText = question.question.toLowerCase().trim();
+                            if (!avoidQuestions.has(questionText)) {
+                                console.log(`[API] ✅ Fetched question from AniQuiz API with difficulty: ${question.difficulty}`);
+                                clearTimeout(timeoutId);
+                                return question;
+                            } else {
+                                console.log(`[API] AniQuiz question already used, falling back to local`);
+                            }
+                        } else {
+                            console.log(`[API] AniQuiz question format invalid (options: ${question.options.length}, answer included: ${question.options.includes(question.answer)})`);
                         }
+                    } else {
+                        console.log(`[API] AniQuiz response format unexpected:`, {
+                            hasQuestion: !!data?.question,
+                            hasOptions: !!data?.options,
+                            hasAnswer: !!data?.answer
+                        });
                     }
-                } catch (error) {
-                    console.log(`[API] API ${this.getAPIName(apiUrl)} failed: ${error.message}`);
-                    continue;
+                } else {
+                    console.log(`[API] AniQuiz API failed with status: ${response.status}`);
                 }
+            } catch (apiError) {
+                console.log(`[API] AniQuiz API error: ${apiError.message}`);
             }
+            
         } catch (error) {
-            console.log(`[API] ❌ All APIs failed: ${error.message}`);
+            console.log(`[API] ❌ AniQuiz API failed: ${error.message}`);
         } finally {
             clearTimeout(timeoutId);
         }
@@ -182,8 +141,7 @@ class QuestionLoader {
 
     // Get API name from URL
     getAPIName(url) {
-        if (url.includes('opentdb')) return 'OpenTDB';
-        if (url.includes('trivia-api')) return 'The Trivia API';
+        if (url.includes('aniquiz-api')) return 'AniQuiz API';
         return 'Custom';
     }
 }
