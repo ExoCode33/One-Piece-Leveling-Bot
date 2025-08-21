@@ -317,6 +317,99 @@ function isKnownAnimeTitle(text) {
     ];
     
     return animeNames.some(anime => text.includes(anime));
+}try {
+        const animeAPIs = [
+            'https://opentdb.com/api.php?amount=5&category=31&type=multiple', // Get 5 questions at once
+            'https://the-trivia-api.com/v2/questions?categories=anime_and_manga&limit=5'
+        ];
+        
+        for (const apiUrl of animeAPIs) {
+            try {
+                console.log(`[API] Trying ${getAPIName(apiUrl)} API for ${difficulty}...`);
+                
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: { 
+                        'User-Agent': 'DiscordBot-AnimeQuiz/2.0', 
+                        'Accept': 'application/json'
+                    },
+                    signal: controller.signal
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    let questions = [];
+                    
+                    if (data.results && data.results.length > 0) {
+                        questions = data.results.map(result => ({
+                            question: result.question,
+                            answer: result.correct_answer,
+                            options: [...result.incorrect_answers, result.correct_answer].sort(() => Math.random() - 0.5),
+                            difficulty: difficulty,
+                            source: 'api'
+                        }));
+                    } else if (data.length > 0) {
+                        questions = data.map(item => ({
+                            question: item.question?.text || item.question,
+                            answer: item.correctAnswer,
+                            options: [...(item.incorrectAnswers || []), item.correctAnswer].sort(() => Math.random() - 0.5),
+                            difficulty: difficulty,
+                            source: 'api'
+                        }));
+                    }
+                    
+                    // Filter out bad questions and duplicates
+                    const validQuestions = questions.filter(q => {
+                        if (!q.question || !q.answer || !q.options || q.options.length < 2) return false;
+                        
+                        const badKeywords = ['voice actor', 'voiced by', 'seiyuu', 'dub', 'english dub', 'studio', 'director', 'composer'];
+                        if (badKeywords.some(keyword => q.question.toLowerCase().includes(keyword))) return false;
+                        
+                        // Check against avoid list
+                        if (avoidQuestions.has(q.question.toLowerCase().trim())) return false;
+                        
+                        return true;
+                    }).map(q => ({
+                        ...q,
+                        question: cleanText(q.question),
+                        answer: cleanText(q.answer),
+                        options: q.options.map(opt => cleanText(opt)).filter(opt => opt.length > 0)
+                    }));
+                    
+                    if (validQuestions.length > 0) {
+                        // Return first valid question that's not in avoid list
+                        const selectedQuestion = validQuestions[0];
+                        console.log(`[API] ✅ Fetched ${difficulty} anime question from ${getAPIName(apiUrl)}`);
+                        clearTimeout(timeoutId);
+                        return selectedQuestion;
+                    }
+                }
+            } catch (error) {
+                console.log(`[API] API ${getAPIName(apiUrl)} failed: ${error.message}`);
+                continue;
+            }
+        }
+    } catch (error) {
+        console.log(`[API] ❌ All APIs failed: ${error.message}`);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+    
+    // Fallback to local questions with deduplication
+    console.log(`[API] 🛡️ Using enhanced anime fallback ${difficulty} question`);
+    const fallbacks = ANIME_ONLY_FALLBACK[difficulty] || ANIME_ONLY_FALLBACK['Medium'];
+    
+    // Find questions not in avoid list
+    const availableFallbacks = fallbacks.filter(q => !avoidQuestions.has(q.question.toLowerCase().trim()));
+    
+    if (availableFallbacks.length === 0) {
+        // If all questions have been used, reset and use any
+        console.log(`[API] All ${difficulty} fallback questions used, resetting...`);
+        return { ...fallbacks[Math.floor(Math.random() * fallbacks.length)], source: 'fallback-reset' };
+    }
+    
+    const selectedQuestion = availableFallbacks[Math.floor(Math.random() * availableFallbacks.length)];
+    return { ...selectedQuestion, source: 'fallback' };
 }
 
 function cleanText(text) {
@@ -544,7 +637,7 @@ module.exports = {
         }
     },
 
-    // ✅ FIXED: Main question asking method with cached questions - FIXED THE AWAIT ISSUE
+    // ✅ FIXED: Main question asking method with cached questions
     async ask(interaction, userId, guildId, member, qNum, tier, rerollsUsed = 0, questionResults = []) {
         let timer = null;
         let revealTimeout = null;
@@ -813,10 +906,10 @@ module.exports = {
                         
                         collector.stop('reroll');
                         
-                        // ✅ FIXED: Make async operation properly wrapped
+                        // ✅ NEW: Don't delete message, just update it
                         console.log(`[DAILY QUIZ] Reroll requested for Q${qNum}, loading new question...`);
                         
-                        // Get a new question for reroll asynchronously in the background
+                        // Get a new question for reroll (we'll fetch one since rerolls should give different questions)
                         fetchQuestion(q.difficulty || 'Medium', new Set([q.question.toLowerCase().trim()]))
                             .then(newQuestion => {
                                 if (newQuestion) {
@@ -838,19 +931,637 @@ module.exports = {
                             });
                         return;
                     }
+                    
+                    if (btn.customId.startsWith('stop_')) {
+                        if (testingMode) {
+                            btn.editReply({
+                                content: '🧪 **Testing Mode**: Cannot secure tiers in testing mode!',
+                                components: []
+                            }).catch(console.error);
+                            return;
+                        }
+                        
+                        const successfulAnswers = questionResults.filter(result => result === true).length;
+                        const securedTier = successfulAnswers;
+                        
+                        this.apply(userId, guildId, member, securedTier).then(() => {
+                            let xpMultiplier = 'Unknown';
+                            try {
+                                const roleId = process.env[`DAILY_QUIZ_TIER_${securedTier}_ROLE`];
+                                if (roleId && global.xpBoostManager) {
+                                    global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                        if (boostInfo && boostInfo.boost_multiplier) {
+                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                        }
+                                        
+                                        const res = new EmbedBuilder()
+                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                            .setColor(TIER_COLORS[securedTier])
+                                            .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                            .addFields({ 
+                                                name: '📊 Results', 
+                                                value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                inline: false 
+                                            })
+                                            .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                            .setTimestamp();
+                                        btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                                    }).catch(error => {
+                                        console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                        xpMultiplier = 'Active';
+                                        
+                                        const res = new EmbedBuilder()
+                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                            .setColor(TIER_COLORS[securedTier])
+                                            .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                            .addFields({ 
+                                                name: '📊 Results', 
+                                                value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                inline: false 
+                                            })
+                                            .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                            .setTimestamp();
+                                        btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                                    });
+                                } else {
+                                    const res = new EmbedBuilder()
+                                        .setTitle('Strategic Withdrawal - Tier Secured!')
+                                        .setColor(TIER_COLORS[securedTier])
+                                        .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                        .addFields({ 
+                                            name: '📊 Results', 
+                                            value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                            inline: false 
+                                        })
+                                        .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                        .setTimestamp();
+                                    btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                                }
+                            } catch (error) {
+                                console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                xpMultiplier = 'Active';
+                                
+                                const res = new EmbedBuilder()
+                                    .setTitle('Strategic Withdrawal - Tier Secured!')
+                                    .setColor(TIER_COLORS[securedTier])
+                                    .setDescription(`**${TIER_NAMES[securedTier]}** secured!\n*${TIER_DESC[securedTier]}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                    .addFields({ 
+                                        name: '📊 Results', 
+                                        value: `Score: ${securedTier}/10\n**Buff Received:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                        inline: false 
+                                    })
+                                    .setFooter({ text: `${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]} ${xpMultiplier} Active` })
+                                    .setTimestamp();
+                                btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                            }
+                        }).catch(error => {
+                            console.error('[DAILY QUIZ] Error applying secure tier:', error);
+                        });
+                        
+                        collector.stop('secured'); 
+                        return;
+                    }
 
-                    // Rest of the collector logic remains the same...
-                    // (Truncated for brevity - the complete file continues with all the button handling logic)
+                    const [, , , , isCorrectStr, currentRerollsUsed] = btn.customId.split('_');
+                    const isCorrect = isCorrectStr === 'true';
+                    const passedRerollsUsed = parseInt(currentRerollsUsed);
+                    
+                    const selectedOption = q.options[parseInt(btn.customId.split('_')[3])];
+                    console.log(`[DAILY QUIZ] Q${qNum} Answer attempt by ${member.displayName}: Selected "${selectedOption}" | Correct: ${isCorrect} | Expected: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
+                    
+                    if (isCorrect) {
+                        const newResults = [...questionResults, true];
+                        
+                        // Award XP in non-testing mode
+                        if (!testingMode) {
+                            const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
+                            if (global.xpTracker && correctAnswerXP > 0) {
+                                try {
+                                    global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true)
+                                        .then(() => {
+                                            console.log(`[DAILY QUIZ] Q${qNum} FLAT XP: Awarded ${correctAnswerXP} XP to ${member.displayName} (no multipliers applied)`);
+                                        })
+                                        .catch(error => {
+                                            console.error(`[DAILY QUIZ] Error awarding flat XP for correct answer:`, error);
+                                        });
+                                } catch (error) {
+                                    console.error(`[DAILY QUIZ] Error awarding flat XP for correct answer:`, error);
+                                }
+                            }
+                        } else {
+                            console.log(`[DAILY QUIZ] Q${qNum} TESTING MODE: No XP awarded to ${member.displayName}`);
+                        }
+                        
+                        if (qNum === 10) {
+                            const totalSuccessful = newResults.filter(r => r === true).length;
+                            
+                            // ✅ NEW: Clear cache when quiz completes
+                            clearQuestionCache(userId);
+                            
+                            if (!testingMode) {
+                                this.apply(userId, guildId, member, totalSuccessful).catch(console.error);
+                            
+                                let xpMultiplier = 'Unknown';
+                                try {
+                                    const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
+                                    if (roleId && global.xpBoostManager) {
+                                        global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                            if (boostInfo && boostInfo.boost_multiplier) {
+                                                xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                            }
+                                        }).catch(error => {
+                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                            xpMultiplier = 'Active';
+                                        });
+                                    }
+                                } catch (error) {
+                                    console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                    xpMultiplier = 'Active';
+                                }
+                                
+                                const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
+                                const res = new EmbedBuilder()
+                                    .setTitle(totalSuccessful === 10 ? '🔴 DIVINE PERFECTION ACHIEVED!' : `🎯 Challenge Complete - ${tierName}`)
+                                    .setColor(totalSuccessful > 0 ? TIER_COLORS[totalSuccessful] : '#FF0000')
+                                    .setDescription(totalSuccessful > 0 ? 
+                                        `**${tierName}** unlocked!\n*${TIER_DESC[totalSuccessful] || 'Challenge completed'}*\n\n**XP Multiplier:** ${xpMultiplier}` :
+                                        '**No Enhancement** earned. Better luck tomorrow!')
+                                    .addFields({ 
+                                        name: '📊 Final Results', 
+                                        value: `**Correct Answers:** ${totalSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(totalSuccessful)} ${tierName}${totalSuccessful > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                        inline: false 
+                                    })
+                                    .setFooter({ text: totalSuccessful > 0 ? `${this.getTierEmoji(totalSuccessful)} ${tierName} ${xpMultiplier} Active` : 'Challenge Complete' })
+                                    .setTimestamp();
+                                btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                            } else {
+                                const tierName = totalSuccessful === 10 ? 'DIVINE PERFECTION' : TIER_NAMES[totalSuccessful] || 'No Enhancement';
+                                const res = new EmbedBuilder()
+                                    .setTitle('🧪 Testing Complete - No Rewards Given')
+                                    .setColor('#FFA500')
+                                    .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
+                                    .addFields({ 
+                                        name: '📊 Test Results', 
+                                        value: `**Correct Answers:** ${totalSuccessful}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
+                                        inline: false 
+                                    })
+                                    .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
+                                    .setTimestamp();
+                                btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                            }
+                        } else {
+                            const successfulAnswers = newResults.filter(r => r === true).length;
+                            const cont = new EmbedBuilder()
+                                .setTitle(`✅ Correct! ${successfulAnswers} Successful`)
+                                .setColor([46, 204, 113])
+                                .setDescription(`Great job! You now have **${successfulAnswers}** successful answers.${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice, no rewards given' : ''}`)
+                                .addFields({ name: '🎯 Progress', value: `Next: Question ${qNum + 1}/10\nSuccessful: ${successfulAnswers}/10`, inline: false })
+                                .setFooter({ text: testingMode ? '🧪 Testing Mode - Continue the challenge' : 'Continue the challenge or secure your current progress' })
+                                .setTimestamp();
+                            
+                            const contBtnComponents = [
+                                new ButtonBuilder()
+                                    .setCustomId(`cont_${userId}_${qNum + 1}_${passedRerollsUsed}`)
+                                    .setLabel(`Continue to Question ${qNum + 1}`)
+                                    .setStyle(ButtonStyle.Success)
+                            ];
+                            
+                            if (!testingMode) {
+                                contBtnComponents.push(
+                                    new ButtonBuilder()
+                                        .setCustomId(`claim_${userId}_${successfulAnswers}`)
+                                        .setLabel(`Secure ${TIER_NAMES[successfulAnswers] || 'Current'} Buff`)
+                                        .setStyle(ButtonStyle.Secondary)
+                                        .setEmoji('🛡️')
+                                );
+                            }
+                            
+                            const contBtn = new ActionRowBuilder().addComponents(contBtnComponents);
+                            
+                            await btn.editReply({ embeds: [cont], components: [contBtn] });
+                            
+                            // Shorter timeout and instant transitions
+                            const contColl = btn.message.createMessageComponentCollector({ time: 15000, filter: i => i.user.id === userId });
+                            contColl.on('collect', (contBtn) => {
+                                try {
+                                    contBtn.deferUpdate().then(() => {
+                                        if (contBtn.customId.startsWith('cont_')) {
+                                        const [, , nextQNum, passedRerollsUsed] = contBtn.customId.split('_');
+                                        contColl.stop();
+                                        
+                                        console.log(`[DAILY QUIZ] User clicked continue after correct answer, proceeding to Q${nextQNum} immediately`);
+                                        
+                                        this.ask(interaction, userId, guildId, member, parseInt(nextQNum), tier, parseInt(passedRerollsUsed), newResults)
+                                            .catch(error => {
+                                                console.error('[DAILY QUIZ] Error proceeding to next question:', error);
+                                                clearQuestionCache(userId);
+                                            });
+                                        
+                                    } else {
+                                        if (testingMode) {
+                                            contBtn.editReply({
+                                                content: '🧪 **Testing Mode**: Cannot claim rewards in testing mode!',
+                                                components: []
+                                            }).catch(console.error);
+                                            return;
+                                        }
+                                        
+                                        const cTier = parseInt(contBtn.customId.split('_')[2]); 
+                                        const actualSuccessful = newResults.filter(r => r === true).length;
+                                        const finalTier = Math.min(cTier, actualSuccessful);
+                                        
+                                        this.apply(userId, guildId, member, finalTier).then(() => {
+                                            let xpMultiplier = 'Unknown';
+                                            try {
+                                                const roleId = process.env[`DAILY_QUIZ_TIER_${finalTier}_ROLE`];
+                                                if (roleId && global.xpBoostManager) {
+                                                    global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                                        if (boostInfo && boostInfo.boost_multiplier) {
+                                                            xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                                        }
+                                                        
+                                                        const claim = new EmbedBuilder()
+                                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                            .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                            .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                            .addFields({ 
+                                                                name: '📊 Results', 
+                                                                value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                                inline: false 
+                                                            })
+                                                            .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                            .setTimestamp();
+                                                        contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                                    }).catch(error => {
+                                                        console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                        xpMultiplier = 'Active';
+                                                        
+                                                        const claim = new EmbedBuilder()
+                                                            .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                            .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                            .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                            .addFields({ 
+                                                                name: '📊 Results', 
+                                                                value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                                inline: false 
+                                                            })
+                                                            .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                            .setTimestamp();
+                                                        contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                                    });
+                                                } else {
+                                                    const claim = new EmbedBuilder()
+                                                        .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                        .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                        .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                        .addFields({ 
+                                                            name: '📊 Results', 
+                                                            value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                            inline: false 
+                                                        })
+                                                        .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                        .setTimestamp();
+                                                    contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                                }
+                                            } catch (error) {
+                                                console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                xpMultiplier = 'Active';
+                                                
+                                                const claim = new EmbedBuilder()
+                                                    .setTitle('Strategic Withdrawal - Tier Secured!')
+                                                    .setColor(TIER_COLORS[finalTier] || '#FF0000')
+                                                    .setDescription(`**${TIER_NAMES[finalTier] || 'Enhancement'}** secured!\n*${TIER_DESC[finalTier] || 'Challenge ended'}*\n**XP Multiplier:** ${xpMultiplier}`)
+                                                    .addFields({ 
+                                                        name: '📊 Results', 
+                                                        value: `Successful Answers: ${actualSuccessful}/10\n**Buff Received:** ${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} (${xpMultiplier})\n**Challenge by:** ${member.displayName}\nNext: <t:${getReset()}:R>`, 
+                                                        inline: false 
+                                                    })
+                                                    .setFooter({ text: `${this.getTierEmoji(finalTier)} ${TIER_NAMES[finalTier] || 'Enhancement'} ${xpMultiplier} Active` })
+                                                    .setTimestamp();
+                                                contBtn.editReply({ embeds: [claim], components: [] }).catch(console.error);
+                                            }
+                                        }).catch(error => {
+                                            console.error('[DAILY QUIZ] Error applying tier:', error);
+                                        }); 
+                                        // ✅ NEW: Clear cache when quiz ends early
+                                        clearQuestionCache(userId);
+                                        
+                                        contColl.stop();
+                                    }
+                                } catch (error) {
+                                    console.error('[DAILY QUIZ] Continue button error:', error);
+                                }
+                            });
+                        }
+                    } else {
+                        // Record failed answer and continue
+                        const newResults = [...questionResults, false];
+                        
+                        console.log(`[DAILY QUIZ] Q${qNum} INCORRECT by ${member.displayName}: Selected "${selectedOption}" | Showing correct answer: "${q.answer}"${testingMode ? ' [TESTING]' : ''}`);
+                        
+                        // Show answer reveal with FIXED 5-second countdown then continue
+                        const answerRevealEmbed = new EmbedBuilder()
+                            .setColor('#FF0000')
+                            .setTitle(`❌ Wrong Answer - Question ${qNum}/10${testingMode ? ' [Testing]' : ''}`)
+                            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${q.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                            .addFields({
+                                name: '⏳ Next Question Loading...',
+                                value: qNum < 10 ? `Question ${qNum + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
+                                inline: false
+                            })
+                            .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+                            .setTimestamp();
 
+                        btn.editReply({ embeds: [answerRevealEmbed], components: [] }).catch(console.error);
+                        
+                        // ✅ FIXED: Proper 5-second countdown with updates
+                        let countdown = 5;
+                        const countdownInterval = setInterval(async () => {
+                            countdown--;
+                            if (countdown > 0) {
+                                try {
+                                    const updatedEmbed = new EmbedBuilder()
+                                        .setColor('#FF0000')
+                                        .setTitle(`❌ Wrong Answer - Question ${qNum}/10${testingMode ? ' [Testing]' : ''}`)
+                                        .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${q.answer}${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                                        .addFields({
+                                            name: '⏳ Next Question Loading...',
+                                            value: qNum < 10 ? `Question ${qNum + 1}/10 starting in ${countdown} seconds` : `Calculating final results in ${countdown} seconds...`,
+                                            inline: false
+                                        })
+                                        .setFooter({ text: testingMode ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+                                        .setTimestamp();
+                                        
+                                    await btn.editReply({ embeds: [updatedEmbed], components: [] });
+                                } catch (error) {
+                                    console.log('[DAILY QUIZ] Could not update countdown:', error.message);
+                                    clearInterval(countdownInterval);
+                                }
+                            } else {
+                                clearInterval(countdownInterval);
+                                
+                                // ✅ FIXED: Proceed to next question or complete quiz
+                                try {
+                                    if (qNum < 10) {
+                                        console.log(`[DAILY QUIZ] Countdown complete, proceeding to Q${qNum + 1}`);
+                                        this.ask(interaction, userId, guildId, member, qNum + 1, tier, passedRerollsUsed, newResults)
+                                            .catch(error => {
+                                                console.error('[DAILY QUIZ] Error proceeding to next question:', error);
+                                                clearQuestionCache(userId);
+                                            });
+                                    } else {
+                                        // Last question - handle completion
+                                        console.log(`[DAILY QUIZ] Final question completed, calculating results`);
+                                        const totalSuccessful = newResults.filter(r => r === true).length;
+                                        
+                                        // ✅ NEW: Clear cache when quiz completes
+                                        clearQuestionCache(userId);
+                                        
+                                        if (!testingMode) {
+                                            if (totalSuccessful > 0) {
+                                                this.apply(userId, guildId, member, totalSuccessful).catch(console.error);
+                                            } else {
+                                                this.saveFail(userId, guildId).catch(console.error);
+                                            }
+                                            
+                                            let xpMultiplier = 'Unknown';
+                                            if (totalSuccessful > 0) {
+                                                try {
+                                                    const roleId = process.env[`DAILY_QUIZ_TIER_${totalSuccessful}_ROLE`];
+                                                    if (roleId && global.xpBoostManager) {
+                                                        global.xpBoostManager.getRoleBoost(guildId, roleId).then(boostInfo => {
+                                                            if (boostInfo && boostInfo.boost_multiplier) {
+                                                                xpMultiplier = `${boostInfo.boost_multiplier}x`;
+                                                            }
+                                                        }).catch(error => {
+                                                            console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                            xpMultiplier = 'Active';
+                                                        });
+                                                    }
+                                                } catch (error) {
+                                                    console.error('[DAILY BUFF] Error getting XP multiplier:', error);
+                                                    xpMultiplier = 'Active';
+                                                }
+                                            }
+                                            
+                                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                                            const tierEmoji = this.getTierEmoji(totalSuccessful);
+                                            
+                                            const res = new EmbedBuilder()
+                                                .setTitle(`🏁 Challenge Complete - ${tierName}`)
+                                                .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
+                                                .setDescription(totalSuccessful > 0 ? 
+                                                    `**${tierName}** earned!\n*${TIER_DESC[totalSuccessful] || 'Challenge completed'}*\n**XP Multiplier:** ${xpMultiplier}` :
+                                                    '**No Enhancement** earned. Try again tomorrow!')
+                                                .addFields({ 
+                                                    name: '📊 Final Results', 
+                                                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Buff Received:** ${tierEmoji} ${tierName}${totalSuccessful > 0 ? ` (${xpMultiplier})` : ''}\n**Challenge by:** ${member.displayName}\n**Next Challenge:** <t:${getReset()}:R>`, 
+                                                    inline: false 
+                                                })
+                                                .setFooter({ text: totalSuccessful > 0 ? `${tierEmoji} ${tierName} ${xpMultiplier} Active Until Reset` : 'Challenge Complete - No Buff Awarded' })
+                                                .setTimestamp();
+                                                
+                                            btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                                        } else {
+                                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                                            const tierEmoji = this.getTierEmoji(totalSuccessful);
+                                            
+                                            const res = new EmbedBuilder()
+                                                .setTitle('🧪 Testing Complete - Final Results')
+                                                .setColor('#FFA500')
+                                                .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
+                                                .addFields({ 
+                                                    name: '📊 Test Results', 
+                                                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Would Have Earned:** ${tierEmoji} ${tierName}\n**Challenge by:** ${member.displayName} 🧪\n**Mode:** Testing (No Rewards)`, 
+                                                    inline: false 
+                                                })
+                                                .setFooter({ text: '🧪 Testing Mode Complete - No Actual Rewards Given' })
+                                                .setTimestamp();
+                                                
+                                            btn.editReply({ embeds: [res], components: [] }).catch(console.error);
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.error('[DAILY QUIZ] Error proceeding after countdown:', error);
+                                    clearQuestionCache(userId);
+                                    
+                                    try {
+                                        btn.editReply({
+                                            content: '❌ **Error Processing Answer**\n\nSomething went wrong. Your progress has been saved.',
+                                            embeds: [],
+                                            components: []
+                                        }).catch(console.error);
+                                    } catch (replyError) {
+                                        console.error('[DAILY QUIZ] Could not send error message:', replyError);
+                                    }
+                                }
+                            }
+                        }, 1000); // Update every second
+                    }
+                    collector.stop('answered');
                 } catch (error) { 
                     console.error('[QUIZ] Button error:', error); 
+                    if (timer) {
+                        clearInterval(timer);
+                        timer = null;
+                    }
+                    if (revealTimeout) {
+                        clearTimeout(revealTimeout);
+                        revealTimeout = null;
+                    }
                 }
             });
 
+            // Proper timeout handling for both normal and testing mode
+            collector.on('end', async (collected, reason) => {
+                // Clean up all timeouts
+                if (timer) {
+                    clearInterval(timer);
+                    timer = null;
+                }
+                if (revealTimeout) {
+                    clearTimeout(revealTimeout);
+                    revealTimeout = null;
+                }
+                
+                if (reason === 'time' && collected.size === 0) {
+                    console.log(`[DAILY QUIZ] Q${qNum} timed out for ${member.displayName} after 22 seconds${testingMode ? ' [TESTING]' : ''}`);
+                    
+                    const newResults = [...questionResults, false];
+                    
+                    if (qNum === 10) {
+                        const totalSuccessful = newResults.filter(r => r === true).length;
+                        
+                        // ✅ NEW: Clear cache when quiz times out
+                        clearQuestionCache(userId);
+                        
+                        if (!testingMode) {
+                            if (totalSuccessful > 0) {
+                                this.apply(userId, guildId, member, totalSuccessful).catch(console.error);
+                            } else {
+                                this.saveFail(userId, guildId).catch(console.error);
+                            }
+                            
+                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                            const timeout = new EmbedBuilder()
+                                .setColor(totalSuccessful > 0 ? (TIER_COLORS[totalSuccessful] || '#FF0000') : '#FF0000')
+                                .setTitle('⏰ Time\'s Up! Challenge Complete')
+                                .setDescription(totalSuccessful > 0 ? 
+                                    `**${tierName}** earned based on your ${totalSuccessful} correct answers.` :
+                                    'No enhancement earned.')
+                                .addFields({ 
+                                    name: '📊 Final Results', 
+                                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Questions Attempted:** ${qNum}/10\n**Tier Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}`, 
+                                    inline: false 
+                                })
+                                .addFields({ name: '💡 Next Attempt', value: `<t:${getReset()}:R>`, inline: false })
+                                .setFooter({ text: 'Daily Quiz System • Timed Out' })
+                                .setTimestamp();
+                                
+                            try {
+                                msg.edit({ embeds: [timeout], components: [] }).catch(console.error);
+                            } catch (error) {
+                                console.error(`[DAILY QUIZ] Error showing timeout message:`, error);
+                            }
+                        } else {
+                            const tierName = totalSuccessful > 0 ? (TIER_NAMES[totalSuccessful] || 'Enhancement') : 'No Enhancement';
+                            const timeout = new EmbedBuilder()
+                                .setColor('#FFA500')
+                                .setTitle('⏰ Testing Timeout - Results')
+                                .setDescription(`**Testing Results:** ${totalSuccessful}/10 correct answers\n\n*In normal mode, this would have earned: **${tierName}***\n\n⚠️ **TESTING MODE**: No roles or XP multipliers awarded`)
+                                .addFields({ 
+                                    name: '📊 Test Results', 
+                                    value: `**Correct Answers:** ${totalSuccessful}/10\n**Questions Attempted:** ${qNum}/10\n**Would Have Earned:** ${this.getTierEmoji(totalSuccessful)} ${tierName}`, 
+                                    inline: false 
+                                })
+                                .setFooter({ text: '🧪 Testing Mode Timeout - No Actual Rewards Given' })
+                                .setTimestamp();
+                                
+                            try {
+                                await msg.edit({ embeds: [timeout], components: [] });
+                            } catch (error) {
+                                console.error(`[DAILY QUIZ] Error showing testing timeout message:`, error);
+                            }
+                        }
+                    } else {
+                        // Auto-continue after timeout for mid-quiz questions
+                        const timeoutEmbed = new EmbedBuilder()
+                            .setColor('#FF6B6B')
+                            .setTitle(`⏰ Time's Up - Question ${qNum}/10`)
+                            .setDescription(`No answer selected in time. Moving to question ${qNum + 1}/10...${testingMode ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                            .setFooter({ text: testingMode ? '🧪 Testing Mode - Auto-continuing...' : 'Auto-continuing to next question...' });
+                        
+                        try {
+                            await msg.edit({ embeds: [timeoutEmbed], components: [] });
+                        } catch (error) {
+                            console.log('[DAILY QUIZ] Could not edit timeout message:', error.message);
+                        }
+                        
+                        // Short delay then continue
+                        setTimeout(() => {
+                            this.ask(interaction, userId, guildId, member, qNum + 1, tier, rerollsUsed, newResults)
+                                .catch(error => {
+                                    console.error('[DAILY QUIZ] Error continuing after timeout:', error);
+                                    clearQuestionCache(userId);
+                                });
+                        }, 2000); // 2 second delay for timeout continuation
+                    }
+                }
+                
+                activeCollector = null;
+            });
         } catch (error) { 
             console.error('[QUIZ] Question error:', error);
+            
+            // Clean up on error
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+            if (revealTimeout) {
+                clearTimeout(revealTimeout);
+                revealTimeout = null;
+            }
+            if (activeCollector) {
+                activeCollector.stop('error');
+                activeCollector = null;
+            }
+            
+            // ✅ NEW: Clear cache on error
             clearQuestionCache(userId);
         }
+    },
+
+    // Check roll but return the record details (proper database check)
+    async checkRoll(userId, guildId) { 
+        try {
+            if (isTestingMode()) {
+                console.log(`[DAILY QUIZ] Testing mode - skipping database check for user ${userId}`);
+                return null; // Always allow testing
+            }
+            
+            const currentDay = getCurrentDayKey();
+            console.log(`[DAILY QUIZ] Checking database for user ${userId}, guild ${guildId}, day ${currentDay}`);
+            
+            const r = await global.xpTracker.db.query(
+                'SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', 
+                [userId, guildId, currentDay]
+            ); 
+            
+            console.log(`[DAILY QUIZ] Database query result:`, r.rows);
+            
+            if (r.rows.length > 0) {
+                const result = { tier: r.rows[0].tier };
+                console.log(`[DAILY QUIZ] Found existing record:`, result);
+                return result;
+            }
+            
+            console.log(`[DAILY QUIZ] No existing record found for user ${userId}`);
+            return null;
+        } catch (error) {
+            console.error('[DAILY QUIZ] Error checking roll:', error);
+            return null; 
+        } 
     },
 
     // Helper methods
@@ -871,39 +1582,19 @@ module.exports = {
         return tierEmojis[tier] || '⬛';
     },
 
-    // Check roll but return the record details (proper database check)
-    async checkRoll(userId, guildId) { 
-        try {
-            if (isTestingMode()) {
-                console.log(`[DAILY QUIZ] Testing mode - skipping database check for user ${userId}`);
-                return null; // Always allow testing
-            }
-            
-            const currentDay = getCurrentDayKey();
-            console.log(`[DAILY QUIZ] Checking database for user ${userId}, guild ${guildId}, day ${currentDay}`);
-            
-            const r = await global.xpTracker.db.query(
-                'SELECT tier FROM daily_buff_rolls WHERE user_id = $1 AND guild_id = $2 AND date = $3', 
-                [userId, guildId, currentDay]
-            ); 
-            
-            if (r.rows.length > 0) {
-                const result = { tier: r.rows[0].tier };
-                console.log(`[DAILY QUIZ] Found existing record:`, result);
-                return result;
-            }
-            
-            console.log(`[DAILY QUIZ] No existing record found for user ${userId}`);
-            return null;
-        } catch (error) {
-            console.error('[DAILY QUIZ] Error checking roll:', error);
-            return null; 
-        } 
-    },
-
     // Get current day
     getCurrentDay() {
         return getCurrentDayKey();
+    },
+
+    // Check EDT
+    isEDT(date) {
+        const year = date.getFullYear();
+        const marchSecondSunday = new Date(year, 2, 8);
+        marchSecondSunday.setDate(marchSecondSunday.getDate() + (7 - marchSecondSunday.getDay()));
+        const novemberFirstSunday = new Date(year, 10, 1);
+        novemberFirstSunday.setDate(novemberFirstSunday.getDate() + (7 - novemberFirstSunday.getDay()));
+        return date >= marchSecondSunday && date < novemberFirstSunday;
     },
 
     // Check for ALL 10 tiers in getBuff function (testing mode aware)
@@ -1043,7 +1734,7 @@ module.exports = {
 };
 
 // ✅ NEW: Cleanup function to clear old caches (call this periodically)
-setInterval(() => {
+setInterval(async () => {
     const now = Date.now();
     const maxAge = 30 * 60 * 1000; // 30 minutes
     
