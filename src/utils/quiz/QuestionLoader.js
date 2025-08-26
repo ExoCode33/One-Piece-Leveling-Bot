@@ -1,4 +1,4 @@
-// src/utils/quiz/QuestionLoader.js - COMPLETE FIXED Question Loading and Fetching
+// src/utils/quiz/QuestionLoader.js - Question Loading and Fetching
 
 const { ANIME_ONLY_FALLBACK } = require('./constants');
 
@@ -40,7 +40,7 @@ class QuestionLoader {
                                 question: result.question,
                                 answer: result.correct_answer,
                                 options: [...result.incorrect_answers, result.correct_answer].sort(() => Math.random() - 0.5),
-                                difficulty: difficulty, // ✅ FIXED: ALWAYS set difficulty from parameter
+                                difficulty: difficulty,
                                 source: 'api'
                             }));
                         }
@@ -101,13 +101,12 @@ class QuestionLoader {
                             ...q,
                             question: this.cleanText(q.question),
                             answer: this.cleanText(q.answer),
-                            options: q.options.map(opt => this.cleanText(opt)).filter(opt => opt.length > 0),
-                            difficulty: difficulty // ✅ FIXED: ENSURE difficulty is preserved after mapping
+                            options: q.options.map(opt => this.cleanText(opt)).filter(opt => opt.length > 0)
                         }));
                         
                         if (validQuestions.length > 0) {
                             const selectedQuestion = validQuestions[0];
-                            console.log(`[API] ✅ Fetched ANIME question from ${this.getAPIName(apiUrl)} with difficulty: ${selectedQuestion.difficulty}`);
+                            console.log(`[API] ✅ Fetched ANIME question from ${this.getAPIName(apiUrl)}`);
                             clearTimeout(timeoutId);
                             return selectedQuestion;
                         }
@@ -128,7 +127,7 @@ class QuestionLoader {
         return this.getFallbackQuestion(difficulty, avoidQuestions);
     }
 
-    // ✅ FIXED: Get fallback question from local database with guaranteed difficulty
+    // Get fallback question from local database
     getFallbackQuestion(difficulty, avoidQuestions) {
         const fallbacks = ANIME_ONLY_FALLBACK[difficulty] || ANIME_ONLY_FALLBACK['Medium'];
         
@@ -138,20 +137,11 @@ class QuestionLoader {
         if (availableFallbacks.length === 0) {
             // If all questions have been used, reset and use any
             console.log(`[API] All ${difficulty} fallback questions used, resetting...`);
-            const selectedQuestion = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-            return { 
-                ...selectedQuestion, 
-                difficulty: difficulty, // ✅ FIXED: ALWAYS set difficulty
-                source: 'fallback-reset' 
-            };
+            return { ...fallbacks[Math.floor(Math.random() * fallbacks.length)], source: 'fallback-reset' };
         }
         
         const selectedQuestion = availableFallbacks[Math.floor(Math.random() * availableFallbacks.length)];
-        return { 
-            ...selectedQuestion, 
-            difficulty: difficulty, // ✅ FIXED: ALWAYS set difficulty
-            source: 'fallback' 
-        };
+        return { ...selectedQuestion, source: 'fallback' };
     }
 
     // Check if text contains known anime titles
