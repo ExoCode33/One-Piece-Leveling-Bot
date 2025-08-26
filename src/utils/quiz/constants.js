@@ -1,4 +1,4 @@
-// src/utils/quiz/constants.js - Updated with AniQuiz API Configuration
+// src/utils/quiz/constants.js - Quiz Constants and Fallback Questions
 
 // Tier colors for embeds
 const TIER_COLORS = { 
@@ -112,18 +112,21 @@ const ANIME_ONLY_FALLBACK = {
     ]
 };
 
-// ✅ NEW: AniQuiz API Configuration
+// API endpoints for fetching questions
 const ANIME_APIS = [
     {
-        name: 'AniQuiz API',
-        baseUrl: 'https://aniquiz-api.vercel.app/api/quiz',
-        supportsDifficulty: true,
-        supportedDifficulties: ['easy', 'medium', 'hard'],
-        parser: 'aniquiz'
+        name: 'OpenTDB',
+        url: 'https://opentdb.com/api.php?amount=3&category=31&type=multiple&difficulty=easy',
+        parser: 'opentdb'
+    },
+    {
+        name: 'The Trivia API',
+        url: 'https://the-trivia-api.com/v2/questions?categories=anime_and_manga&limit=5',
+        parser: 'trivia-api'
     }
 ];
 
-// Question quality filters (still useful for any API responses)
+// Question quality filters
 const QUESTION_FILTERS = {
     // Keywords that should be avoided in questions
     badKeywords: [
