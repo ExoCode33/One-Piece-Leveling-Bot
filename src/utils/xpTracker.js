@@ -1,4 +1,4 @@
-// src/utils/xpTracker.js - COMPLETE FIXED VERSION
+// src/utils/xpTracker.js - FIXED Voice XP Manager initialization issue
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage, registerFont } = require('canvas');
@@ -725,23 +725,11 @@ class XPTracker {
     
     // ✅ CRITICAL FIX: Add method to check if tracker is ready
     isReady() {
-        const ready = this.isInitialized && 
+        return this.isInitialized && 
                this.db !== null && 
                this.voiceXPManager !== null && 
                this.dailyResetManager !== null && 
                this.levelUpManager !== null;
-               
-        if (!ready) {
-            console.warn('[XP TRACKER] System not ready:', {
-                initialized: this.isInitialized,
-                hasDB: this.db !== null,
-                hasVoiceManager: this.voiceXPManager !== null,
-                hasDailyManager: this.dailyResetManager !== null,
-                hasLevelManager: this.levelUpManager !== null
-            });
-        }
-        
-        return ready;
     }
     
     // ✅ CRITICAL FIX: Add method to safely get user stats
@@ -752,18 +740,12 @@ class XPTracker {
                 return null;
             }
             
-            if (!userId || !guildId) {
-                console.warn('[XP TRACKER] Invalid parameters for getUserStats');
-                return null;
-            }
-            
             const result = await this.db.query(
                 'SELECT * FROM user_levels WHERE user_id = $1 AND guild_id = $2',
                 [userId, guildId]
             );
             
             return result.rows[0] || null;
-            
         } catch (error) {
             console.error('[XP TRACKER] Error getting user stats:', error);
             return null;
@@ -816,140 +798,66 @@ class XPTracker {
         }
     }
     
-    // ✅ CRITICAL FIX: Enhanced XP awarding method with proper parameter validation
+    // ✅ CRITICAL FIX: Add XP awarding method with safety checks
     async awardXP(userId, guildId, xpAmount, source = 'unknown', user = null, skipMultiplier = false) {
         try {
-            // ✅ CRITICAL FIX: Enhanced parameter validation
             if (!this.db) {
                 console.warn('[XP TRACKER] Database not initialized, cannot award XP');
                 return false;
             }
             
-            // ✅ FIXED: Better parameter validation with type checking
-            if (!userId || typeof userId !== 'string' || userId.length < 10) {
-                console.warn('[XP TRACKER] Invalid userId for XP award:', userId, typeof userId);
+            if (!userId || !guildId || xpAmount <= 0) {
+                console.warn('[XP TRACKER] Invalid parameters for XP award');
                 return false;
             }
             
-            if (!guildId || typeof guildId !== 'string' || guildId.length < 10) {
-                console.warn('[XP TRACKER] Invalid guildId for XP award:', guildId, typeof guildId);
-                return false;
-            }
-            
-            // ✅ FIXED: Proper XP amount validation
-            const validXP = typeof xpAmount === 'number' ? xpAmount : parseInt(xpAmount);
-            if (isNaN(validXP) || validXP <= 0 || validXP > 50000) { // Reasonable upper limit
-                console.warn('[XP TRACKER] Invalid XP amount for XP award:', xpAmount, '(parsed:', validXP, ')');
-                return false;
-            }
-            
-            // ✅ FIXED: Ensure source is a valid string
-            const validSource = typeof source === 'string' && source.length > 0 ? source : 'unknown';
-            
-            // ✅ FIXED: Ensure user object has required properties
-            let userObj = user;
-            if (!userObj || !userObj.id || typeof userObj.id !== 'string') {
-                try {
-                    userObj = await this.client.users.fetch(userId);
-                    console.log(`[XP TRACKER] Fetched user object for ${userId}`);
-                } catch (fetchError) {
-                    console.warn('[XP TRACKER] Could not fetch user object for:', userId, fetchError.message);
-                    userObj = { 
-                        id: userId, 
-                        username: `User_${userId.slice(-4)}`,
-                        displayName: `User_${userId.slice(-4)}`
-                    };
-                }
-            }
-            
-            // Validate user object has minimum required properties
-            if (!userObj.username && !userObj.displayName) {
-                userObj.username = `User_${userId.slice(-4)}`;
-            }
-            
-            // Get current user data with error handling
-            let currentData = null;
-            try {
-                currentData = await this.getUserStats(userId, guildId);
-            } catch (statsError) {
-                console.warn('[XP TRACKER] Could not get user stats:', statsError.message);
-            }
-            
+            // Get current user data
+            let currentData = await this.getUserStats(userId, guildId);
             let oldLevel = 0;
             let totalXP = 0;
             
             if (currentData) {
-                oldLevel = parseInt(currentData.level) || 0;
-                totalXP = parseInt(currentData.total_xp) || 0;
+                oldLevel = currentData.level || 0;
+                totalXP = currentData.total_xp || 0;
             }
             
             // Apply XP multiplier from guild settings if not skipped
-            let finalXP = validXP;
+            let finalXP = xpAmount;
             if (!skipMultiplier) {
-                try {
-                    const guildSettings = global.guildSettings?.get(guildId);
-                    const multiplier = parseFloat(guildSettings?.xpMultiplier) || 1.0;
-                    if (multiplier > 0 && multiplier <= 10) { // Reasonable bounds
-                        finalXP = Math.floor(validXP * multiplier);
-                    }
-                } catch (multiplierError) {
-                    console.warn('[XP TRACKER] Error applying multiplier:', multiplierError.message);
-                }
+                const guildSettings = global.guildSettings?.get(guildId);
+                const multiplier = guildSettings?.xpMultiplier || 1.0;
+                finalXP = Math.floor(xpAmount * multiplier);
             }
             
             // Calculate new totals
             const newTotalXP = totalXP + finalXP;
             const newLevel = this.calculateLevel(newTotalXP);
             
-            // ✅ FIXED: Safer database query with better error handling
-            try {
-                const updateQuery = `
-                    INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, updated_at)
-                    VALUES ($1, $2, $3, $4, 0, 0, 0, CURRENT_TIMESTAMP)
-                    ON CONFLICT (user_id, guild_id)
-                    DO UPDATE SET
-                        total_xp = user_levels.total_xp + $3,
-                        level = $4,
-                        messages = CASE WHEN $5 = 'message' THEN user_levels.messages + 1 ELSE user_levels.messages END,
-                        reactions = CASE WHEN $5 = 'reaction' THEN user_levels.reactions + 1 ELSE user_levels.reactions END,
-                        voice_time = CASE WHEN $5 = 'voice' THEN user_levels.voice_time + 1 ELSE user_levels.voice_time END,
-                        updated_at = CURRENT_TIMESTAMP
-                `;
-                
-                await this.db.query(updateQuery, [userId, guildId, finalXP, newLevel, validSource]);
-                
-            } catch (dbError) {
-                console.error('[XP TRACKER] Database error in awardXP:', dbError);
-                return false;
-            }
+            // Update database
+            await this.db.query(`
+                INSERT INTO user_levels (user_id, guild_id, total_xp, level, messages, reactions, voice_time, updated_at)
+                VALUES ($1, $2, $3, $4, 0, 0, 0, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET
+                    total_xp = user_levels.total_xp + $3,
+                    level = $4,
+                    messages = CASE WHEN $5 = 'message' THEN user_levels.messages + 1 ELSE user_levels.messages END,
+                    reactions = CASE WHEN $5 = 'reaction' THEN user_levels.reactions + 1 ELSE user_levels.reactions END,
+                    voice_time = CASE WHEN $5 = 'voice' THEN user_levels.voice_time + 1 ELSE user_levels.voice_time END,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [userId, guildId, finalXP, newLevel, source]);
             
             // Handle level up if needed
-            if (newLevel > oldLevel && this.levelUpManager && typeof this.levelUpManager.handleLevelUp === 'function') {
-                try {
-                    await this.levelUpManager.handleLevelUp(userId, guildId, oldLevel, newLevel, newTotalXP, userObj, validSource);
-                } catch (levelUpError) {
-                    console.error('[XP TRACKER] Error handling level up:', levelUpError);
-                    // Don't return false here, XP was still awarded successfully
-                }
+            if (newLevel > oldLevel && this.levelUpManager) {
+                await this.levelUpManager.handleLevelUp(userId, guildId, oldLevel, newLevel, newTotalXP, user, source);
             }
             
-            console.log(`[XP TRACKER] ✅ Awarded ${finalXP} XP to ${userObj.username || userObj.displayName || userId} (${validSource})`);
+            console.log(`[XP TRACKER] Awarded ${finalXP} XP to ${user?.username || userId} (${source})`);
             return true;
             
         } catch (error) {
-            console.error('[XP TRACKER] ❌ Error awarding XP:', error);
-            console.error('[XP TRACKER] Parameters that caused error:', {
-                userId: typeof userId + ': ' + userId,
-                guildId: typeof guildId + ': ' + guildId,
-                xpAmount: typeof xpAmount + ': ' + xpAmount,
-                source: typeof source + ': ' + source,
-                userPresent: !!user,
-                userType: typeof user
-            });
-            
-            if (this.monitor?.trackError) {
-                this.monitor.trackError(error, 'award_xp');
-            }
+            console.error('[XP TRACKER] Error awarding XP:', error);
+            this.monitor.trackError(error, 'award_xp');
             return false;
         }
     }
