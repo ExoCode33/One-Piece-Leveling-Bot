@@ -1,4 +1,4 @@
-// src/utils/quiz/QuizManager.js - COMPLETE FIXED Main Quiz Management Class
+// src/utils/quiz/QuizManager.js - FIXED Main Quiz Management Class (Complete Original File)
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const QuestionLoader = require('./QuestionLoader');
@@ -489,28 +489,13 @@ class QuizManager {
 
             collector.on('collect', async (buttonInteraction) => {
                 try {
-                    // ✅ CRITICAL FIX: Add immediate logging and error handling for button interactions
-                    console.log(`[QUIZ] Q${questionNumber} button clicked: ${buttonInteraction.customId}`);
-                    
                     // Clear timer
                     if (timer) {
                         clearInterval(timer);
                         timer = null;
                     }
                     
-                    // ✅ CRITICAL FIX: Immediate deferUpdate with comprehensive error handling
-                    try {
-                        console.log(`[QUIZ] Q${questionNumber} deferring button interaction...`);
-                        await buttonInteraction.deferUpdate();
-                        console.log(`[QUIZ] Q${questionNumber} button interaction deferred successfully`);
-                    } catch (deferError) {
-                        console.error(`[QUIZ] Q${questionNumber} CRITICAL: Failed to defer button interaction:`, deferError);
-                        collector.stop('defer_failed');
-                        return;
-                    }
-                    
-                    // ✅ CRITICAL FIX: Add small delay to ensure deferUpdate is processed
-                    await new Promise(resolve => setTimeout(resolve, 50));
+                    await buttonInteraction.deferUpdate();
                     
                     // Handle button interactions
                     await this.handleButtonInteraction(buttonInteraction, interaction, userId, guildId, member, question, questionNumber, questionResults, rerollsUsed);
@@ -518,7 +503,6 @@ class QuizManager {
                     collector.stop('answered');
                 } catch (error) {
                     console.error('[QUIZ] Button interaction error:', error);
-                    collector.stop('error');
                 }
             });
 
@@ -800,7 +784,7 @@ class QuizManager {
         }
     }
 
-    // ✅ CRITICAL FIX: Show continue message after correct answer with proper button handling
+    // Show continue message after correct answer
     async showContinueMessage(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed) {
         const successfulAnswers = questionResults.filter(r => r === true).length;
         
@@ -835,79 +819,43 @@ class QuizManager {
         
         const continueRow = new ActionRowBuilder().addComponents(continueButtons);
         
-        // ✅ CRITICAL FIX: Use editReply to update the existing message
         await buttonInteraction.editReply({ embeds: [continueEmbed], components: [continueRow] });
         
         // ✅ NEW: Track continue message
         const continueMessage = await buttonInteraction.fetchReply();
         this.addQuizMessage(userId, continueMessage);
         
-        // ✅ CRITICAL FIX: Handle continue buttons with proper collector and immediate deferUpdate
-        const continueCollector = continueMessage.createMessageComponentCollector({
+        // Handle continue buttons
+        const continueCollector = buttonInteraction.message.createMessageComponentCollector({
             time: 15000,
             filter: i => i.user.id === userId
         });
         
         continueCollector.on('collect', async (contButton) => {
             try {
-                // ✅ CRITICAL FIX: IMMEDIATE deferUpdate with comprehensive error handling
-                console.log(`[QUIZ] Continue button clicked: ${contButton.customId}`);
-                
-                try {
-                    console.log(`[QUIZ] Deferring continue button interaction...`);
-                    await contButton.deferUpdate();
-                    console.log(`[QUIZ] Continue button interaction deferred successfully`);
-                } catch (deferError) {
-                    console.error(`[QUIZ] CRITICAL: Failed to defer continue button interaction:`, deferError);
-                    continueCollector.stop('defer_failed');
-                    return;
-                }
-                
-                // ✅ CRITICAL FIX: Add small delay to ensure deferUpdate is processed
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await contButton.deferUpdate();
                 
                 if (contButton.customId.startsWith('continue_')) {
                     const nextQuestionNumber = parseInt(contButton.customId.split('_')[2]);
                     const passedRerollsUsed = parseInt(contButton.customId.split('_')[3]);
                     
                     continueCollector.stop();
-                    
-                    // ✅ CRITICAL FIX: Add additional delay before starting next question
-                    setTimeout(async () => {
-                        console.log(`[QUIZ] Starting Q${nextQuestionNumber} after continue button`);
-                        await this.askQuestion(originalInteraction, userId, guildId, member, nextQuestionNumber, questionResults, passedRerollsUsed);
-                    }, 200);
+                    await this.askQuestion(originalInteraction, userId, guildId, member, nextQuestionNumber, questionResults, passedRerollsUsed);
                     
                 } else if (contButton.customId.startsWith('claim_')) {
                     const claimTier = parseInt(contButton.customId.split('_')[2]);
+                    await this.handleSecureTier(contButton, userId, guildId, member, questionResults);
                     continueCollector.stop();
-                    
-                    // ✅ CRITICAL FIX: Add delay before handling secure tier
-                    setTimeout(async () => {
-                        await this.handleSecureTier(contButton, userId, guildId, member, questionResults);
-                    }, 200);
                 }
             } catch (error) {
                 console.error('[QUIZ] Continue button error:', error);
-                // Try to acknowledge the interaction even if there's an error
-                try {
-                    if (!contButton.replied && !contButton.deferred) {
-                        await contButton.deferUpdate();
-                    }
-                } catch (ackError) {
-                    console.error('[QUIZ] Failed to acknowledge continue button interaction:', ackError);
-                }
             }
         });
         
         continueCollector.on('end', async (collected, reason) => {
-            console.log(`[QUIZ] Continue collector ended: ${reason}, collected: ${collected.size}`);
             if (reason === 'time' && collected.size === 0) {
                 // Auto-continue if no button clicked
-                console.log(`[QUIZ] Auto-continuing to Q${questionNumber + 1} after timeout`);
-                setTimeout(async () => {
-                    await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, questionResults, rerollsUsed);
-                }, 100);
+                await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, questionResults, rerollsUsed);
             }
         });
     }
@@ -1081,10 +1029,7 @@ class QuizManager {
                 
                 timeoutCollector.on('collect', async (timeoutButton) => {
                     try {
-                        // ✅ CRITICAL FIX: Immediate deferUpdate for timeout buttons
-                        console.log(`[QUIZ] Timeout button clicked: ${timeoutButton.customId}`);
                         await timeoutButton.deferUpdate();
-                        console.log(`[QUIZ] Timeout button deferred successfully`);
                         
                         if (timeoutButton.customId.startsWith('timeout_continue_')) {
                             const nextQuestionNumber = parseInt(timeoutButton.customId.split('_')[3]);
@@ -1092,29 +1037,15 @@ class QuizManager {
                             
                             timeoutCollector.stop();
                             console.log(`[QUIZ] User chose to continue after timeout - Q${nextQuestionNumber} with ${preservedRerolls} rerolls used`);
-                            
-                            setTimeout(async () => {
-                                await this.askQuestion(interaction, userId, guildId, member, nextQuestionNumber, newResults, preservedRerolls);
-                            }, 200);
+                            await this.askQuestion(interaction, userId, guildId, member, nextQuestionNumber, newResults, preservedRerolls);
                             
                         } else if (timeoutButton.customId.startsWith('timeout_abandon_')) {
                             timeoutCollector.stop();
                             console.log(`[QUIZ] User chose to abandon quiz after timeout`);
-                            
-                            setTimeout(async () => {
-                                await this.handleQuizAbandon(timeoutButton, userId, guildId, member, questionResults);
-                            }, 200);
+                            await this.handleQuizAbandon(timeoutButton, userId, guildId, member, questionResults);
                         }
                     } catch (error) {
                         console.error('[QUIZ] Timeout button error:', error);
-                        // Try to acknowledge the interaction even if there's an error
-                        try {
-                            if (!timeoutButton.replied && !timeoutButton.deferred) {
-                                await timeoutButton.deferUpdate();
-                            }
-                        } catch (ackError) {
-                            console.error('[QUIZ] Failed to acknowledge timeout button interaction:', ackError);
-                        }
                     }
                 });
                 
