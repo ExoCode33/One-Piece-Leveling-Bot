@@ -1,4 +1,4 @@
-// src/utils/quiz/QuizManager.js - ENHANCED with Health Checks, Timeout Handling & Recovery
+// src/utils/quiz/QuizManager.js - COMPLETE FIXED with proper interaction handling
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const QuestionLoader = require('./QuestionLoader');
@@ -305,17 +305,17 @@ class QuizManager {
         return this.activeQuizUserId !== null;
     }
 
-    // ✅ ENHANCED: Start quiz with comprehensive error handling
-    async startQuiz(interaction, userId, guildId, member) {
+    // ✅ CRITICAL FIX: Add the missing method that daily-quiz.js is calling
+    async startQuizFromDeferredInteraction(interaction, userId, guildId, member) {
         try {
-            await interaction.deferReply();
+            // The interaction is already deferred, so we don't need to defer it again
+            console.log(`[QUIZ] Starting quiz from already-deferred interaction for ${member.displayName}`);
             
             // Check if someone else already has active quiz
             if (this.hasActiveQuiz() && !this.hasActiveQuiz(userId)) {
                 const activeUser = this.activeQuizUserId;
                 return await interaction.editReply({
                     content: `❌ **Quiz Already Active**\n\nAnother user is currently taking the daily quiz. Please wait for them to finish.\n\n*Only one person can take the quiz at a time to ensure fair gameplay.*`,
-                    ephemeral: true
                 });
             }
             
@@ -370,7 +370,7 @@ class QuizManager {
             }
             
         } catch (error) {
-            console.error('[QUIZ] Start quiz error:', error);
+            console.error('[QUIZ] Start quiz from deferred interaction error:', error);
             await this.emergencyCleanup('start_quiz_error', error.message);
             
             try {
@@ -565,6 +565,169 @@ class QuizManager {
         }
 
         return rows;
+    }
+
+    createActionButtons(userId, questionNumber, questionResults, rerollsUsed, testingMode) {
+        const actionButtons = [];
+        
+        const successfulAnswers = questionResults.filter(result => result === true).length;
+        if (!testingMode && questionNumber > 1 && successfulAnswers > 0) {
+            actionButtons.push(
+                new ButtonBuilder()
+                    .setCustomId(`secure_${userId}_${questionNumber}`)
+                    .setLabel(`🛡️ Secure ${TIER_NAMES[successfulAnswers]} Buff`)
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('🛡️')
+            );
+        }
+        
+        actionButtons.push(
+            new ButtonBuilder()
+                .setCustomId(`reroll_${userId}_${questionNumber}_${rerollsUsed}`)
+                .setLabel(rerollsUsed >= 3 ? '🎲 No Rerolls Left' : `🎲 Reroll (${3 - rerollsUsed} left)`)
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('🎲')
+                .setDisabled(rerollsUsed >= 3)
+        );
+
+        return actionButtons;
+    }
+
+    async handleButtonInteraction(buttonInteraction, originalInteraction, userId, guildId, member, question, questionNumber, questionResults, rerollsUsed) {
+        this.updateHeartbeat();
+        
+        const customId = buttonInteraction.customId;
+        
+        if (customId.startsWith('reroll_')) {
+            await this.handleReroll(originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed);
+        } else if (customId.startsWith('secure_')) {
+            await this.handleSecureTier(buttonInteraction, userId, guildId, member, questionResults);
+        } else if (customId.startsWith('answer_')) {
+            await this.handleAnswerSelection(buttonInteraction, originalInteraction, userId, guildId, member, question, questionNumber, questionResults, rerollsUsed);
+        }
+    }
+
+    async handleReroll(interaction, userId, guildId, member, questionNumber, questionResults, currentRerollsUsed) {
+        this.updateHeartbeat();
+        
+        const newRerollsUsed = currentRerollsUsed + 1;
+        console.log(`[QUIZ] Reroll requested for Q${questionNumber} - Rerolls used: ${currentRerollsUsed} -> ${newRerollsUsed}`);
+        
+        await this.askQuestion(interaction, userId, guildId, member, questionNumber, questionResults, newRerollsUsed);
+    }
+
+    async handleAnswerSelection(buttonInteraction, originalInteraction, userId, guildId, member, question, questionNumber, questionResults, rerollsUsed) {
+        this.updateHeartbeat();
+        
+        const parts = buttonInteraction.customId.split('_');
+        const selectedIndex = parseInt(parts[3]);
+        const isCorrect = parts[4] === 'true';
+        
+        const selectedOption = question.options[selectedIndex];
+        console.log(`[QUIZ] Q${questionNumber} Answer: Selected "${selectedOption}" | Correct: ${isCorrect}`);
+        
+        if (isCorrect) {
+            await this.handleCorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed);
+        } else {
+            await this.handleIncorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, question, selectedOption, questionNumber, questionResults, rerollsUsed);
+        }
+    }
+
+    async handleCorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed) {
+        this.updateHeartbeat();
+        
+        const newResults = [...questionResults, true];
+        
+        // Save question to history ONLY when answered correctly
+        const cache = this.questionCache.get(userId);
+        if (cache?.guildId && cache.questions && cache.currentIndex > 0) {
+            const justAnsweredQuestion = cache.questions[cache.currentIndex - 1];
+            if (justAnsweredQuestion) {
+                await this.saveQuestionToHistory(userId, cache.guildId, justAnsweredQuestion);
+                console.log(`[QUIZ] ✅ Q${questionNumber} CORRECTLY answered - saved to history`);
+            }
+        }
+        
+        // Award XP in non-testing mode
+        if (!isTestingMode()) {
+            const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
+            
+            if (global.xpTracker && correctAnswerXP > 0) {
+                try {
+                    await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
+                    console.log(`[QUIZ] Q${questionNumber} XP: Awarded ${correctAnswerXP} XP to ${member.displayName}`);
+                } catch (error) {
+                    console.error(`[QUIZ] Error awarding XP:`, error);
+                }
+            }
+        }
+        
+        if (questionNumber === 10) {
+            await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
+        } else {
+            await this.showContinueMessage(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, newResults, rerollsUsed);
+        }
+    }
+
+    async handleIncorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, question, selectedOption, questionNumber, questionResults, rerollsUsed) {
+        this.updateHeartbeat();
+        
+        const newResults = [...questionResults, false];
+        
+        console.log(`[QUIZ] Q${questionNumber} INCORRECT: Selected "${selectedOption}" | Correct: "${question.answer}"`);
+        console.log(`[QUIZ] ❌ Q${questionNumber} INCORRECTLY answered - NOT saving to history`);
+        
+        // Show answer reveal
+        const revealEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
+            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+            .addFields({
+                name: '⏳ Next Question Loading...',
+                value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
+                inline: false
+            })
+            .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+            .setTimestamp();
+
+        await buttonInteraction.editReply({ embeds: [revealEmbed], components: [] });
+        
+        const revealMessage = await buttonInteraction.fetchReply();
+        this.addQuizMessage(userId, revealMessage);
+        
+        // 5-second countdown
+        let countdown = 5;
+        const countdownInterval = setInterval(async () => {
+            this.updateHeartbeat();
+            countdown--;
+            if (countdown > 0) {
+                try {
+                    const updatedEmbed = new EmbedBuilder()
+                        .setColor('#FF0000')
+                        .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
+                        .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
+                        .addFields({
+                            name: '⏳ Next Question Loading...',
+                            value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in ${countdown} seconds` : `Calculating final results in ${countdown} seconds...`,
+                            inline: false
+                        })
+                        .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
+                        .setTimestamp();
+                        
+                    await buttonInteraction.editReply({ embeds: [updatedEmbed], components: [] });
+                } catch (error) {
+                    clearInterval(countdownInterval);
+                }
+            } else {
+                clearInterval(countdownInterval);
+                
+                if (questionNumber < 10) {
+                    await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
+                } else {
+                    await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
+                }
+            }
+        }, 1000);
     }
 
     // ✅ ENHANCED: Handle quiz completion with immediate unlock
@@ -1170,521 +1333,3 @@ class QuizManager {
             
             if (questions.length !== 13) {
                 console.error(`[QUIZ] Final question count mismatch: expected 13, got ${questions.length}`);
-                return false;
-            }
-            
-            // Cache the questions
-            this.questionCache.set(userId, {
-                questions: questions,
-                currentIndex: 0,
-                usedQuestions: usedQuestions,
-                createdAt: Date.now(),
-                guildId: guildId
-            });
-            
-            console.log(`[QUIZ] ✅ Question loading complete: ${questions.length} unique questions for ${userId}`);
-            return true;
-            
-        } catch (error) {
-            console.error(`[QUIZ] Error in question preloading for user ${userId}:`, error);
-            return false;
-        }
-    }
-
-    // ✅ Keep all other existing methods but ensure they call updateHeartbeat()
-    getNextQuestion(userId) {
-        this.updateHeartbeat();
-        
-        const cache = this.questionCache.get(userId);
-        if (!cache || cache.currentIndex >= cache.questions.length) {
-            return null;
-        }
-        
-        const question = cache.questions[cache.currentIndex];
-        cache.currentIndex++;
-        
-        return question;
-    }
-
-    addQuizMessage(userId, message) {
-        if (!this.quizMessages.has(userId)) {
-            this.quizMessages.set(userId, []);
-        }
-        
-        if (message) {
-            this.quizMessages.get(userId).push(message);
-        }
-    }
-
-    getTierEmoji(tier) {
-        const tierEmojis = {
-            0: '⬛', 1: '⚪', 2: '🟢', 3: '🔵', 4: '🟣', 5: '🟡',
-            6: '🟡', 7: '🟠', 8: '🟠', 9: '🔴', 10: '🔴'
-        };
-        return tierEmojis[tier] || '⬛';
-    }
-
-    // ✅ ENHANCED: Final cleanup with health monitoring cleanup
-    cleanupQuiz(userId) {
-        console.log(`[QUIZ] Comprehensive cleanup for user ${userId}`);
-        
-        // Clear single active quiz user
-        if (this.activeQuizUserId === userId) {
-            this.forceUnlockQuiz();
-        }
-        
-        // Clean up all user resources
-        this.cleanupUserResources(userId, 'manual');
-    }
-
-    // ✅ ENHANCED: Cleanup old caches with health monitoring
-    cleanupOldCaches() {
-        const now = Date.now();
-        const maxAge = 30 * 60 * 1000; // 30 minutes
-        
-        for (const [userId, cache] of this.questionCache.entries()) {
-            if (now - cache.createdAt > maxAge) {
-                this.questionCache.delete(userId);
-                
-                if (this.activeQuizUserId === userId) {
-                    this.emergencyCleanup('cache_cleanup', 'Question cache expired during cleanup');
-                }
-            }
-        }
-    }
-
-    // Keep all existing methods for compatibility...
-    async initializeQuestionHistoryTable() {
-        // [Keep existing implementation]
-        if (!this.xpTracker?.db) {
-            console.warn('[QUIZ] No database connection for question history tracking');
-            return;
-        }
-
-        try {
-            await this.xpTracker.db.query(`
-                CREATE TABLE IF NOT EXISTS quiz_question_history (
-                    id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    question_hash VARCHAR(64) NOT NULL,
-                    question_text TEXT NOT NULL,
-                    difficulty VARCHAR(10) NOT NULL,
-                    asked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
-            await this.xpTracker.db.query(`
-                CREATE INDEX IF NOT EXISTS idx_quiz_history_user_guild ON quiz_question_history(user_id, guild_id)
-            `);
-            
-            await this.xpTracker.db.query(`
-                CREATE INDEX IF NOT EXISTS idx_quiz_history_hash ON quiz_question_history(question_hash)
-            `);
-
-            await this.xpTracker.db.query(`
-                CREATE INDEX IF NOT EXISTS idx_quiz_history_asked_at ON quiz_question_history(asked_at)
-            `);
-        } catch (error) {
-            console.error('[QUIZ] Error initializing question history table:', error);
-        }
-    }
-
-    async getUserQuestionHistory(userId, guildId, days = 30) {
-        if (!this.xpTracker?.db) {
-            return new Set();
-        }
-
-        try {
-            const result = await this.xpTracker.db.query(`
-                SELECT question_hash, question_text 
-                FROM quiz_question_history 
-                WHERE user_id = $1 AND guild_id = $2 
-                AND asked_at > NOW() - INTERVAL '${days} days'
-                ORDER BY asked_at DESC
-            `, [userId, guildId]);
-
-            const recentQuestions = new Set();
-            result.rows.forEach(row => {
-                recentQuestions.add(row.question_text.toLowerCase().trim());
-                recentQuestions.add(row.question_hash);
-            });
-
-            return recentQuestions;
-        } catch (error) {
-            console.error('[QUIZ] Error loading question history:', error);
-            return new Set();
-        }
-    }
-
-    async saveQuestionToHistory(userId, guildId, question) {
-        if (!this.xpTracker?.db) {
-            return;
-        }
-
-        try {
-            const questionHash = this.createQuestionHash(question.question);
-
-            await this.xpTracker.db.query(`
-                INSERT INTO quiz_question_history (user_id, guild_id, question_hash, question_text, difficulty)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [userId, guildId, questionHash, question.question, question.difficulty]);
-        } catch (error) {
-            console.error('[QUIZ] Error saving question to history:', error);
-        }
-    }
-
-    createQuestionHash(questionText) {
-        let hash = 0;
-        const cleanText = questionText.toLowerCase().trim().replace(/[^\w\s]/g, '');
-        
-        for (let i = 0; i < cleanText.length; i++) {
-            const char = cleanText.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        
-        return Math.abs(hash).toString(16);
-    }
-
-    async cleanupOldQuestionHistory() {
-        if (!this.xpTracker?.db) {
-            return;
-        }
-
-        try {
-            const result = await this.xpTracker.db.query(`
-                DELETE FROM quiz_question_history 
-                WHERE asked_at < NOW() - INTERVAL '60 days'
-            `);
-
-            const deletedCount = result.rowCount || 0;
-            if (deletedCount > 0) {
-                console.log(`[QUIZ] ✅ Cleaned up ${deletedCount} old question history records`);
-            }
-        } catch (error) {
-            console.error('[QUIZ] Error cleaning up question history:', error);
-        }
-    }
-
-    // Keep other existing methods...
-    createQuestionEmbed(question, questionNumber, member, questionResults, rerollsUsed, testingMode, timeRemaining = 20) {
-        // [Keep existing implementation but add heartbeat update]
-        this.updateHeartbeat();
-        
-        const diffEmoji = { 'Easy': '🟢', 'Medium': '🟡', 'Hard': '🔴' };
-        const difficulty = question.difficulty || 'Medium';
-        
-        const progressSteps = [];
-        for (let i = 1; i <= 10; i++) {
-            if (i <= questionResults.length) {
-                progressSteps.push(questionResults[i - 1] ? '🟩' : '🟥');
-            } else if (i === questionNumber) {
-                progressSteps.push('⬜');
-            } else {
-                progressSteps.push('⬛');
-            }
-        }
-        
-        const progressDisplay = progressSteps.join(' ');
-        const successfulAnswers = questionResults.filter(result => result === true).length;
-        const currentTargetTier = Math.min(10, successfulAnswers + 1);
-        const securedTier = successfulAnswers;
-
-        const challengeTitle = testingMode ? 
-            '🧪 TESTING MODE - Daily Anime Quiz' : 
-            '🎌 Daily Anime Quiz';
-
-        const createTimeEmojis = (timeLeft) => {
-            const maxTime = 20;
-            const timePercentage = timeLeft / maxTime;
-            const emojis = [];
-            
-            const totalSegments = 10;
-            const filledSegments = Math.floor(timePercentage * totalSegments);
-            
-            for (let i = 0; i < totalSegments; i++) {
-                if (i < filledSegments) {
-                    if (timePercentage > 0.66) {
-                        emojis.push('🟩');
-                    } else if (timePercentage > 0.33) {
-                        emojis.push('🟨');
-                    } else {
-                        emojis.push('🟥');
-                    }
-                } else {
-                    emojis.push('⬛');
-                }
-            }
-            
-            return emojis.join(' ');
-        };
-
-        const timeEmojis = createTimeEmojis(timeRemaining);
-        const mins = Math.floor(timeRemaining / 60);
-        const secs = timeRemaining % 60;
-        const timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
-        
-        const timePercentage = (timeRemaining / 20) * 100;
-        let embedColor;
-        if (timePercentage > 66) {
-            embedColor = [46, 204, 113];
-        } else if (timePercentage > 33) {
-            embedColor = [255, 193, 7];
-        } else {
-            embedColor = [255, 87, 34];
-        }
-
-        return new EmbedBuilder()
-            .setAuthor({ name: challengeTitle })
-            .setTitle(`${diffEmoji[difficulty]} Question ${questionNumber}/10 • ${difficulty}${testingMode ? ' [TEST]' : ''}`)
-            .setColor(embedColor)
-            .setDescription(`## **${question.question}**\n\n**Challenge by:** ${member.displayName}${testingMode ? ' 🧪' : ''}\n\n*Select your answer using the buttons below*${testingMode ? '\n\n⚠️ **TESTING MODE**: No roles or XP will be awarded' : ''}`)
-            .addFields(
-                {
-                    name: '📊 Challenge Progress (10 Questions)',
-                    value: progressDisplay,
-                    inline: false
-                },
-                {
-                    name: '⏰ Time Remaining',
-                    value: `${timeEmojis}\n**${timeText}** (${timeRemaining} seconds)`,
-                    inline: false
-                },
-                {
-                    name: testingMode ? '🧪 Test Results (No Rewards)' : '🎯 Tier Progression',
-                    value: testingMode ? 
-                        `**Score:** ${successfulAnswers}/10\n**Next Answer:** Would target ${TIER_NAMES[currentTargetTier] || 'Complete'}\n*Testing mode - no actual rewards*` :
-                        (securedTier > 0 ? 
-                            `**Secured:** ${this.getTierEmoji(securedTier)} ${TIER_NAMES[securedTier]}\n**Target:** ${this.getTierEmoji(currentTargetTier)} ${TIER_NAMES[currentTargetTier]}` : 
-                            `**Target:** ${this.getTierEmoji(currentTargetTier)} ${TIER_NAMES[currentTargetTier]}\n*${TIER_DESC[currentTargetTier]}*`),
-                    inline: false
-                },
-                {
-                    name: '🎲 Rerolls Available',
-                    value: `**${3 - rerollsUsed}/3** rerolls remaining`,
-                    inline: true
-                }
-            )
-            .setFooter({ text: `Enhancement Intelligence • Difficulty: ${difficulty}${testingMode ? ' • TESTING MODE' : ''} • ${new Date().toLocaleTimeString()}` })
-            .setTimestamp();
-    }
-
-    createActionButtons(userId, questionNumber, questionResults, rerollsUsed, testingMode) {
-        const actionButtons = [];
-        
-        const successfulAnswers = questionResults.filter(result => result === true).length;
-        if (!testingMode && questionNumber > 1 && successfulAnswers > 0) {
-            actionButtons.push(
-                new ButtonBuilder()
-                    .setCustomId(`secure_${userId}_${questionNumber}`)
-                    .setLabel(`🛡️ Secure ${TIER_NAMES[successfulAnswers]} Buff`)
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('🛡️')
-            );
-        }
-        
-        actionButtons.push(
-            new ButtonBuilder()
-                .setCustomId(`reroll_${userId}_${questionNumber}_${rerollsUsed}`)
-                .setLabel(rerollsUsed >= 3 ? '🎲 No Rerolls Left' : `🎲 Reroll (${3 - rerollsUsed} left)`)
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('🎲')
-                .setDisabled(rerollsUsed >= 3)
-        );
-
-        return actionButtons;
-    }
-
-    async handleButtonInteraction(buttonInteraction, originalInteraction, userId, guildId, member, question, questionNumber, questionResults, rerollsUsed) {
-        this.updateHeartbeat();
-        
-        const customId = buttonInteraction.customId;
-        
-        if (customId.startsWith('reroll_')) {
-            await this.handleReroll(originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed);
-        } else if (customId.startsWith('secure_')) {
-            await this.handleSecureTier(buttonInteraction, userId, guildId, member, questionResults);
-        } else if (customId.startsWith('answer_')) {
-            await this.handleAnswerSelection(buttonInteraction, originalInteraction, userId, guildId, member, question, questionNumber, questionResults, rerollsUsed);
-        }
-    }
-
-    async handleReroll(interaction, userId, guildId, member, questionNumber, questionResults, currentRerollsUsed) {
-        this.updateHeartbeat();
-        
-        const newRerollsUsed = currentRerollsUsed + 1;
-        console.log(`[QUIZ] Reroll requested for Q${questionNumber} - Rerolls used: ${currentRerollsUsed} -> ${newRerollsUsed}`);
-        
-        await this.askQuestion(interaction, userId, guildId, member, questionNumber, questionResults, newRerollsUsed);
-    }
-
-    async handleAnswerSelection(buttonInteraction, originalInteraction, userId, guildId, member, question, questionNumber, questionResults, rerollsUsed) {
-        this.updateHeartbeat();
-        
-        const parts = buttonInteraction.customId.split('_');
-        const selectedIndex = parseInt(parts[3]);
-        const isCorrect = parts[4] === 'true';
-        
-        const selectedOption = question.options[selectedIndex];
-        console.log(`[QUIZ] Q${questionNumber} Answer: Selected "${selectedOption}" | Correct: ${isCorrect}`);
-        
-        if (isCorrect) {
-            await this.handleCorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed);
-        } else {
-            await this.handleIncorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, question, selectedOption, questionNumber, questionResults, rerollsUsed);
-        }
-    }
-
-    async handleCorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, questionResults, rerollsUsed) {
-        this.updateHeartbeat();
-        
-        const newResults = [...questionResults, true];
-        
-        // Save question to history ONLY when answered correctly
-        const cache = this.questionCache.get(userId);
-        if (cache?.guildId && cache.questions && cache.currentIndex > 0) {
-            const justAnsweredQuestion = cache.questions[cache.currentIndex - 1];
-            if (justAnsweredQuestion) {
-                await this.saveQuestionToHistory(userId, cache.guildId, justAnsweredQuestion);
-                console.log(`[QUIZ] ✅ Q${questionNumber} CORRECTLY answered - saved to history`);
-            }
-        }
-        
-        // Award XP in non-testing mode
-        if (!isTestingMode()) {
-            const correctAnswerXP = parseInt(process.env.DAILY_QUIZ_CORRECT_ANSWER_XP) || 500;
-            
-            if (global.xpTracker && correctAnswerXP > 0) {
-                try {
-                    await global.xpTracker.awardXP(userId, guildId, correctAnswerXP, 'daily-quiz-correct', member.user, true);
-                    console.log(`[QUIZ] Q${questionNumber} XP: Awarded ${correctAnswerXP} XP to ${member.displayName}`);
-                } catch (error) {
-                    console.error(`[QUIZ] Error awarding XP:`, error);
-                }
-            }
-        }
-        
-        if (questionNumber === 10) {
-            await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
-        } else {
-            await this.showContinueMessage(buttonInteraction, originalInteraction, userId, guildId, member, questionNumber, newResults, rerollsUsed);
-        }
-    }
-
-    async handleIncorrectAnswer(buttonInteraction, originalInteraction, userId, guildId, member, question, selectedOption, questionNumber, questionResults, rerollsUsed) {
-        this.updateHeartbeat();
-        
-        const newResults = [...questionResults, false];
-        
-        console.log(`[QUIZ] Q${questionNumber} INCORRECT: Selected "${selectedOption}" | Correct: "${question.answer}"`);
-        console.log(`[QUIZ] ❌ Q${questionNumber} INCORRECTLY answered - NOT saving to history`);
-        
-        // Show answer reveal
-        const revealEmbed = new EmbedBuilder()
-            .setColor('#FF0000')
-            .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
-            .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-            .addFields({
-                name: '⏳ Next Question Loading...',
-                value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in 5 seconds` : 'Calculating final results in 5 seconds...',
-                inline: false
-            })
-            .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
-            .setTimestamp();
-
-        await buttonInteraction.editReply({ embeds: [revealEmbed], components: [] });
-        
-        const revealMessage = await buttonInteraction.fetchReply();
-        this.addQuizMessage(userId, revealMessage);
-        
-        // 5-second countdown
-        let countdown = 5;
-        const countdownInterval = setInterval(async () => {
-            this.updateHeartbeat();
-            countdown--;
-            if (countdown > 0) {
-                try {
-                    const updatedEmbed = new EmbedBuilder()
-                        .setColor('#FF0000')
-                        .setTitle(`❌ Wrong Answer - Question ${questionNumber}/10${isTestingMode() ? ' [Testing]' : ''}`)
-                        .setDescription(`**Your Answer:** ${selectedOption}\n**Correct Answer:** 🎯 ${question.answer}${isTestingMode() ? '\n\n🧪 **Testing Mode**: Continue for practice' : ''}`)
-                        .addFields({
-                            name: '⏳ Next Question Loading...',
-                            value: questionNumber < 10 ? `Question ${questionNumber + 1}/10 starting in ${countdown} seconds` : `Calculating final results in ${countdown} seconds...`,
-                            inline: false
-                        })
-                        .setFooter({ text: isTestingMode() ? '🧪 Testing Mode • Processing...' : 'Processing answer...' })
-                        .setTimestamp();
-                        
-                    await buttonInteraction.editReply({ embeds: [updatedEmbed], components: [] });
-                } catch (error) {
-                    clearInterval(countdownInterval);
-                }
-            } else {
-                clearInterval(countdownInterval);
-                
-                if (questionNumber < 10) {
-                    await this.askQuestion(originalInteraction, userId, guildId, member, questionNumber + 1, newResults, rerollsUsed);
-                } else {
-                    await this.handleQuizComplete(buttonInteraction, userId, guildId, member, newResults);
-                }
-            }
-        }, 1000);
-    }
-
-    // ✅ ENHANCED: Cleanup method that stops health monitoring
-    cleanup() {
-        console.log('[QUIZ] Shutting down QuizManager with health monitoring...');
-        
-        // Stop health monitoring
-        if (this.healthCheckInterval) {
-            clearInterval(this.healthCheckInterval);
-            this.healthCheckInterval = null;
-        }
-        
-        // Clear all emergency timeouts
-        for (const timeout of this.emergencyTimeouts.values()) {
-            clearTimeout(timeout);
-        }
-        this.emergencyTimeouts.clear();
-        
-        // Force unlock if needed
-        this.forceUnlockQuiz();
-        
-        // Clear all caches and maps
-        this.questionCache.clear();
-        this.quizMessages.clear();
-        this.interactionTimeouts.clear();
-        
-        console.log('[QUIZ] ✅ QuizManager shutdown complete');
-    }
-
-    // ✅ ENHANCED: Get system status for debugging
-    getSystemStatus() {
-        const now = Date.now();
-        
-        return {
-            activeQuiz: {
-                userId: this.activeQuizUserId,
-                startTime: this.activeQuizStartTime,
-                duration: this.activeQuizUserId && this.activeQuizStartTime ? now - this.activeQuizStartTime : 0,
-                heartbeat: this.activeQuizHeartbeat,
-                heartbeatAge: this.activeQuizHeartbeat ? now - this.activeQuizHeartbeat : null
-            },
-            caches: {
-                questionCache: this.questionCache.size,
-                quizMessages: this.quizMessages.size,
-                interactionTimeouts: this.interactionTimeouts.size,
-                emergencyTimeouts: this.emergencyTimeouts.size
-            },
-            config: this.config,
-            healthCheck: {
-                running: !!this.healthCheckInterval,
-                lastCheck: now
-            }
-        };
-    }
-}
-
-module.exports = QuizManager;
