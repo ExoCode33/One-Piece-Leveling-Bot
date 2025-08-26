@@ -1,4 +1,4 @@
-// src/utils/quiz/QuizManager.js - FIXED Main Quiz Management Class (Complete Original File)
+// src/utils/quiz/QuizManager.js - FIXED Main Quiz Management Class
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const QuestionLoader = require('./QuestionLoader');
@@ -31,7 +31,7 @@ class QuizManager {
         setInterval(() => this.cleanupOldQuestionHistory(), 24 * 60 * 60 * 1000);
     }
 
-    // ✅ FIXED: Initialize question history tracking table with correct PostgreSQL syntax
+    // ✅ NEW: Initialize question history tracking table
     async initializeQuestionHistoryTable() {
         if (!this.xpTracker?.db) {
             console.warn('[QUIZ] No database connection for question history tracking');
@@ -39,7 +39,6 @@ class QuizManager {
         }
 
         try {
-            // ✅ FIXED: Proper PostgreSQL CREATE TABLE syntax (no INDEX inside CREATE TABLE)
             await this.xpTracker.db.query(`
                 CREATE TABLE IF NOT EXISTS quiz_question_history (
                     id SERIAL PRIMARY KEY,
@@ -48,21 +47,19 @@ class QuizManager {
                     question_hash VARCHAR(64) NOT NULL,
                     question_text TEXT NOT NULL,
                     difficulty VARCHAR(10) NOT NULL,
-                    asked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    asked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX(user_id, guild_id, asked_at),
+                    INDEX(question_hash)
                 )
             `);
 
-            // ✅ FIXED: Create indexes separately (correct PostgreSQL syntax)
+            // Create indexes for better performance
             await this.xpTracker.db.query(`
                 CREATE INDEX IF NOT EXISTS idx_quiz_history_user_guild ON quiz_question_history(user_id, guild_id)
             `);
             
             await this.xpTracker.db.query(`
                 CREATE INDEX IF NOT EXISTS idx_quiz_history_hash ON quiz_question_history(question_hash)
-            `);
-
-            await this.xpTracker.db.query(`
-                CREATE INDEX IF NOT EXISTS idx_quiz_history_asked_at ON quiz_question_history(asked_at)
             `);
 
             console.log('[QUIZ] ✅ Question history tracking table initialized');
@@ -249,8 +246,8 @@ class QuizManager {
             // ✅ NEW: Track loading message
             this.addQuizMessage(userId, loadingMessage);
             
-            // ✅ FIXED: Preload 13 questions (10 + 3 rerolls) with proper guild ID
-            const success = await this.preloadQuestions(userId, guildId);
+            // ✅ FIXED: Preload 13 questions (10 + 3 rerolls)
+            const success = await this.preloadQuestions(userId);
             
             if (!success) {
                 this.cleanupQuiz(userId);
@@ -269,23 +266,18 @@ class QuizManager {
         }
     }
 
-    // ✅ FIXED: Preload 13 questions with DATABASE question history tracking and proper guild ID handling
-    async preloadQuestions(userId, guildId = null) {
+    // ✅ FIXED: Preload 13 questions with DATABASE question history tracking
+    async preloadQuestions(userId) {
         console.log(`[QUIZ] Preloading 13 questions for user ${userId} (10 main + 3 rerolls)`);
         
         try {
-            // ✅ FIXED: Use provided guildId parameter or try to get it from xpTracker client
+            // ✅ NEW: Get user's recent question history from database (last 30 days)
+            const guildId = this.activeQuizUserId === userId ? 
+                Object.values(this.client.guilds.cache)[0]?.id : null;
+            
             if (!guildId) {
-                if (this.xpTracker?.client?.guilds?.cache?.size > 0) {
-                    guildId = this.xpTracker.client.guilds.cache.first()?.id;
-                    console.log('[QUIZ] Using fallback guild ID from xpTracker client:', guildId);
-                }
-                
-                if (!guildId) {
-                    console.error('[QUIZ] Could not determine guild ID for question history');
-                    // Continue without guild-specific history tracking
-                    guildId = 'unknown';
-                }
+                console.error('[QUIZ] Could not determine guild ID for question history');
+                return false;
             }
 
             const recentQuestions = await this.getUserQuestionHistory(userId, guildId, 30);
@@ -352,7 +344,7 @@ class QuizManager {
                 currentIndex: 0,
                 usedQuestions: usedQuestions,
                 createdAt: Date.now(),
-                guildId: guildId // ✅ FIXED: Store guild ID for history saving
+                guildId: guildId // Store guild ID for history saving
             });
             
             console.log(`[QUIZ] ✅ Loaded ${questions.length} unique questions for ${userId}`);
