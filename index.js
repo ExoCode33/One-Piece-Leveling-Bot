@@ -1,5 +1,3 @@
-// index.js - FIXED with proper XPTracker initialization and error handling
-
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const { Pool } = require('pg');
 const fs = require('fs');
@@ -17,10 +15,6 @@ const DEBUG = process.env.DEBUG === 'true';
 let db;
 let xpTracker;
 let xpBoostManager;
-
-// ✅ CRITICAL FIX: Add initialization status tracking
-let isXPTrackerReady = false;
-let initializationPromise = null;
 
 // Initialize database connection
 async function initializeConnection() {
@@ -158,105 +152,60 @@ async function registerSlashCommands(clientId, token) {
     }
 }
 
-// ✅ CRITICAL FIX: Enhanced XP system initialization with proper error handling
+// Initialize XP system
 async function initializeXP() {
     try {
-        // ✅ CRITICAL FIX: Prevent multiple initialization attempts
-        if (initializationPromise) {
-            console.log('[XP INIT] XP system initialization already in progress, waiting...');
-            return await initializationPromise;
+        // Test if files exist first
+        const xpTrackerPath = path.join(__dirname, 'src', 'utils', 'xpTracker.js');
+        const xpBoostPath = path.join(__dirname, 'src', 'utils', 'xpBoost.js');
+        
+        if (!fs.existsSync(xpTrackerPath)) {
+            throw new Error('xpTracker.js file not found');
         }
         
-        initializationPromise = (async () => {
-            // Test if files exist first
-            const xpTrackerPath = path.join(__dirname, 'src', 'utils', 'xpTracker.js');
-            const xpBoostPath = path.join(__dirname, 'src', 'utils', 'xpBoost.js');
-            
-            if (!fs.existsSync(xpTrackerPath)) {
-                throw new Error('xpTracker.js file not found');
-            }
-            
-            if (!fs.existsSync(xpBoostPath)) {
-                throw new Error('xpBoost.js file not found');
-            }
-            
-            console.log('📁 XP system files found, attempting to load...');
-            
-            // ✅ CRITICAL FIX: Initialize XPTracker with proper error handling
-            const XPTracker = require('./src/utils/xpTracker');
-            console.log('✅ XPTracker class loaded');
-            
-            xpTracker = new XPTracker(client, process.env.DATABASE_URL);
-            
-            // ✅ CRITICAL FIX: Wait for initialization to complete
-            console.log('🔄 Initializing XP Tracker...');
-            const initSuccess = await xpTracker.initialize();
-            
-            if (!initSuccess) {
-                throw new Error('XP Tracker initialization failed');
-            }
-            
-            global.xpTracker = xpTracker;
-            isXPTrackerReady = true;
-            console.log(`⏱️ XP Tracker initialized successfully`);
-            
-            // ✅ CRITICAL FIX: Initialize XP Boost Manager only after XP Tracker is ready
-            const XPBoostManager = require('./src/utils/xpBoost');
-            console.log('✅ XPBoostManager class loaded');
-            
-            xpBoostManager = new XPBoostManager(xpTracker.db);
-            global.xpBoostManager = xpBoostManager;
-            console.log(`🚀 XP Boost Manager initialized successfully`);
-            
-            return true;
-        })();
-        
-        const result = await initializationPromise;
-        
-        // ✅ CRITICAL FIX: Only start intervals if initialization was successful
-        if (result && isXPTrackerReady) {
-            // Start voice XP processing with safety checks
-            setInterval(() => {
-                if (xpTracker && xpTracker.isReady && xpTracker.isReady() && xpTracker.processVoiceXP) {
-                    xpTracker.processVoiceXP().catch(error => {
-                        console.error('[VOICE XP] Error in processing:', error);
-                    });
-                } else {
-                    console.warn('[VOICE XP] XP Tracker not ready, skipping voice XP processing');
-                }
-            }, 60000);
-            
-            // Daily cleanup with safety checks
-            setInterval(() => {
-                if (xpTracker && xpTracker.dailyResetManager && xpTracker.dailyResetManager.cleanupDailyVoiceXP) {
-                    xpTracker.dailyResetManager.cleanupDailyVoiceXP().catch(error => {
-                        console.error('[DAILY CLEANUP] Error:', error);
-                    });
-                }
-            }, 24 * 60 * 60 * 1000);
+        if (!fs.existsSync(xpBoostPath)) {
+            throw new Error('xpBoost.js file not found');
         }
         
-        return result;
+        console.log('📁 XP system files found, attempting to load...');
+        
+        const XPTracker = require('./src/utils/xpTracker');
+        console.log('✅ XPTracker class loaded');
+        
+        xpTracker = new XPTracker(client, db);
+        global.xpTracker = xpTracker;
+        console.log(`⏱️ XP Tracker initialized successfully`);
+        
+        const XPBoostManager = require('./src/utils/xpBoost');
+        console.log('✅ XPBoostManager class loaded');
+        
+        xpBoostManager = new XPBoostManager(db);
+        global.xpBoostManager = xpBoostManager;
+        console.log(`🚀 XP Boost Manager initialized successfully`);
+        
+        // Start voice XP processing
+        setInterval(() => {
+            if (xpTracker && xpTracker.processVoiceXP) {
+                xpTracker.processVoiceXP().catch(error => {
+                    console.error('[VOICE XP] Error in processing:', error);
+                });
+            }
+        }, 60000);
+        
+        // Daily cleanup
+        setInterval(() => {
+            if (xpTracker && xpTracker.cleanupDailyVoiceXP) {
+                xpTracker.cleanupDailyVoiceXP().catch(error => {
+                    console.error('[DAILY CLEANUP] Error:', error);
+                });
+            }
+        }, 24 * 60 * 60 * 1000);
         
     } catch (error) {
         console.error('⚠️ XP System initialization error:', error);
         console.error('Stack trace:', error.stack);
         console.log('🚢 Bot will run without XP tracking');
-        
-        // ✅ CRITICAL FIX: Reset initialization promise on failure
-        initializationPromise = null;
-        isXPTrackerReady = false;
-        
-        return false;
     }
-}
-
-// ✅ CRITICAL FIX: Add utility function to check if XP system is ready
-function isXPSystemReady() {
-    return isXPTrackerReady && 
-           xpTracker && 
-           xpTracker.isReady && 
-           xpTracker.isReady();
 }
 
 // Bot ready event
@@ -268,9 +217,7 @@ client.once('ready', async () => {
     try {
         await initializeConnection();
         await initializeDatabase();
-        
-        // ✅ CRITICAL FIX: Initialize XP system after database is ready
-        const xpInitSuccess = await initializeXP();
+        await initializeXP();
         
         if (CLIENT_ID) {
             await registerSlashCommands(CLIENT_ID, DISCORD_TOKEN);
@@ -279,30 +226,20 @@ client.once('ready', async () => {
         const result = await db.query('SELECT NOW()');
         console.log(`⏰ Database time: ${result.rows[0].now}`);
         console.log('🗄️ Database connection test successful!');
-        
-        if (xpInitSuccess) {
-            console.log('🎯 All systems initialized and ready!');
-        } else {
-            console.log('⚠️ Bot ready but XP system failed to initialize');
-        }
+        console.log('🎯 All systems initialized and ready!');
         
     } catch (error) {
         console.error('❌ Initialization failed:', error);
-        console.error('❌ Bot will continue without some features');
+        console.error('❌ Bot will shut down due to error');
+        process.exit(1);
     }
 });
 
-// ✅ CRITICAL FIX: Enhanced voice state update handler with safety checks
+// Voice state update handler for XP tracking
 client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-        // ✅ CRITICAL FIX: Check if XP system is ready before processing
-        if (!isXPSystemReady()) {
-            console.warn('[VOICE] XP system not ready, skipping voice state update');
-            return;
-        }
-        
         // Handle voice time tracking with XP system
-        if (xpTracker.handleVoiceStateUpdate) {
+        if (xpTracker && xpTracker.handleVoiceStateUpdate) {
             await xpTracker.handleVoiceStateUpdate(oldState, newState);
         }
     } catch (error) {
@@ -351,8 +288,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (commandName === 'check-voice-time') {
             const targetUser = interaction.options.getUser('user') || interaction.user;
             
-            // ✅ CRITICAL FIX: Check if XP system is ready
-            if (!isXPSystemReady()) {
+            if (!xpTracker) {
                 return await interaction.reply({
                     content: '❌ XP Tracker not initialized.',
                     ephemeral: true
@@ -403,22 +339,18 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ✅ CRITICAL FIX: Enhanced message XP handling with safety checks
+// Message XP handling
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
     
-    // ✅ CRITICAL FIX: Check if XP system is ready before awarding XP
-    if (isXPSystemReady()) {
-        try {
-            const cooldownKey = `${message.guild.id}:${message.author.id}:message`;
-            const cooldown = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
-            
-            if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
-                xpTracker.setCooldown(cooldownKey);
-                await xpTracker.awardXP(message.author.id, message.guild.id, null, 'message', message.author);
-            }
-        } catch (error) {
-            console.error('[MESSAGE XP] Error awarding XP:', error);
+    // Handle XP for messages
+    if (xpTracker && xpTracker.isOnCooldown && xpTracker.setCooldown && xpTracker.awardXP) {
+        const cooldownKey = `${message.guild.id}:${message.author.id}:message`;
+        const cooldown = parseInt(process.env.MESSAGE_COOLDOWN) || 60000;
+        
+        if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
+            xpTracker.setCooldown(cooldownKey);
+            await xpTracker.awardXP(message.author.id, message.guild.id, null, 'message', message.author);
         }
     }
     
@@ -432,8 +364,6 @@ client.on('messageCreate', async (message) => {
     }
     
     if (message.content === '!help') {
-        const xpStatus = isXPSystemReady() ? '⚡ All XP systems operational' : '⚠️ XP system initializing...';
-        
         message.reply(`🏴‍☠️ **One Piece Leveling Bot Commands**
 
 **📊 XP & Level Commands:**
@@ -457,26 +387,21 @@ client.on('messageCreate', async (message) => {
 • **Wanted poster generation for level-ups**
 
 **💡 Use slash commands (/) for the best experience!**
-**🔧 System Status:** ${xpStatus}`);
+**⚡ All XP activity is logged for Marine Intelligence!**`);
     }
 });
 
-// ✅ CRITICAL FIX: Enhanced reaction XP handling with safety checks
+// Reaction XP handling
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot || !reaction.message.guild) return;
     
-    // ✅ CRITICAL FIX: Check if XP system is ready before awarding XP
-    if (isXPSystemReady()) {
-        try {
-            const cooldownKey = `${reaction.message.guild.id}:${user.id}:reaction`;
-            const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
-            
-            if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
-                xpTracker.setCooldown(cooldownKey);
-                await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
-            }
-        } catch (error) {
-            console.error('[REACTION XP] Error awarding XP:', error);
+    if (xpTracker && xpTracker.isOnCooldown && xpTracker.setCooldown && xpTracker.awardXP) {
+        const cooldownKey = `${reaction.message.guild.id}:${user.id}:reaction`;
+        const cooldown = parseInt(process.env.REACTION_COOLDOWN) || 300000;
+        
+        if (!xpTracker.isOnCooldown(cooldownKey, cooldown)) {
+            xpTracker.setCooldown(cooldownKey);
+            await xpTracker.awardXP(user.id, reaction.message.guild.id, null, 'reaction', user);
         }
     }
 });
@@ -502,14 +427,12 @@ process.on('uncaughtException', error => {
 process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);
 
-// ✅ CRITICAL FIX: Enhanced graceful shutdown with XP tracker cleanup
 async function gracefulShutdown() {
     console.log('🛑 Shutting down bot gracefully...');
     
     try {
-        // ✅ CRITICAL FIX: Clean up XP tracker with safety checks
-        if (xpTracker && typeof xpTracker.cleanup === 'function') {
-            console.log('🧹 Cleaning up XP tracker...');
+        // Clean up XP tracker
+        if (xpTracker && xpTracker.cleanup) {
             await xpTracker.cleanup();
         }
         
@@ -530,14 +453,12 @@ async function gracefulShutdown() {
     process.exit(0);
 }
 
-// ✅ CRITICAL FIX: Enhanced status logging with XP system status
+// Keep the process alive and log status
 setInterval(() => {
     if (DEBUG) {
-        const activeSessions = (xpTracker && xpTracker.voiceSessions) ? 
-            xpTracker.voiceSessions.size : 0;
-        const xpSystemStatus = isXPSystemReady() ? '✅ Ready' : '⚠️ Not Ready';
-        
-        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, XP System: ${xpSystemStatus}, Uptime: ${Math.floor(process.uptime()/60)}m`);
+        const activeSessions = xpTracker && xpTracker.voiceSessions ? 
+            Object.keys(xpTracker.voiceSessions).length : 0;
+        console.log(`🏴‍☠️ Bot Status - Guilds: ${client.guilds.cache.size}, Active Voice Sessions: ${activeSessions}, Uptime: ${Math.floor(process.uptime()/60)}m`);
     }
 }, 300000); // Log every 5 minutes in debug mode
 
@@ -572,7 +493,7 @@ async function startBot() {
 }
 
 // Export for use in other modules
-module.exports = { client, db, xpBoostManager, isXPSystemReady };
+module.exports = { client, db, xpBoostManager };
 
 // Start the bot
 startBot();
