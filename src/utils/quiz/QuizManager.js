@@ -1,4 +1,4 @@
-// src/utils/quiz/QuizManager.js - ENHANCED with Health Checks, Timeout Handling & Recovery - FIXED DATABASE ISSUE
+// src/utils/quiz/QuizManager.js - ENHANCED with Health Checks, Timeout Handling & Recovery
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const QuestionLoader = require('./QuestionLoader');
@@ -316,81 +316,6 @@ class QuizManager {
                 return await interaction.editReply({
                     content: `❌ **Quiz Already Active**\n\nAnother user is currently taking the daily quiz. Please wait for them to finish.\n\n*Only one person can take the quiz at a time to ensure fair gameplay.*`,
                     ephemeral: true
-                });
-            }
-            
-            // Set active quiz with timestamps
-            this.activeQuizUserId = userId;
-            this.activeQuizStartTime = Date.now();
-            this.updateHeartbeat();
-            
-            // Initialize message tracking
-            this.quizMessages.set(userId, []);
-            
-            console.log(`[QUIZ] 🎯 QUIZ STARTED: ${member.displayName} (${userId}) - Max duration: ${this.config.maxQuizDuration / 60000}m`);
-            
-            // Show loading message
-            const loadingEmbed = new EmbedBuilder()
-                .setColor('#FFA500')
-                .setTitle('🎌 Daily Anime Quiz')
-                .setDescription('🔄 **Loading quiz...**\n\n⏱️ *Preparing your personalized challenge...*')
-                .setFooter({ text: isTestingMode() ? '🧪 Testing Mode' : 'Daily Quiz System' })
-                .setTimestamp();
-            
-            const loadingMessage = await interaction.editReply({ embeds: [loadingEmbed] });
-            this.addQuizMessage(userId, loadingMessage);
-            
-            // Preload questions with timeout
-            const success = await Promise.race([
-                this.preloadQuestions(userId, guildId),
-                new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Question loading timeout')), 15000)
-                )
-            ]).catch(async (error) => {
-                console.error(`[QUIZ] Question loading failed for ${userId}:`, error);
-                await this.emergencyCleanup('question_loading_failed', error.message);
-                return false;
-            });
-            
-            if (!success) {
-                return await interaction.editReply({
-                    content: '❌ **Failed to Load Questions**\n\nUnable to prepare your quiz questions. The quiz system has been unlocked for others to try.',
-                });
-            }
-            
-            // Start first question with enhanced error handling
-            try {
-                await this.askQuestion(interaction, userId, guildId, member, 1, [], 0);
-            } catch (questionError) {
-                console.error(`[QUIZ] Error starting first question:`, questionError);
-                await this.emergencyCleanup('first_question_failed', questionError.message);
-                await interaction.editReply({
-                    content: '❌ **Quiz Start Error**\n\nFailed to start the quiz. The system has been reset and is available for others.',
-                });
-            }
-            
-        } catch (error) {
-            console.error('[QUIZ] Start quiz error:', error);
-            await this.emergencyCleanup('start_quiz_error', error.message);
-            
-            try {
-                await interaction.editReply({
-                    content: '❌ **Quiz System Error**\n\nAn error occurred while starting the quiz. The system has been reset.',
-                });
-            } catch (replyError) {
-                console.error('[QUIZ] Could not send error reply:', replyError);
-            }
-        }
-    }
-
-    // ✅ NEW METHOD: Start quiz from already deferred interaction
-    async startQuizFromDeferredInteraction(interaction, userId, guildId, member) {
-        try {
-            // Check if someone else already has active quiz
-            if (this.hasActiveQuiz() && !this.hasActiveQuiz(userId)) {
-                const activeUser = this.activeQuizUserId;
-                return await interaction.editReply({
-                    content: `❌ **Quiz Already Active**\n\nAnother user is currently taking the daily quiz. Please wait for them to finish.\n\n*Only one person can take the quiz at a time to ensure fair gameplay.*`,
                 });
             }
             
@@ -1328,15 +1253,15 @@ class QuizManager {
         }
     }
 
-    // ✅ FIXED: Question history table initialization with proper error handling
+    // Keep all existing methods for compatibility...
     async initializeQuestionHistoryTable() {
+        // [Keep existing implementation]
         if (!this.xpTracker?.db) {
             console.warn('[QUIZ] No database connection for question history tracking');
             return;
         }
 
         try {
-            // First, create the table with all necessary columns
             await this.xpTracker.db.query(`
                 CREATE TABLE IF NOT EXISTS quiz_question_history (
                     id SERIAL PRIMARY KEY,
@@ -1349,48 +1274,17 @@ class QuizManager {
                 )
             `);
 
-            // Then create indexes one by one with individual error handling
-            try {
-                await this.xpTracker.db.query(`
-                    CREATE INDEX IF NOT EXISTS idx_quiz_history_user_guild ON quiz_question_history(user_id, guild_id)
-                `);
-                console.log('[QUIZ] ✅ Created user_guild index');
-            } catch (indexError) {
-                console.warn('[QUIZ] Could not create user_guild index:', indexError.message);
-            }
+            await this.xpTracker.db.query(`
+                CREATE INDEX IF NOT EXISTS idx_quiz_history_user_guild ON quiz_question_history(user_id, guild_id)
+            `);
             
-            try {
-                await this.xpTracker.db.query(`
-                    CREATE INDEX IF NOT EXISTS idx_quiz_history_hash ON quiz_question_history(question_hash)
-                `);
-                console.log('[QUIZ] ✅ Created hash index');
-            } catch (indexError) {
-                console.warn('[QUIZ] Could not create hash index:', indexError.message);
-            }
+            await this.xpTracker.db.query(`
+                CREATE INDEX IF NOT EXISTS idx_quiz_history_hash ON quiz_question_history(question_hash)
+            `);
 
-            // Check if asked_at column exists before creating its index
-            try {
-                const columnCheck = await this.xpTracker.db.query(`
-                    SELECT column_name 
-                    FROM information_schema.columns 
-                    WHERE table_name = 'quiz_question_history' 
-                    AND column_name = 'asked_at'
-                `);
-                
-                if (columnCheck.rows.length > 0) {
-                    await this.xpTracker.db.query(`
-                        CREATE INDEX IF NOT EXISTS idx_quiz_history_asked_at ON quiz_question_history(asked_at)
-                    `);
-                    console.log('[QUIZ] ✅ Created asked_at index');
-                } else {
-                    console.warn('[QUIZ] asked_at column does not exist, skipping index creation');
-                }
-            } catch (indexError) {
-                console.warn('[QUIZ] Could not create asked_at index:', indexError.message);
-            }
-
-            console.log('[QUIZ] ✅ Question history table initialization completed');
-            
+            await this.xpTracker.db.query(`
+                CREATE INDEX IF NOT EXISTS idx_quiz_history_asked_at ON quiz_question_history(asked_at)
+            `);
         } catch (error) {
             console.error('[QUIZ] Error initializing question history table:', error);
         }
