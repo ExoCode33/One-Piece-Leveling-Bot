@@ -1,5 +1,4 @@
 // index.js - ENHANCED with Robust Initialization, Error Recovery & Performance Monitoring
-// FIXED: Added configurable VOICE_PROCESSING_INTERVAL to reduce system load
 
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const { Pool } = require('pg');
@@ -16,10 +15,7 @@ const CONFIG = {
     DATABASE_URL: process.env.DATABASE_URL,
     DEBUG: process.env.DEBUG === 'true',
     NODE_ENV: process.env.NODE_ENV || 'development',
-    HEALTH_CHECK_PORT: process.env.PORT || 3000,
-    // ✅ NEW: Configurable voice processing interval
-    VOICE_PROCESSING_INTERVAL: parseInt(process.env.VOICE_PROCESSING_INTERVAL) || 300000, // Default 5 minutes
-    VOICE_COOLDOWN: parseInt(process.env.VOICE_COOLDOWN) || 300000 // Default 5 minutes
+    HEALTH_CHECK_PORT: process.env.PORT || 3000
 };
 
 // ✅ ENHANCED: Validate required environment variables at startup
@@ -40,20 +36,6 @@ function validateEnvironment() {
     }
     
     console.log('✅ Environment validation passed');
-    
-    // ✅ NEW: Log voice processing configuration
-    console.log(`🎤 Voice Processing Config:`);
-    console.log(`   - Processing Interval: ${CONFIG.VOICE_PROCESSING_INTERVAL}ms (${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s)`);
-    console.log(`   - Voice Cooldown: ${CONFIG.VOICE_COOLDOWN}ms (${CONFIG.VOICE_COOLDOWN/1000}s)`);
-    
-    // ✅ NEW: Validate voice processing interval is reasonable
-    if (CONFIG.VOICE_PROCESSING_INTERVAL < 30000) {
-        console.warn('⚠️ WARNING: VOICE_PROCESSING_INTERVAL is less than 30 seconds, this may cause high system load');
-    }
-    
-    if (CONFIG.VOICE_PROCESSING_INTERVAL > 600000) {
-        console.warn('⚠️ WARNING: VOICE_PROCESSING_INTERVAL is greater than 10 minutes, XP awards may be delayed');
-    }
 }
 
 // ✅ ENHANCED: System state management
@@ -166,10 +148,8 @@ class HealthMonitor {
             xpAwarded: 0,
             errorsLogged: 0,
             voiceSessionsActive: 0,
-            voiceProcessingRuns: 0, // ✅ NEW: Track voice processing runs
             memoryUsage: [],
-            lastHealthCheck: Date.now(),
-            lastVoiceProcessing: Date.now() // ✅ NEW: Track last voice processing time
+            lastHealthCheck: Date.now()
         };
         
         this.healthCheckInterval = setInterval(() => this.collectMetrics(), 60000);
@@ -204,15 +184,8 @@ class HealthMonitor {
         }
     }
     
-    // ✅ NEW: Track voice processing
-    trackVoiceProcessing() {
-        this.metrics.voiceProcessingRuns++;
-        this.metrics.lastVoiceProcessing = Date.now();
-    }
-    
     getHealthStatus() {
         const lastMemory = this.metrics.memoryUsage[this.metrics.memoryUsage.length - 1];
-        const voiceProcessingAge = Date.now() - this.metrics.lastVoiceProcessing;
         
         return {
             status: 'healthy',
@@ -223,10 +196,7 @@ class HealthMonitor {
                 commandsExecuted: this.metrics.commandsExecuted,
                 xpAwarded: this.metrics.xpAwarded,
                 errorsLogged: this.metrics.errorsLogged,
-                voiceSessionsActive: global.xpTracker?.voiceSessions?.size || 0,
-                voiceProcessingRuns: this.metrics.voiceProcessingRuns,
-                timeSinceLastVoiceProcessing: Math.round(voiceProcessingAge / 1000), // seconds
-                voiceProcessingInterval: CONFIG.VOICE_PROCESSING_INTERVAL / 1000 // seconds
+                voiceSessionsActive: global.xpTracker?.voiceSessions?.size || 0
             },
             bot: {
                 guilds: client.guilds?.cache?.size || 0,
@@ -249,9 +219,6 @@ let xpBoostManager;
 const systemState = new SystemState();
 const errorRecovery = new ErrorRecoveryManager();
 const healthMonitor = new HealthMonitor();
-
-// ✅ NEW: Voice processing interval tracker
-let voiceProcessingInterval = null;
 
 // ✅ ENHANCED: Database initialization with connection pooling and retry logic
 async function initializeDatabase() {
@@ -446,23 +413,19 @@ async function initializeXPSystem() {
     }, 'xp_system');
 }
 
-// ✅ ENHANCED: Setup intervals with error handling and configurable voice processing
+// ✅ ENHANCED: Setup intervals with error handling
 function setupIntervals() {
     console.log('🔄 Setting up background intervals...');
     
-    // ✅ FIXED: Configurable voice XP processing interval
-    console.log(`🎤 Voice XP processing interval: ${CONFIG.VOICE_PROCESSING_INTERVAL}ms (${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s)`);
-    
-    voiceProcessingInterval = setInterval(() => {
+    // Voice XP processing with safety checks
+    setInterval(() => {
         if (systemState.components.xpTracker.ready && xpTracker?.processVoiceXP) {
-            healthMonitor.trackVoiceProcessing(); // ✅ NEW: Track processing runs
-            
             xpTracker.processVoiceXP().catch(error => {
                 console.error('[VOICE XP] Error in processing:', error);
                 healthMonitor.incrementMetric('errorsLogged');
             });
         }
-    }, CONFIG.VOICE_PROCESSING_INTERVAL); // ✅ FIXED: Use configurable interval
+    }, 60000);
     
     // Daily cleanup with safety checks
     setInterval(() => {
@@ -475,7 +438,7 @@ function setupIntervals() {
         }
     }, 24 * 60 * 60 * 1000);
     
-    // System health monitoring with voice processing stats
+    // System health monitoring
     setInterval(() => {
         if (CONFIG.DEBUG) {
             const status = systemState.getSystemStatus();
@@ -484,16 +447,12 @@ function setupIntervals() {
             console.log(`🏴‍☠️ System Status - Ready: ${status.ready}, ` +
                        `Guilds: ${client.guilds.cache.size}, ` +
                        `Voice Sessions: ${health.metrics.voiceSessionsActive}, ` +
-                       `Voice Runs: ${health.metrics.voiceProcessingRuns}, ` +
                        `Memory: ${health.memory.heapUsed}MB, ` +
                        `Uptime: ${Math.floor(health.uptime/60)}m`);
         }
     }, 300000); // Every 5 minutes
     
     console.log('✅ Background intervals configured');
-    console.log(`   - Voice XP processing: every ${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s`);
-    console.log(`   - Daily cleanup: every 24h`);
-    console.log(`   - Health monitoring: every 5m`);
 }
 
 // ✅ ENHANCED: Bot ready event with sequential initialization
@@ -541,10 +500,6 @@ client.once('ready', async () => {
             systemStatus.readyComponents.forEach(component => {
                 console.log(`  ✅ ${component}`);
             });
-            
-            console.log('\n🎤 Voice Processing Configuration:');
-            console.log(`  ⏱️ Processing Interval: ${CONFIG.VOICE_PROCESSING_INTERVAL}ms (${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s)`);
-            console.log(`  🔄 Voice Cooldown: ${CONFIG.VOICE_COOLDOWN}ms (${CONFIG.VOICE_COOLDOWN/1000}s)`);
             
         } else {
             console.log('⚠️ ===============================================');
@@ -644,7 +599,6 @@ client.on('interactionCreate', async (interaction) => {
             const systemStatus = systemState.getSystemStatus();
             const readyComponents = systemStatus.readyComponents.length;
             const totalComponents = Object.keys(systemState.components).length;
-            const health = healthMonitor.getHealthStatus();
             
             const embed = new EmbedBuilder()
                 .setColor(systemStatus.ready ? '#00FF00' : '#FFA500')
@@ -655,10 +609,7 @@ client.on('interactionCreate', async (interaction) => {
                     { name: '🎯 System Status', value: systemStatus.ready ? '✅ All Systems Ready' : `⚠️ ${readyComponents}/${totalComponents} Ready`, inline: true },
                     { name: '⏰ Uptime', value: `\`${Math.floor(systemStatus.uptime / 60000)}m\``, inline: true },
                     { name: '🏴‍☠️ Guilds', value: `\`${client.guilds.cache.size}\``, inline: true },
-                    { name: '👥 Users', value: `\`${client.users.cache.size}\``, inline: true },
-                    { name: '🎤 Voice Processing', value: `\`${health.metrics.voiceProcessingRuns} runs\`\n\`Every ${health.metrics.voiceProcessingInterval}s\``, inline: true },
-                    { name: '🎤 Active Sessions', value: `\`${health.metrics.voiceSessionsActive} sessions\``, inline: true },
-                    { name: '📊 Memory Usage', value: `\`${health.memory.heapUsed}MB\``, inline: true }
+                    { name: '👥 Users', value: `\`${client.users.cache.size}\``, inline: true }
                 )
                 .setFooter({ text: 'Ready to set sail!' })
                 .setTimestamp();
@@ -746,13 +697,11 @@ client.on('messageCreate', async (message) => {
     if (message.content === '!ping') {
         const ping = Date.now() - message.createdTimestamp;
         const systemStatus = systemState.getSystemStatus();
-        const health = healthMonitor.getHealthStatus();
         
         message.reply(`🏴‍☠️ **Pong!** 
 📡 Bot Latency: \`${ping}ms\`
 💓 API Latency: \`${Math.round(client.ws.ping)}ms\`
 🎯 System: ${systemStatus.ready ? '✅ All Ready' : '⚠️ Starting Up'}
-🎤 Voice Processing: Every ${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s (${health.metrics.voiceProcessingRuns} runs)
 ⚓ Ready to set sail with XP tracking!`);
     }
     
@@ -771,7 +720,7 @@ client.on('messageCreate', async (message) => {
 
 **⚡ XP System:**
 • **Message XP**: ${process.env.MESSAGE_XP_MIN || 25}-${process.env.MESSAGE_XP_MAX || 35} per message
-• **Voice XP**: ${process.env.VOICE_XP_MIN || 45}-${process.env.VOICE_XP_MAX || 55} per minute (processed every ${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s)
+• **Voice XP**: ${process.env.VOICE_XP_MIN || 45}-${process.env.VOICE_XP_MAX || 55} per minute
 • **Reaction XP**: ${process.env.REACTION_XP_MIN || 25}-${process.env.REACTION_XP_MAX || 35} per reaction
 • **Daily Voice Cap**: ${process.env.DAILY_VOICE_XP_CAP || 1500} XP
 • **Level System**: Automatic bounty progression
@@ -783,7 +732,6 @@ client.on('messageCreate', async (message) => {
 • **Comprehensive slash commands for XP management**
 • **Wanted poster generation for level-ups**
 • **Daily anime quiz with tier-based bonuses**
-• **Optimized voice processing (${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s intervals)**
 
 **💡 Use slash commands (/) for the best experience!**
 **🔧 System Status:** ${xpStatus}`);
@@ -803,30 +751,10 @@ client.on('messageCreate', async (message) => {
                 { name: '📊 Commands Executed', value: `${healthStatus.metrics.commandsExecuted}`, inline: true },
                 { name: '⚡ XP Awarded', value: `${healthStatus.metrics.xpAwarded}`, inline: true },
                 { name: '🎤 Active Voice Sessions', value: `${healthStatus.metrics.voiceSessionsActive}`, inline: true },
-                { name: '🎤 Voice Processing', value: `**Runs:** ${healthStatus.metrics.voiceProcessingRuns}\n**Interval:** ${healthStatus.metrics.voiceProcessingInterval}s\n**Last Run:** ${healthStatus.metrics.timeSinceLastVoiceProcessing}s ago`, inline: true },
                 { name: '🏴‍☠️ Guilds', value: `${healthStatus.bot.guilds}`, inline: true },
                 { name: '👥 Users', value: `${healthStatus.bot.users}`, inline: true }
             )
             .setFooter({ text: 'Health check completed' })
-            .setTimestamp();
-            
-        message.reply({ embeds: [embed] });
-    }
-    
-    if (message.content === '!voice-config') {
-        const embed = new EmbedBuilder()
-            .setColor('#0099ff')
-            .setTitle('🎤 Voice XP Configuration')
-            .addFields(
-                { name: '⏱️ Processing Interval', value: `${CONFIG.VOICE_PROCESSING_INTERVAL}ms (${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s)`, inline: true },
-                { name: '🔄 Voice Cooldown', value: `${CONFIG.VOICE_COOLDOWN}ms (${CONFIG.VOICE_COOLDOWN/1000}s)`, inline: true },
-                { name: '📊 XP Range', value: `${process.env.VOICE_XP_MIN || 45}-${process.env.VOICE_XP_MAX || 55} per minute`, inline: true },
-                { name: '🔒 Daily Cap', value: `${process.env.DAILY_VOICE_XP_CAP || 1500} XP per day`, inline: true },
-                { name: '👥 Min Members', value: `${process.env.VOICE_MIN_MEMBERS || 2} members required`, inline: true },
-                { name: '🔇 Anti-AFK', value: `${process.env.VOICE_ANTI_AFK === 'true' ? 'Enabled' : 'Disabled'}`, inline: true }
-            )
-            .setDescription('Current voice XP system configuration for optimized performance.')
-            .setFooter({ text: 'Voice XP System Configuration' })
             .setTimestamp();
             
         message.reply({ embeds: [embed] });
@@ -888,13 +816,6 @@ async function gracefulShutdown() {
         // Stop accepting new work
         client.removeAllListeners();
         
-        // ✅ NEW: Clear voice processing interval
-        if (voiceProcessingInterval) {
-            clearInterval(voiceProcessingInterval);
-            voiceProcessingInterval = null;
-            console.log('✅ Voice processing interval cleared');
-        }
-        
         // Clean up health monitor
         healthMonitor.cleanup();
         console.log('✅ Health monitor cleaned up');
@@ -940,13 +861,6 @@ if (CONFIG.HEALTH_CHECK_PORT) {
                 timestamp: new Date().toISOString(),
                 system: systemStatus,
                 health: healthStatus,
-                voiceProcessing: {
-                    interval: CONFIG.VOICE_PROCESSING_INTERVAL,
-                    cooldown: CONFIG.VOICE_COOLDOWN,
-                    runs: healthStatus.metrics.voiceProcessingRuns,
-                    lastRun: healthStatus.metrics.timeSinceLastVoiceProcessing,
-                    activeSessions: healthStatus.metrics.voiceSessionsActive
-                },
                 version: require('./package.json').version || 'unknown'
             };
             
@@ -968,7 +882,6 @@ if (CONFIG.HEALTH_CHECK_PORT) {
                         .status { padding: 20px; border-radius: 10px; margin: 20px 0; }
                         .healthy { background: #2d5a27; }
                         .degraded { background: #5a4227; }
-                        .config { background: #273d5a; margin: 20px 0; padding: 15px; border-radius: 8px; }
                     </style>
                 </head>
                 <body>
@@ -976,14 +889,8 @@ if (CONFIG.HEALTH_CHECK_PORT) {
                     <div class="status ${systemState.isSystemReady() ? 'healthy' : 'degraded'}">
                         <h2>Status: ${systemState.isSystemReady() ? '✅ All Systems Ready' : '⚠️ Initializing'}</h2>
                         <p>Bot is ${client.readyAt ? 'online and operational' : 'starting up'}</p>
+                        <p><a href="/health" style="color: #4CAF50;">View Health Report</a></p>
                     </div>
-                    <div class="config">
-                        <h3>🎤 Voice XP Configuration</h3>
-                        <p><strong>Processing Interval:</strong> ${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s</p>
-                        <p><strong>Voice Cooldown:</strong> ${CONFIG.VOICE_COOLDOWN/1000}s</p>
-                        <p><strong>Processing Runs:</strong> ${healthMonitor.getHealthStatus().metrics.voiceProcessingRuns}</p>
-                    </div>
-                    <p><a href="/health" style="color: #4CAF50;">View Health Report</a></p>
                 </body>
                 </html>
             `);
@@ -1015,9 +922,7 @@ async function startBot() {
     console.log(`   Database URL: ${CONFIG.DATABASE_URL ? '✅ Provided' : '❌ MISSING'}`);
     console.log(`   Environment: ${CONFIG.NODE_ENV}`);
     console.log(`   Debug Mode: ${CONFIG.DEBUG ? '✅ Enabled' : '❌ Disabled'}`);
-    console.log(`   Health Check Port: ${CONFIG.HEALTH_CHECK_PORT}`);
-    console.log(`   Voice Processing Interval: ${CONFIG.VOICE_PROCESSING_INTERVAL}ms (${CONFIG.VOICE_PROCESSING_INTERVAL/1000}s)`);
-    console.log(`   Voice Cooldown: ${CONFIG.VOICE_COOLDOWN}ms (${CONFIG.VOICE_COOLDOWN/1000}s)\n`);
+    console.log(`   Health Check Port: ${CONFIG.HEALTH_CHECK_PORT}\n`);
 
     // Setup error recovery strategies
     errorRecovery.setRecoveryStrategy('database_init', async () => {
@@ -1056,16 +961,10 @@ module.exports = {
     systemState, 
     healthMonitor,
     gracefulShutdown,
-    CONFIG, // ✅ NEW: Export config for external access
     // Utility functions for external use
     isSystemReady: () => systemState.isSystemReady(),
     getSystemStatus: () => systemState.getSystemStatus(),
-    getHealthStatus: () => healthMonitor.getHealthStatus(),
-    getVoiceProcessingConfig: () => ({
-        interval: CONFIG.VOICE_PROCESSING_INTERVAL,
-        cooldown: CONFIG.VOICE_COOLDOWN,
-        runs: healthMonitor.getHealthStatus().metrics.voiceProcessingRuns
-    })
+    getHealthStatus: () => healthMonitor.getHealthStatus()
 };
 
 // Start the bot
