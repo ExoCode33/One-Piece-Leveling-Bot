@@ -1,4 +1,4 @@
-// src/commands/daily-quiz.js - CORRECTED with Fixed Syntax
+// src/commands/daily-quiz.js - FIXED with Robust Discord API Error Handling
 
 const { SlashCommandBuilder } = require('discord.js');
 const QuizManager = require('../utils/quiz/QuizManager');
@@ -53,7 +53,7 @@ module.exports = {
                     console.log('[DAILY QUIZ] Quiz manager initialized successfully');
                 } catch (initError) {
                     console.error('[DAILY QUIZ] Failed to initialize quiz manager:', initError);
-                    return await safeEditReply(interaction, {
+                    return await this.safeEditReply(interaction, {
                         content: '❌ **Quiz System Error**\n\nThe quiz system failed to initialize. Please notify an administrator.',
                     });
                 }
@@ -69,21 +69,21 @@ module.exports = {
                 const allowedChannel = interaction.guild.channels.cache.get(allowedChannelId);
                 const channelMention = allowedChannel ? `<#${allowedChannelId}>` : `channel ID: ${allowedChannelId}`;
                 
-                return await safeEditReply(interaction, {
+                return await this.safeEditReply(interaction, {
                     content: `❌ **Wrong Channel${testingMode ? ' [Testing Mode]' : ''}**\n\nThe daily quiz can only be used in ${channelMention}.${testingMode ? '\n\n🧪 **Testing Mode Active** - but channel restriction still applies!' : ''}\n\nPlease go to the correct channel to take the challenge!`,
                 });
             }
 
             // ✅ ENHANCED: Check for active quiz early
             if (quizManager.hasActiveQuiz(userId)) {
-                return await safeEditReply(interaction, {
+                return await this.safeEditReply(interaction, {
                     content: '❌ **Quiz Already Active**\n\nYou already have an active daily quiz session. Please complete it first.',
                 });
             }
 
             // ✅ ENHANCED: Check if someone else has active quiz
             if (quizManager.hasActiveQuiz() && !quizManager.hasActiveQuiz(userId)) {
-                return await safeEditReply(interaction, {
+                return await this.safeEditReply(interaction, {
                     content: `❌ **Quiz System Busy**\n\nAnother user is currently taking the daily quiz. Please wait for them to finish.\n\n*Only one person can take the quiz at a time to ensure fair gameplay.*`,
                 });
             }
@@ -92,7 +92,7 @@ module.exports = {
             
             // ✅ ENHANCED: Check XP tracker availability (skip in testing mode)
             if (!global.xpTracker?.db && !testingMode) {
-                return await safeEditReply(interaction, { 
+                return await this.safeEditReply(interaction, { 
                     content: '❌ **System Unavailable**\n\nXP tracker not initialized. Please try again later.',
                 });
             }
@@ -106,7 +106,7 @@ module.exports = {
                         const buff = await quizManager.getCurrentBuff(userId, guildId, member);
                         const nextReset = quizManager.getNextResetTimestamp();
                         
-                        return await safeEditReply(interaction, {
+                        return await this.safeEditReply(interaction, {
                             content: `✅ **Already Completed Today!**\n\n**Current Enhancement:** ${buff.name}\n**Next Challenge:** <t:${nextReset}:R>\n\nCome back tomorrow for a new challenge!`,
                         });
                     }
@@ -121,7 +121,7 @@ module.exports = {
             // ✅ CRITICAL FIX: Start quiz with enhanced error recovery
             try {
                 console.log(`[DAILY QUIZ] Starting quiz for ${interaction.user.username}...`);
-                await startQuizSafely(quizManager, interaction, userId, guildId, member);
+                await this.startQuizSafely(quizManager, interaction, userId, guildId, member);
                 
             } catch (startError) {
                 console.error('[DAILY QUIZ] Error starting quiz:', startError);
@@ -137,7 +137,7 @@ module.exports = {
                     return; // Don't try to respond, interaction is dead
                 }
                 
-                return await safeEditReply(interaction, {
+                return await this.safeEditReply(interaction, {
                     content: '❌ **Quiz Start Error**\n\nFailed to start the quiz. The system has been reset and is available for others to try.',
                 });
             }
@@ -151,71 +151,69 @@ module.exports = {
             }
             
             // Try to send error message, but don't fail if we can't
-            await safeEditReply(interaction, {
+            await this.safeEditReply(interaction, {
                 content: '❌ **Unexpected Error**\n\nAn error occurred. The quiz system has been reset.',
             });
         }
+    },
+
+    // ✅ NEW: Safe method to start quiz with timeout protection
+    async startQuizSafely(quizManager, interaction, userId, guildId, member) {
+        const startTimeout = setTimeout(() => {
+            console.error('[DAILY QUIZ] Quiz start timeout - cleaning up');
+            if (quizManager && userId) {
+                quizManager.cleanupQuiz(userId);
+            }
+        }, 25000); // 25 second timeout
+
+        try {
+            await quizManager.startQuizFromDeferredInteraction(interaction, userId, guildId, member);
+            clearTimeout(startTimeout);
+        } catch (error) {
+            clearTimeout(startTimeout);
+            throw error;
+        }
+    },
+
+    // ✅ NEW: Safe method to edit replies with error handling
+    async safeEditReply(interaction, options) {
+        const maxRetries = 3;
+        let retryCount = 0;
+
+        while (retryCount < maxRetries) {
+            try {
+                return await interaction.editReply(options);
+            } catch (error) {
+                retryCount++;
+                console.warn(`[DAILY QUIZ] Edit reply attempt ${retryCount} failed:`, error.message);
+
+                // Handle specific Discord API errors
+                if (error.code === 10008 || error.message.includes('Unknown Message')) {
+                    console.error('[DAILY QUIZ] Interaction token expired, cannot respond');
+                    return null;
+                }
+
+                if (error.code === 50013 || error.message.includes('Missing Permissions')) {
+                    console.error('[DAILY QUIZ] Missing permissions to respond');
+                    return null;
+                }
+
+                // Rate limited, wait and retry
+                if (error.code === 429) {
+                    const retryAfter = error.retryAfter || 1000;
+                    console.warn(`[DAILY QUIZ] Rate limited, waiting ${retryAfter}ms`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter));
+                    continue;
+                }
+
+                // For other errors, wait a bit before retry
+                if (retryCount < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                }
+            }
+        }
+
+        console.error('[DAILY QUIZ] Failed to edit reply after all retries');
+        return null;
     }
 };
-
-// ✅ HELPER FUNCTIONS: Move outside of module.exports to fix syntax
-
-// Safe method to start quiz with timeout protection
-async function startQuizSafely(quizManager, interaction, userId, guildId, member) {
-    const startTimeout = setTimeout(() => {
-        console.error('[DAILY QUIZ] Quiz start timeout - cleaning up');
-        if (quizManager && userId) {
-            quizManager.cleanupQuiz(userId);
-        }
-    }, 25000); // 25 second timeout
-
-    try {
-        await quizManager.startQuizFromDeferredInteraction(interaction, userId, guildId, member);
-        clearTimeout(startTimeout);
-    } catch (error) {
-        clearTimeout(startTimeout);
-        throw error;
-    }
-}
-
-// Safe method to edit replies with error handling
-async function safeEditReply(interaction, options) {
-    const maxRetries = 3;
-    let retryCount = 0;
-
-    while (retryCount < maxRetries) {
-        try {
-            return await interaction.editReply(options);
-        } catch (error) {
-            retryCount++;
-            console.warn(`[DAILY QUIZ] Edit reply attempt ${retryCount} failed:`, error.message);
-
-            // Handle specific Discord API errors
-            if (error.code === 10008 || error.message.includes('Unknown Message')) {
-                console.error('[DAILY QUIZ] Interaction token expired, cannot respond');
-                return null;
-            }
-
-            if (error.code === 50013 || error.message.includes('Missing Permissions')) {
-                console.error('[DAILY QUIZ] Missing permissions to respond');
-                return null;
-            }
-
-            // Rate limited, wait and retry
-            if (error.code === 429) {
-                const retryAfter = error.retryAfter || 1000;
-                console.warn(`[DAILY QUIZ] Rate limited, waiting ${retryAfter}ms`);
-                await new Promise(resolve => setTimeout(resolve, retryAfter));
-                continue;
-            }
-
-            // For other errors, wait a bit before retry
-            if (retryCount < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-            }
-        }
-    }
-
-    console.error('[DAILY QUIZ] Failed to edit reply after all retries');
-    return null;
-}
